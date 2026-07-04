@@ -125,23 +125,66 @@ def run():
         check("feed record count", len(sd.records) == 2)
         check("feed carries component breakdown", sd.records[0]["reliability_components"] == '{"design": 60}')
 
-    # 6) Cross-filter facet counting: selecting Species=human must shrink the
-    #    Indication counts to only human records, while the Species facet does
-    #    NOT constrain its own option list.
+    # 6) Cross-filter facet counting (include/exclude): selecting Species include
+    #    =human must shrink the Indication counts to only human records, while the
+    #    Species facet does NOT constrain its own option list.
     recs = [
         {"facet_species": "human", "facet_indication": "obesity_weight; diabetes_glycemic"},
         {"facet_species": "human", "facet_indication": "obesity_weight"},
         {"facet_species": "mouse", "facet_indication": "obesity_weight"},
     ]
     multi = {"facet_species", "facet_indication"}
-    counts = site._cross_filter_counts(recs, {"facet_species": "human", "facet_indication": ""}, multi)
-    # Indication counts respect the human filter: obesity 2 (both human), diabetes 1.
-    check("cross-filter indication respects species", counts["facet_indication"].get("obesity_weight") == 2)
+    inc_human = {"facet_species": {"inc": ["human"], "exc": []},
+                 "facet_indication": {"inc": [], "exc": []}}
+    counts = site._cross_filter_counts(recs, inc_human, multi)
+    # Indication counts respect the human include filter: obesity 2 (both human), diabetes 1.
+    check("cross-filter indication respects species include", counts["facet_indication"].get("obesity_weight") == 2)
     check("cross-filter indication excludes mouse-only", counts["facet_indication"].get("diabetes_glycemic") == 1)
     # Species facet ignores its OWN selection, so mouse is still counted (=1).
-    counts_sp = site._cross_filter_counts(recs, {"facet_species": "human"}, multi)
+    counts_sp = site._cross_filter_counts(recs, {"facet_species": {"inc": ["human"], "exc": []}}, multi)
     check("facet does not constrain itself", counts_sp["facet_species"].get("mouse") == 1)
     check("facet self count includes selected", counts_sp["facet_species"].get("human") == 2)
+
+    # 6b) INCLUDE is OR-within-domain; multiple includes match records with ANY of them.
+    multi_inc = {"facet_indication": {"inc": ["obesity_weight", "diabetes_glycemic"], "exc": []}}
+    check("include OR: obesity+diabetes matches all obesity-or-diabetes records",
+          len([r for r in recs if site._record_passes(r, multi_inc, multi)]) == 3)
+    only_diab = {"facet_indication": {"inc": ["diabetes_glycemic"], "exc": []}}
+    check("include single: only diabetes record passes",
+          len([r for r in recs if site._record_passes(r, only_diab, multi)]) == 1)
+
+    # 6c) EXCLUDE drops any record carrying an excluded value, and wins over include.
+    excl_mouse = {"facet_species": {"inc": [], "exc": ["mouse"]}}
+    check("exclude mouse drops the mouse record",
+          len([r for r in recs if site._record_passes(r, excl_mouse, multi)]) == 2)
+    # exclude beats include on the same domain: include human but exclude the human
+    # record that also carries diabetes -> that record is dropped.
+    inc_and_exc = {"facet_indication": {"inc": ["obesity_weight"], "exc": ["diabetes_glycemic"]}}
+    passed = [r for r in recs if site._record_passes(r, inc_and_exc, multi)]
+    check("exclude wins over include on same domain",
+          all("diabetes_glycemic" not in r["facet_indication"] for r in passed) and len(passed) == 2)
+
+    # 6d) Year filter: before / after / range on pub_year.
+    yrecs = [{"pub_year": "2018"}, {"pub_year": "2021"}, {"pub_year": "2024"}, {"pub_year": ""}]
+    def ypass(yf):
+        return [r for r in yrecs if site._year_passes(r, yf)]
+    check("year after 2021 keeps 2021 & 2024", len(ypass({"mode": "after", "a": 2021})) == 2)
+    check("year before 2021 keeps 2018 & 2021", len(ypass({"mode": "before", "a": 2021})) == 2)
+    check("year range 2020-2023 keeps only 2021", len(ypass({"mode": "range", "a": 2020, "b": 2023})) == 1)
+    check("blank year passes when a bound applies is False",
+          {"pub_year": ""} not in ypass({"mode": "after", "a": 2000}))
+    check("no year mode passes everything", len(ypass(None)) == 4)
+
+    # 6e) Journal substring (case-insensitive) + min-citations via _record_passes.
+    jrecs = [{"journal": "Nature Medicine", "citation_count": "50"},
+             {"journal": "Cell Metabolism", "citation_count": "3"},
+             {"journal": "Diabetes Care", "citation_count": ""}]
+    check("journal contains 'nature' matches Nature Medicine",
+          len([r for r in jrecs if site._record_passes(r, {}, multi, journal_sub="nature")]) == 1)
+    check("min citations 10 keeps only the 50-cited paper",
+          len([r for r in jrecs if site._record_passes(r, {}, multi, min_citations=10)]) == 1)
+    check("blank citation_count fails a min-citations floor",
+          not site._record_passes(jrecs[2], {}, multi, min_citations=1))
 
     # 7) fetch mode inlines config but no record bodies.
     fetch_html = site.build_site  # sanity: callable exists
@@ -172,7 +215,8 @@ def run():
     ]
     multi2 = {"facet_species", "facet_drug_class"}
     c2 = site._cross_filter_counts(
-        recs2, {"facet_species": "human", "facet_drug_class": ""}, multi2)
+        recs2, {"facet_species": {"inc": ["human"], "exc": []},
+                "facet_drug_class": {"inc": [], "exc": []}}, multi2)
     check("new facet respects cross-filter (glp1 human=2)",
           c2["facet_drug_class"].get("glp1_agonist") == 2)
     check("new facet excludes mouse-only value (gip human=1)",
@@ -205,12 +249,17 @@ def run():
           "href=\"javascript:" not in feed_html.lower())
     check("authors rendered via el() textContent (authorsLine present)",
           "function authorsLine" in feed_html)
-    # (b) The explainer text is present (reliability + directness + notes lines).
+    # (b) The explainer text is present (reliability + directness lines).
     check("explainer: How to read this", "How to read this" in feed_html)
     check("explainer: directness line",
           "how directly the evidence applies to humans" in feed_html)
-    check("explainer: curator notes line",
-          "Notes are for curators" in feed_html)
+    # public build (default internal=False) must NOT emit the export-decisions
+    # button markup; the curator notes/approval code remains in the JS but is
+    # gated behind the runtime INTERNAL flag (see the dedicated --internal test).
+    check("public build omits export-decisions button",
+          "Export decisions" not in feed_html)
+    check("curator notes text is gated behind INTERNAL",
+          "if (INTERNAL) {" in feed_html and "Notes are for curators" in feed_html)
     # (c) The new facet filters appear as configured labels.
     check("new filter label Drug class rendered", "Drug class" in feed_html)
     # journal-tier badge helper wired in.
@@ -230,16 +279,17 @@ def run():
     check("visibleCount state present", "var visibleCount" in feed_html)
     check("Load more control present",
           'id="load-more"' in feed_html and "function loadMore" in feed_html)
-    check("count line uses filtered total (Showing X of Y matches)",
-          'of " + fmtInt(total) +' in feed_html and '" matches (refine filters' in feed_html)
+    check("count line uses base total (Showing X of Y papers)",
+          'Showing " + fmtInt(x) + " of " + fmtInt(y) + " papers"' in feed_html
+          and "filtered out" in feed_html)
     check("render window mounts only first visibleCount",
           "Math.min(visibleCount, total)" in feed_html)
     check("visibleCount resets on filter/search/sort change",
           "visibleCount = RENDER_LIMIT;" in feed_html)
-    # Cross-filter counts must be computed over the full filtered set, so they are
-    # driven by RECORDS (the complete data), never lastVisible / the render window.
+    # Cross-filter counts must be computed over the active base set (all or human),
+    # so they are driven by that base, never lastVisible / the render window.
     check("cross-filter counts independent of render cap",
-          "crossFilterCounts(filters, q)" in feed_html
+          "crossFilterCounts(base, filters, extra, q)" in feed_html
           and "lastVisible" not in feed_html.split("function crossFilterCounts")[1].split("}")[0])
 
     # 11) Experimental candidates load from the feed and drive the tab's visibility.
@@ -325,6 +375,95 @@ def run():
               'id="tab-experimental" style="display:none"' in html_empty)
         # No candidate payload -> empty experimental array inlined.
         check("empty experimental array inlined", '"experimental":[]' in html_empty)
+
+    # 13) Brand: user-facing text is "RetaBase", not "Retarats".
+    with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as out:
+        feed = {"records": [{"molecule_id": "retatrutide", "molecule_name": "Retatrutide",
+                             "title": "T", "facet_all": "x"}],
+                "molecules": [{"molecule_id": "retatrutide", "molecule_name": "Retatrutide",
+                               "auto_published": "1"}]}
+        with open(os.path.join(src, "site_data.json"), "w", encoding="utf-8") as fh:
+            json.dump(feed, fh)
+        site.build_site(src, out, mode="inline")
+        with open(os.path.join(out, "index.html"), encoding="utf-8") as fh:
+            brand_html = fh.read()
+        check("brand: RetaBase in title", "RetaBase" in brand_html)
+        check("brand: no user-facing 'Retarats' text", "Retarats" not in brand_html)
+        check("Bioactives tab present (renamed Molecules)",
+              ">Bioactives<" in brand_html)
+        check("Clinical evidence tab present", "Clinical evidence" in brand_html)
+        check("About / Methods tab present", "About / Methods" in brand_html)
+        # About page carries the actual rank formula.
+        check("About page carries rank formula (0.33 directness)",
+              "0.33" in brand_html and "directness" in brand_html)
+
+    # 14) --internal toggles the curator approval UI. Public build (default) omits
+    #     the approve/reject/notes + export-decisions markup entirely; the internal
+    #     build keeps them. Both remain injection-safe.
+    with tempfile.TemporaryDirectory() as src, \
+         tempfile.TemporaryDirectory() as pub, tempfile.TemporaryDirectory() as intr:
+        feed = {"records": [{"molecule_id": "retatrutide", "molecule_name": "Retatrutide",
+                             "title": "T", "evidence_class": "human_clinical_controlled",
+                             "website_section": "Human evidence", "facet_all": "x"}],
+                "molecules": [{"molecule_id": "retatrutide", "molecule_name": "Retatrutide",
+                               "auto_published": "1"}]}
+        with open(os.path.join(src, "site_data.json"), "w", encoding="utf-8") as fh:
+            json.dump(feed, fh)
+        rp = site.build_site(src, pub, mode="inline")            # default public
+        ri = site.build_site(src, intr, mode="inline", internal=True)  # internal
+        check("build_site reports public by default", rp["internal"] is False)
+        check("build_site reports internal when flagged", ri["internal"] is True)
+        with open(os.path.join(pub, "index.html"), encoding="utf-8") as fh:
+            pub_html = fh.read()
+        with open(os.path.join(intr, "index.html"), encoding="utf-8") as fh:
+            int_html = fh.read()
+        # public: no export button, approval row gated off (INTERNAL flag false).
+        check("public build has NO export-decisions button",
+              "Export decisions" not in pub_html)
+        check("public build sets internal flag false in payload",
+              '"internal":false' in pub_html)
+        check("public build gates approval row on INTERNAL",
+              "if (INTERNAL) card.appendChild(approvalRow" in pub_html)
+        # internal: export button present, internal flag true.
+        check("internal build HAS export-decisions button",
+              "Export decisions" in int_html)
+        check("internal build sets internal flag true in payload",
+              '"internal":true' in int_html)
+        # both keep the security invariants.
+        for name, txt in (("public", pub_html), ("internal", int_html)):
+            check(name + ": exactly 2 </script> tags", txt.count("</script>") == 2)
+            check(name + ": no </script> breakout", "</script><" not in txt)
+            check(name + ": no javascript: href", 'href="javascript:' not in txt.lower())
+
+    # 15) Clinical-evidence human-only filter: the JS isHuman() definition must
+    #     cover exactly the human evidence classes / sections, and the browser must
+    #     switch its base set on the Clinical tab. Assert the definition + wiring
+    #     are present so the human-only view can't silently drift.
+    with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as out:
+        feed = {"records": [
+                    {"molecule_id": "retatrutide", "molecule_name": "R", "title": "RCT",
+                     "evidence_class": "human_clinical_controlled", "website_section": "Human evidence",
+                     "facet_all": "x"},
+                    {"molecule_id": "retatrutide", "molecule_name": "R", "title": "mouse",
+                     "evidence_class": "preclinical_invivo", "website_section": "Preclinical evidence",
+                     "facet_all": "x"},
+                ],
+                "molecules": [{"molecule_id": "retatrutide", "molecule_name": "R", "auto_published": "1"}]}
+        with open(os.path.join(src, "site_data.json"), "w", encoding="utf-8") as fh:
+            json.dump(feed, fh)
+        site.build_site(src, out, mode="inline")
+        with open(os.path.join(out, "index.html"), encoding="utf-8") as fh:
+            clin_html = fh.read()
+        for cls in ("human_clinical_controlled", "human_clinical",
+                    "human_observational", "evidence_synthesis"):
+            check("isHuman covers class " + cls, '"' + cls + '"' in clin_html)
+        check("isHuman covers Human evidence section", '"Human evidence"' in clin_html)
+        check("isHuman covers Reviews and overviews section",
+              '"Reviews and overviews"' in clin_html)
+        check("clinical view switches base to human-only",
+              'currentView === "clinical" ? RECORDS.filter(isHuman) : RECORDS' in clin_html)
+        check("Clinical tab wires to clinical view",
+              "showTab('clinical')" in clin_html)
 
     print(f"\n{PASS} passed, {FAIL} failed")
     return 0 if FAIL == 0 else 1

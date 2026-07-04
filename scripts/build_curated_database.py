@@ -260,8 +260,8 @@ def build(db_path: str, out_dir: str, limit: int = 0) -> dict:
 # Compact field set the browsable site needs (keeps site_data.json small).
 SITE_JSON_FIELDS = [
     "molecule_id", "molecule_name", "pmid", "doi", "title", "journal", "pub_year",
-    "authors_short", "first_author", "author_count",
-    "website_section", "evidence_class_label", "publication_status",
+    "authors_short", "first_author", "author_count", "citation_count",
+    "website_section", "evidence_class", "evidence_class_label", "publication_status",
     "reliability_score", "reliability_tier", "evidence_directness", "directness_tier",
     "reliability_components", "rank_components",
     "journal_reputation", "journal_tier",
@@ -285,8 +285,16 @@ def _load_experimental(path: str = os.path.join("config", "EXPERIMENTAL_MOLECULE
     out = []
     with open(path, newline="", encoding="utf-8") as fh:
         for row in csv.DictReader(fh):
-            if (row.get("molecule_id") or "").strip():
-                out.append({k: (v or "").strip() for k, v in row.items()})
+            if not (row.get("molecule_id") or "").strip():
+                continue
+            # Only surface candidates that are genuinely still experimental / not
+            # yet indexed. Rows promoted into the live molecule list (marked e.g.
+            # status=live_deduped) are excluded so the public "Experimental" tab
+            # never presents already-live molecules as "not yet indexed".
+            status = (row.get("status") or "").strip().lower()
+            if "live" in status or status in {"promoted", "indexed"}:
+                continue
+            out.append({k: (v or "").strip() for k, v in row.items()})
     return out
 
 

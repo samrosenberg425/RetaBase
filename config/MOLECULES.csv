@@ -1,6 +1,6 @@
 molecule_id,display_name,type,mechanism_class,status,synonyms_csv,exclusions_csv,active,notes
 slu_pp_332,SLU-PP-332,small_molecule,nuclear_receptor_err_agonist,preclinical,"SLU-PP-332, SLU PP 332, SLU-PP332, SLU332",ERR,True,never search ERR alone
-retatrutide,Retatrutide,peptide,incretin_triagonist,clinical,"Retatrutide, LY-3437943, LY3437943",Reta,True,avoid “Reta”
+retatrutide,Retatrutide,peptide,incretin_triagonist,clinical,"Retatrutide, LY-3437943, LY3437943, GGG tri-agonist, GLP-1 GIP glucagon triagonist",Reta,True,avoid “Reta”; folded retatrutide_analogs triagonist terms
 selank,Selank,peptide,nootropic_peptide,research_only,Selank,,True,
 semax,Semax,peptide,nootropic_peptide,research_only,Semax,,True,
 bpc_157,BPC-157,peptide,wound_healing_actin_peptide,research_only,"BPC-157, BPC157, Body Protection Compound-157",,True,
@@ -24,7 +24,7 @@ melanotan_ii,Melanotan II,peptide,melanocortin_agonist,research_only,"Melanotan 
 melanotan_i,Melanotan I,peptide,melanocortin_agonist,approved,"Melanotan I, Afamelanotide",,True,Afamelanotide is the clean name
 dihexa,Dihexa,small_molecule,hgf_mimetic_synaptogenesis_modulator,research_only,"Dihexa, PNB-0408",,True,
 cerebrolysin,Cerebrolysin,mixture,neurotrophic_mixture,clinical,Cerebrolysin,,True,
-cagrilintide,Cagrilintide,peptide,amylin_analog,clinical,"Cagrilintide, AM833, AM-833",,True,
+cagrilintide,Cagrilintide,peptide,amylin_analog,clinical,"Cagrilintide, AM833, AM-833, NNC0174-0833",,True,
 aod_9604,AOD-9604,peptide,ghrh_analog,research_only,"AOD-9604, hGH fragment 176-191",,True,keep strict
 follistatin_344,Follistatin-344,peptide,myostatin_inhibitor,research_only,"Follistatin-344, FST-344",,True,
 igf_1_lr3,IGF-1 LR3,peptide,igf1_analog,research_only,"IGF-1 LR3, Long-R3 IGF-1",,True,
@@ -50,14 +50,14 @@ amino_1mq,5-Amino-1MQ,small_molecule,nnmt_inhibitor,research_only,"5-Amino-1MQ, 
 gw501516,GW501516 (Cardarine),small_molecule,ppar_delta_agonist,research_only,"GW501516, GW 501516, Cardarine",,True,
 sr9009,SR9009,small_molecule,rev_erb_agonist,research_only,"SR9009, SR 9009",,True,
 sr9011,SR9011,small_molecule,rev_erb_agonist,research_only,"SR9011, SR 9011",,True,
-urolithin_a,Urolithin A,small_molecule,mitophagy_modulator,clinical,Urolithin A,,True,
+urolithin_a,Urolithin A,small_molecule,mitophagy_modulator,clinical,"Urolithin A, Mitopure, UA (urolithin)",,True,folded experimental terms (Mitopure)
 nmn,NMN (Nicotinamide mononucleotide),small_molecule,nad_precursor,clinical,"Nicotinamide mononucleotide, NMN",NMN (alone),True,use co-term with nicotinamide
 nicotinamide_riboside,Nicotinamide Riboside (NR),small_molecule,nad_precursor,clinical,"Nicotinamide riboside, NR",NR (alone),True,NR alone too broad
 thymopentin,Thymopentin (TP5),peptide,thymic_immunomodulator,clinical,"Thymopentin, TP5",,True,TP5 can be broad; keep strict
 idr_1018,IDR-1018,peptide,immunomodulatory_peptide,research_only,"IDR-1018, IDR 1018",,True,
 setmelanotide,Setmelanotide,peptide,melanocortin_agonist,approved,"Setmelanotide, IMCIVREE",,True,
-tirzepatide,Tirzepatide,peptide,incretin_dual_agonist,approved,"Tirzepatide, LY3298176",,True,
-mazdutide,Mazdutide,peptide,glucagon_glp1_dual_agonist,clinical,"Mazdutide, IBI362, IBI-362",,True,
+tirzepatide,Tirzepatide,peptide,incretin_dual_agonist,approved,"Tirzepatide, LY3298176, LY-3298176, Mounjaro, Zepbound",,True,GIP/GLP-1 dual agonist
+mazdutide,Mazdutide,peptide,glucagon_glp1_dual_agonist,clinical,"Mazdutide, IBI362, IBI-362, LY3305677, OXM analog",,True,folded experimental terms (OXM analog)
 survodutide,Survodutide,peptide,glucagon_glp1_dual_agonist,clinical,"Survodutide, BI 456906, BI-456906",,True,
 pemvidutide,Pemvidutide,peptide,glucagon_glp1_dual_agonist,clinical,"Pemvidutide, ALT-801, ALT 801",,True,
 orforglipron,Orforglipron,small_molecule,glp1ra_oral,clinical,"Orforglipron, LY3502970, LY-3502970",,True,
@@ -85,3 +85,44 @@ alcar,ALCAR (Acetyl-L-Carnitine),small_molecule,mitochondrial_metabolic_support,
 nadh,NADH,small_molecule,mitochondrial_redox_cofactor,supplement,"NADH, reduced nicotinamide adenine dinucleotide",NADH alone broad,True,require reduced form
 glutathione,Glutathione,small_molecule,antioxidant_redox,clinical,"Glutathione, GSH",GSH alone,True,GSH too broad
 p22_2,P-22–2,peptide,experimental_peptide,research_only,"P-22-2, P22-2, P 22-2",,True,verify PubMed presence
+semaglutide,Semaglutide,peptide,incretin_glp1_agonist,clinical,"Semaglutide, Ozempic, Wegovy, Rybelsus, NN9535",,True,added 2026: gap-fill candidate
+liraglutide,Liraglutide,peptide,incretin_glp1_agonist,clinical,"Liraglutide, Victoza, Saxenda, NN2211",,True,added 2026: gap-fill candidate
+dulaglutide,Dulaglutide,peptide,incretin_glp1_agonist,clinical,"Dulaglutide, Trulicity, LY2189265",,True,added 2026: gap-fill candidate
+exenatide,Exenatide,peptide,incretin_glp1_agonist,clinical,"Exenatide, Exendin-4, Byetta, Bydureon, AC2993",,True,added 2026: gap-fill candidate
+lixisenatide,Lixisenatide,peptide,incretin_glp1_agonist,clinical,"Lixisenatide, AVE0010, Adlyxin, Lyxumia",,True,added 2026: gap-fill candidate
+cagrisema,CagriSema,peptide,amylin_glp1_combo,clinical,"CagriSema, cagrilintide semaglutide",,True,added 2026: gap-fill candidate
+amycretin,Amycretin,peptide,glp1_amylin_agonist,clinical,"Amycretin, NN9487, NNC0487-0111",,True,added 2026: gap-fill candidate
+petrelintide,Petrelintide,peptide,amylin_analog,clinical,"Petrelintide, ZP8396",,True,added 2026: gap-fill candidate
+maridebart_cafraglutide,Maridebart cafraglutide (MariTide),peptide,gipr_antagonist_glp1_agonist,clinical,"Maridebart cafraglutide, MariTide, AMG 133, AMG133",,True,added 2026: gap-fill candidate
+efinopegdutide,Efinopegdutide,peptide,glucagon_glp1_dual_agonist,clinical,"Efinopegdutide, MK-6024, HM12525A, JNJ-64565111",,True,added 2026: gap-fill candidate
+ecnoglutide,Ecnoglutide,peptide,incretin_glp1_agonist,clinical,"Ecnoglutide, XW003",,True,added 2026: gap-fill candidate
+tesofensine,Tesofensine,small_molecule,monoamine_reuptake_inhibitor,clinical,"Tesofensine, NS2330",,True,added 2026: gap-fill candidate
+bimagrumab,Bimagrumab,peptide,activin_receptor_antibody,clinical,"Bimagrumab, BYM338",,True,added 2026: gap-fill candidate
+efruxifermin,Efruxifermin,peptide,fgf21_analog,clinical,"Efruxifermin, AKR-001, AMG 876",,True,added 2026: gap-fill candidate
+pegozafermin,Pegozafermin,peptide,fgf21_analog,clinical,"Pegozafermin, BIO89-100",,True,added 2026: gap-fill candidate
+teriparatide,Teriparatide,peptide,pth_analog_bone_anabolic,clinical,"Teriparatide, PTH 1-34, Forteo",,True,added 2026: gap-fill candidate
+abaloparatide,Abaloparatide,peptide,pthrp_analog_bone_anabolic,clinical,"Abaloparatide, BA058, Tymlos",,True,added 2026: gap-fill candidate
+navitoclax,Navitoclax,small_molecule,senolytic_bcl2_inhibitor,clinical,"Navitoclax, ABT-263",,True,added 2026: gap-fill candidate
+trofinetide,Trofinetide,peptide,igf1_analog_glypromate,clinical,"Trofinetide, NNZ-2566, Daybue",,True,added 2026: gap-fill candidate
+mk_677,MK-677 (Ibutamoren),small_molecule,ghsr_agonist_secretagogue,clinical,"MK-677, MK677, Ibutamoren, Ibutamoren mesylate, L-163191",,True,MK-677 growth hormone secretagogue
+apelin,Apelin,peptide,apelin_apj_axis,research_only,"Apelin, Apelin-13, Apelin-17, Apelin-36, APLN",APJ,True,do not search APJ/APLN gene alone
+elabela,Elabela (Toddler/Apela),peptide,apelin_apj_axis,research_only,"Elabela, ELABELA, Toddler peptide, Apela, APELA",,True,apelin receptor ligand
+serelaxin,Serelaxin,peptide,relaxin_rxfp1_agonist,clinical,"Serelaxin, RLX030, recombinant human relaxin-2, rhRLX",,True,relaxin-2 analog
+gdf15,GDF15,peptide,gdf15_gfral_axis,research_only,"GDF15, GDF-15, growth differentiation factor 15, MIC-1, NAG-1, GFRAL ligand",MIC1,True,require full GDF15 token; MIC-1 ambiguous
+klotho,Klotho,peptide,klotho_longevity_factor,research_only,"Klotho, alpha-Klotho, α-Klotho, soluble klotho, sKlotho, KL protein",,True,longevity/aging factor
+fgf21,FGF21,peptide,fgf21_analog,research_only,"FGF21, FGF-21, fibroblast growth factor 21",,True,native FGF21 (analogs efruxifermin/pegozafermin separate)
+myostatin,Myostatin (GDF-8),peptide,myostatin_inhibitor,research_only,"Myostatin, GDF-8, GDF8, growth differentiation factor 8, MSTN",MSTN,True,require full myostatin/GDF-8; MSTN gene ambiguous
+follistatin,Follistatin,peptide,myostatin_inhibitor,research_only,"Follistatin, FST protein, follistatin-315, FS-315",FST,True,FST alone gene-ambiguous
+ace_031,ACE-031 (Ramatercept),peptide,activin_receptor_ligand_trap,clinical,"ACE-031, Ramatercept, ActRIIB-Fc",,True,activin receptor IIB ligand trap
+sotatercept,Sotatercept,peptide,activin_receptor_ligand_trap,approved,"Sotatercept, ACE-011, ACE011, Winrevair",,True,activin ligand trap (PAH)
+nnc0165_1875,Amylin agonist NNC0165-1875,peptide,amylin_analog,clinical,"NNC0165-1875, NNC0165 1875",,True,long-acting amylin analog
+enavogliflozin,Enavogliflozin,small_molecule,sglt2_inhibitor,approved,"Enavogliflozin, DWP16001",,True,SGLT2 inhibitor
+empagliflozin,Empagliflozin,small_molecule,sglt2_inhibitor,approved,"Empagliflozin, BI 10773, Jardiance",,True,SGLT2 inhibitor (metabolic/longevity interest)
+dapagliflozin,Dapagliflozin,small_molecule,sglt2_inhibitor,approved,"Dapagliflozin, BMS-512148, Farxiga, Forxiga",,True,SGLT2 inhibitor
+canagliflozin,Canagliflozin,small_molecule,sglt2_inhibitor,approved,"Canagliflozin, JNJ-28431754, TA-7284, Invokana",,True,SGLT2 inhibitor (ITP lifespan data)
+17_alpha_estradiol,17-alpha-Estradiol,small_molecule,longevity_geroprotector,preclinical,"17-alpha-estradiol, 17a-estradiol, 17α-estradiol, alfatradiol",,True,ITP lifespan-extending compound
+spermidine,Spermidine,small_molecule,autophagy_inducer,supplement,"Spermidine, spermidine trihydrochloride",,True,autophagy inducer / longevity
+ergothioneine,Ergothioneine,small_molecule,antioxidant_longevity_vitamin,supplement,"Ergothioneine, L-ergothioneine, EGT",EGT,True,EGT alone ambiguous
+taurine,Taurine,small_molecule,metabolic_longevity_amino_derivative,supplement,"Taurine, 2-aminoethanesulfonic acid",,True,longevity/metabolic interest
+cotadutide,Cotadutide,peptide,glucagon_glp1_dual_agonist,clinical,"Cotadutide, MEDI0382, MEDI-0382",,True,GLP-1/glucagon dual agonist
+insulin_icodec,Insulin icodec,peptide,basal_insulin_analog,clinical,"Insulin icodec, NN1436, icodec, Awiqli",,True,once-weekly basal insulin
