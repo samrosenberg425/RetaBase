@@ -1,0 +1,77 @@
+name: Update database and publish site
+
+# Scheduled incremental update: fetch new PubMed records, rebuild the curated
+# layer + site, and deploy the static dashboard to GitHub Pages. The (large)
+# SQLite corpus is kept in the Actions cache (~10 GB free per repo) so the git
+# repo stays small; only the compact site + curated exports are published.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"     # weekly, Mondays 06:00 UTC (change to "0 6 * * *" for daily)
+  workflow_dispatch:         # allow manual runs
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Restore the growing SQLite corpus from cache (survives between runs).
+      - name: Restore corpus cache
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: retarats-corpus-${{ github.run_id }}
+          restore-keys: |
+            retarats-corpus-
+
+      - name: Incremental PubMed fetch (last 8 days)
+        env:
+          NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+          NCBI_EMAIL: ${{ secrets.NCBI_EMAIL }}
+          API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
+        run: |
+          python3 retarats_v2.py --config-mode local --mode daily --daily-days 8 \
+            --summary-mode rule_based --sinks local \
+            --local-db data/retarats_pubmed.sqlite --state-db data/retarats_state.sqlite || true
+
+      - name: Backfill citation counts (OpenAlex, impact axis)
+        env:
+          API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
+        run: |
+          python3 scripts/run_impact_backfill.py --db data/retarats_pubmed.sqlite --max-records 2000 || true
+
+      - name: Rebuild curated layer + site
+        run: |
+          python3 scripts/build_curated_database.py --db data/retarats_pubmed.sqlite --out-dir exports/curated
+          python3 scripts/build_public_site.py --curated-dir exports/curated --out-dir exports/site --mode fetch
+          python3 scripts/validate_curated.py --curated-dir exports/curated || true
+          cp exports/curated/site_data.json exports/site/site_data.json
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: exports/site
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4

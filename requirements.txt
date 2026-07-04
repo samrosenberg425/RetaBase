@@ -1,0 +1,10 @@
+gspread==6.*
+google-auth==2.*
+google-auth-oauthlib==1.*
+google-auth-httplib2==0.2.*
+google-api-python-client
+requests==2.32.*
+pandas==2.*
+urllib3<2  # v1.26 supports macOS LibreSSL; silences the NotOpenSSLWarning on system Python 3.9
+python-dotenv
+openpyxl

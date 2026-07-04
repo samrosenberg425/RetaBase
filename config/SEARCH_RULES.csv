@@ -1,0 +1,89 @@
+rule_id,molecule_id,match_strength,query_string,active,notes
+slu_pp_332_strict_tiab_v1,slu_pp_332,strict,"(""SLU-PP-332""[tiab] OR ""SLU PP 332""[tiab] OR ""SLU-PP332""[tiab] OR ""SLU332""[tiab])",True,
+retatrutide_strict_tiab_v1,retatrutide,strict,"(""Retatrutide""[tiab] OR ""LY-3437943""[tiab] OR ""LY3437943""[tiab])",True,
+selank_strict_tiab_v1,selank,strict,"(""Selank""[tiab] OR ""Selank peptide""[tiab])",True,
+semax_strict_tiab_v1,semax,strict,"(""Semax""[tiab] OR ""Semax peptide""[tiab])",True,
+bpc_157_strict_tiab_v1,bpc_157,strict,"(""BPC-157""[tiab] OR ""BPC157""[tiab] OR ""BPC 157""[tiab] OR ""Body Protection Compound-157""[tiab])",True,
+thymosin_beta_4_strict_tiab_v1,thymosin_beta_4,strict,"(""Thymosin beta-4""[tiab] OR ""Thymosin beta 4""[tiab] OR ""TB4""[tiab] OR ""TB-4""[tiab])",True,
+tb_500_strict_tiab_v1,tb_500,strict,"(""TB-500""[tiab] OR ""TB500""[tiab] OR ""TB 500""[tiab])",True,
+thymosin_alpha_1_strict_tiab_v1,thymosin_alpha_1,strict,"(""Thymosin alpha-1""[tiab] OR ""Thymosin alpha 1""[tiab] OR ""TA-1""[tiab] OR ""TA1""[tiab])",True,
+sermorelin_strict_tiab_v1,sermorelin,strict,"(""Sermorelin""[tiab] OR ""GRF 1-29""[tiab] OR ""GRF(1-29)""[tiab])",True,
+cjc_1295_strict_tiab_v1,cjc_1295,strict,"(""CJC-1295""[tiab] OR ""CJC 1295""[tiab] OR ""CJC DAC""[tiab] OR ""CJC no-DAC""[tiab] OR ""MOD-GRF(1-29)""[tiab] OR ""MOD GRF 1-29""[tiab])",True,fixes explosion
+cjc_1295_broad_allfields_v1,cjc_1295,broad,"(""CJC-1295""[All Fields] OR ""MOD-GRF(1-29)""[All Fields]) NOT (""Can J Cardiol""[jour] OR ""Canadian Journal of Cardiology""[jour])",True,optional
+ipamorelin_strict_tiab_v1,ipamorelin,strict,"(""Ipamorelin""[tiab])",True,
+tesamorelin_strict_tiab_v1,tesamorelin,strict,"(""Tesamorelin""[tiab] OR ""Egrifta""[tiab])",True,
+hexarelin_strict_tiab_v1,hexarelin,strict,"(""Hexarelin""[tiab])",True,
+ghrp_2_strict_tiab_v1,ghrp_2,strict,"(""GHRP-2""[tiab] OR ""Growth Hormone Releasing Peptide-2""[tiab] OR ""Growth hormone releasing peptide-2""[tiab])",True,
+ghrp_6_strict_tiab_v1,ghrp_6,strict,"(""GHRP-6""[tiab] OR ""Growth Hormone Releasing Peptide-6""[tiab] OR ""Growth hormone releasing peptide-6""[tiab])",True,
+ghk_cu_strict_tiab_v1,ghk_cu,strict,"(""GHK-Cu""[tiab] OR ""GHK Cu""[tiab] OR ""GHKCu""[tiab])",True,
+dsip_strict_tiab_v1,dsip,strict,"(""DSIP""[tiab] OR ""delta sleep-inducing peptide""[tiab])",True,
+mots_c_strict_tiab_v1,mots_c,strict,"(""MOTS-c""[tiab] OR ""MOTS C""[tiab] OR ""MOTSc""[tiab])",True,
+humanin_strict_tiab_v1,humanin,strict,"(""Humanin""[tiab] OR ""mitochondrial-derived peptide""[tiab] OR ""mitochondrial derived peptide""[tiab])",True,removes HN
+humanin_broad_gene_v1,humanin,broad,"(""Humanin""[All Fields] OR ""MTRNR2""[All Fields] OR ""MTRNR2L""[All Fields]) NOT (""head and neck""[tiab] OR ""H&N""[tiab])",True,optional
+kisspeptin_strict_tiab_v1,kisspeptin,strict,"(""Kisspeptin""[tiab] OR ""Kisspeptin-10""[tiab] OR ""KP-10""[tiab] OR ""Metastin""[tiab])",True,
+pt_141_strict_tiab_v1,pt_141,strict,"(""PT-141""[tiab] OR ""Bremelanotide""[tiab])",True,
+melanotan_ii_strict_tiab_v1,melanotan_ii,strict,"(""Melanotan II""[tiab] OR ""MT-II""[tiab])",True,
+melanotan_i_strict_tiab_v1,melanotan_i,strict,"(""Afamelanotide""[tiab] OR ""Melanotan I""[tiab])",True,
+dihexa_strict_tiab_v1,dihexa,strict,"(""Dihexa""[tiab] OR ""PNB-0408""[tiab])",True,
+cerebrolysin_strict_tiab_v1,cerebrolysin,strict,"(""Cerebrolysin""[tiab])",True,
+cagrilintide_strict_tiab_v1,cagrilintide,strict,"(""Cagrilintide""[tiab] OR ""AM833""[tiab] OR ""AM-833""[tiab])",True,
+aod_9604_strict_tiab_v1,aod_9604,strict,"(""AOD-9604""[tiab] OR ((""hGH""[tiab] OR ""HGH""[tiab]) AND (""176-191""[tiab] OR ""176 191""[tiab])))",True,
+follistatin_344_strict_tiab_v1,follistatin_344,strict,"(""Follistatin-344""[tiab] OR ""FST-344""[tiab])",True,
+igf_1_lr3_strict_tiab_v1,igf_1_lr3,strict,"(""IGF-1 LR3""[tiab] OR ""Long-R3 IGF-1""[tiab] OR ""Long R3 IGF-1""[tiab])",True,
+igf_1_des_strict_tiab_v1,igf_1_des,strict,"(""IGF-1 DES""[tiab] OR ""IGF-1 DES(1-3)""[tiab] OR ""IGF-1 (1-3)""[tiab])",True,
+epitalon_strict_tiab_v1,epitalon,strict,"(""Epitalon""[tiab] OR ""Epithalon""[tiab] OR ""Epithalamin""[tiab])",True,
+thymalin_strict_tiab_v1,thymalin,strict,"(""Thymalin""[tiab])",True,
+pinealon_strict_tiab_v1,pinealon,strict,"(""Pinealon""[tiab])",True,
+ll_37_strict_tiab_v1,ll_37,strict,"(""LL-37""[tiab] OR (""cathelicidin""[tiab] AND ""LL-37""[tiab]))",True,avoids cathelicidin-only flood
+peg_mgf_strict_tiab_v1,peg_mgf,strict,"(""PEG-MGF""[tiab] OR (""PEGylated""[tiab] AND (""mechano growth factor""[tiab] OR ""MGF""[tiab])))",True,
+mgf_igf1ec_strict_tiab_v1,mgf_igf1ec,strict,"(""mechano growth factor""[tiab] OR ""IGF-1Ec""[tiab] OR ""IGF1Ec""[tiab] OR ""IGF-IEc""[tiab])",True,no MGF alone
+gdf_11_strict_tiab_v1,gdf_11,strict,"(""GDF-11""[tiab] OR ""growth differentiation factor 11""[tiab])",True,
+kpv_strict_tiab_v1,kpv,strict,"((""KPV""[tiab] AND (tripeptide[tiab] OR ""alpha-MSH""[tiab] OR ""α-MSH""[tiab] OR melanocortin[tiab])) OR ""Lys-Pro-Val""[tiab])",True,prevents sequence-noise
+foxo4_dri_strict_tiab_v1,foxo4_dri,strict,"(""FOXO4-DRI""[tiab] OR ""FOXO4 DRI""[tiab])",True,
+ara_290_strict_tiab_v1,ara_290,strict,"(""ARA-290""[tiab] OR ""Cibinetide""[tiab])",True,
+p21_peptide_strict_tiab_v1,p21_peptide,strict,"((""p21 peptide""[tiab] OR ""CDKN1A peptide""[tiab]) AND (senescence[tiab] OR aging[tiab] OR fibrosis[tiab] OR ""cell cycle""[tiab]))",True,p21 alone too broad
+ss_31_strict_tiab_v1,ss_31,strict,"(""SS-31""[tiab] OR ""Elamipretide""[tiab] OR ""Bendavia""[tiab])",True,
+noopept_strict_tiab_v1,noopept,strict,"(""Noopept""[tiab] OR ""N-phenylacetyl-L-prolylglycine ethyl ester""[tiab])",True,
+prl_8_53_strict_tiab_v1,prl_8_53,strict,"(""PRL-8-53""[tiab] OR ""PRL 8-53""[tiab])",True,
+nsi_189_strict_tiab_v1,nsi_189,strict,"(""NSI-189""[tiab] OR ""NSI 189""[tiab])",True,
+isrib_strict_tiab_v1,isrib,strict,"(""ISRIB""[tiab])",True,
+tak_653_strict_tiab_v1,tak_653,strict,"(""TAK-653""[tiab] OR ""TAK 653""[tiab])",True,
+amino_1mq_strict_tiab_v1,amino_1mq,strict,"(""5-Amino-1MQ""[tiab] OR ""5 amino 1MQ""[tiab])",True,
+gw501516_strict_tiab_v1,gw501516,strict,"(""GW501516""[tiab] OR ""GW 501516""[tiab] OR ""Cardarine""[tiab])",True,
+sr9009_strict_tiab_v1,sr9009,strict,"(""SR9009""[tiab] OR ""SR 9009""[tiab])",True,
+sr9011_strict_tiab_v1,sr9011,strict,"(""SR9011""[tiab] OR ""SR 9011""[tiab])",True,
+urolithin_a_strict_tiab_v1,urolithin_a,strict,"(""Urolithin A""[tiab])",True,
+nmn_strict_tiab_v1,nmn,strict,"(""nicotinamide mononucleotide""[tiab] OR (""NMN""[tiab] AND nicotinamide[tiab]))",True,avoids NMN ambiguity
+nicotinamide_riboside_strict_tiab_v1,nicotinamide_riboside,strict,"(""nicotinamide riboside""[tiab] OR ((""NR""[tiab]) AND nicotinamide[tiab] AND riboside[tiab]))",True,avoids NR ambiguity
+thymopentin_strict_tiab_v1,thymopentin,strict,"(""Thymopentin""[tiab] OR ""TP5""[tiab])",True,TP5 ok only here
+idr_1018_strict_tiab_v1,idr_1018,strict,"(""IDR-1018""[tiab] OR ""IDR 1018""[tiab])",True,
+setmelanotide_strict_tiab_v1,setmelanotide,strict,"(""Setmelanotide""[tiab] OR ""IMCIVREE""[tiab])",True,
+tirzepatide_strict_tiab_v1,tirzepatide,strict,"(""Tirzepatide""[tiab] OR ""LY3298176""[tiab])",True,
+mazdutide_strict_tiab_v1,mazdutide,strict,"(""Mazdutide""[tiab] OR ""IBI362""[tiab] OR ""IBI-362""[tiab])",True,
+survodutide_strict_tiab_v1,survodutide,strict,"(""Survodutide""[tiab] OR ""BI 456906""[tiab] OR ""BI-456906""[tiab])",True,
+pemvidutide_strict_tiab_v1,pemvidutide,strict,"(""Pemvidutide""[tiab] OR ""ALT-801""[tiab] OR ""ALT 801""[tiab])",True,
+orforglipron_strict_tiab_v1,orforglipron,strict,"(""Orforglipron""[tiab] OR ""LY3502970""[tiab] OR ""LY-3502970""[tiab])",True,
+vk2735_strict_tiab_v1,vk2735,strict,"(""VK2735""[tiab] OR ""VK-2735""[tiab])",True,
+danuglipron_strict_tiab_v1,danuglipron,strict,"(""Danuglipron""[tiab] OR ""PF-06882961""[tiab] OR ""PF 06882961""[tiab])",True,
+rapamycin_strict_tiab_v1,rapamycin,strict,"(""Rapamycin""[tiab] OR ""Sirolimus""[tiab])",True,
+metformin_strict_tiab_v1,metformin,strict,"(""Metformin""[tiab])",True,
+dasatinib_strict_tiab_v1,dasatinib,strict,"(""Dasatinib""[tiab])",True,
+quercetin_strict_tiab_v1,quercetin,strict,"(""Quercetin""[tiab])",True,
+fisetin_strict_tiab_v1,fisetin,strict,"(""Fisetin""[tiab])",True,
+akg_strict_tiab_v1,akg,strict,"(""alpha-ketoglutarate""[tiab] OR ""α-ketoglutarate""[tiab] OR (""AKG""[tiab] AND ketoglutarate[tiab]))",True,avoids AKG ambiguity
+vasculotide_strict_tiab_v1,vasculotide,strict,"(""Vasculotide""[tiab])",True,
+angiotensin_1_7_strict_tiab_v1,angiotensin_1_7,strict,"((""angiotensin-(1-7)""[tiab] OR ""Ang-(1-7)""[tiab] OR ""Ang 1-7""[tiab]) AND (analog*[tiab] OR agonist*[tiab] OR ""Mas receptor""[tiab] OR ""AVE 0991""[tiab]))",True,focuses on analog/axis
+vilon_strict_tiab_v1,vilon,strict,"(""Vilon""[tiab])",True,
+vip_strict_tiab_v1,vip,strict,"(""Vasoactive Intestinal Peptide""[tiab] OR (""VIP""[tiab] AND ""vasoactive intestinal peptide""[tiab]))",True,avoids VIP acronym noise
+vesugen_strict_tiab_v1,vesugen,strict,"(""Vesugen""[tiab])",True,
+cartalax_strict_tiab_v1,cartalax,strict,"(""Cartalax""[tiab])",True,
+cardogen_strict_tiab_v1,cardogen,strict,"(""Cardogen""[tiab] OR ""Cartagen""[tiab])",True,
+corgen_strict_tiab_v1,corgen,strict,"(""CORGEN""[tiab] OR ""Corgen""[tiab])",True,
+vesilute_strict_tiab_v1,vesilute,strict,"(""Vesilute""[tiab])",True,
+prostamax_strict_tiab_v1,prostamax,strict,"(""Prostamax""[tiab])",True,
+ldn_strict_tiab_v1,ldn,strict,"((""low dose naltrexone""[tiab] OR ""low-dose naltrexone""[tiab]) OR (""LDN""[tiab] AND naltrexone[tiab]))",True,prevents LDN acronym noise
+methylene_blue_strict_tiab_v1,methylene_blue,strict,"(""Methylene blue""[tiab] OR ""methylthioninium chloride""[tiab])",True,
+alcar_strict_tiab_v1,alcar,strict,"(""Acetyl-L-carnitine""[tiab] OR ""Acetyl L carnitine""[tiab] OR (""ALCAR""[tiab] AND carnitine[tiab]))",True,avoids standalone ALCAR
+nadh_strict_tiab_v1,nadh,strict,"(""reduced nicotinamide adenine dinucleotide""[tiab] OR (""NADH""[tiab] AND nicotinamide[tiab]))",True,
+glutathione_strict_tiab_v1,glutathione,strict,"(""Glutathione""[tiab] OR (""GSH""[tiab] AND glutathione[tiab]))",True,prevents GSH-only flood
+p22_2_strict_tiab_v1,p22_2,strict,"(""P-22-2""[tiab] OR ""P22-2""[tiab] OR ""P 22-2""[tiab])",True,

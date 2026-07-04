@@ -1,0 +1,87 @@
+molecule_id,display_name,type,mechanism_class,status,synonyms_csv,exclusions_csv,active,notes
+slu_pp_332,SLU-PP-332,small_molecule,nuclear_receptor_err_agonist,preclinical,"SLU-PP-332, SLU PP 332, SLU-PP332, SLU332",ERR,True,never search ERR alone
+retatrutide,Retatrutide,peptide,incretin_triagonist,clinical,"Retatrutide, LY-3437943, LY3437943",Reta,True,avoid “Reta”
+selank,Selank,peptide,nootropic_peptide,research_only,Selank,,True,
+semax,Semax,peptide,nootropic_peptide,research_only,Semax,,True,
+bpc_157,BPC-157,peptide,wound_healing_actin_peptide,research_only,"BPC-157, BPC157, Body Protection Compound-157",,True,
+thymosin_beta_4,Thymosin Beta-4,peptide,wound_healing_actin_peptide,research_only,"Thymosin beta-4, Thymosin beta 4, TB4, TB-4",,True,TB4 ok only in strict TIAB
+tb_500,TB-500,peptide,wound_healing_actin_peptide,research_only,"TB-500, TB500",,True,keep strict
+thymosin_alpha_1,Thymosin Alpha-1,peptide,thymic_immunomodulator,clinical,"Thymosin alpha-1, TA-1, TA1",,True,
+sermorelin,Sermorelin,peptide,ghrh_analog,research_only,"Sermorelin, GRF 1-29, GRF(1-29)",,True,keep TIAB
+cjc_1295,CJC-1295,peptide,ghrh_analog,research_only,"CJC-1295, MOD-GRF(1-29), CJC DAC, CJC no-DAC",CJC,True,do not search “CJC” alone
+ipamorelin,Ipamorelin,peptide,ghsr_agonist,research_only,Ipamorelin,Ipa,True,avoid “Ipa”
+tesamorelin,Tesamorelin,peptide,ghrh_analog,approved,"Tesamorelin, Egrifta",,True,
+hexarelin,Hexarelin,peptide,ghsr_agonist,research_only,Hexarelin,Hexa,True,avoid “Hexa”
+ghrp_2,GHRP-2,peptide,ghsr_agonist,research_only,"GHRP-2, Growth Hormone Releasing Peptide-2",,True,
+ghrp_6,GHRP-6,peptide,ghsr_agonist,research_only,"GHRP-6, Growth Hormone Releasing Peptide-6",,True,
+ghk_cu,GHK-Cu,peptide,copper_peptide_ecm,research_only,"GHK-Cu, GHKCu, GHK Cu",GKC,True,avoid “GKC”
+dsip,DSIP,peptide,sleep_peptide,research_only,"DSIP, delta sleep-inducing peptide",,True,DSIP can be ambiguous; keep strict
+mots_c,MOTS-c,peptide,mitochondrial_derived_peptide,research_only,"MOTS-c, MOTSc, MOTS C",,True,
+humanin,Humanin,peptide,mitochondrial_derived_peptide,research_only,"Humanin, MTRNR2, MTRNR2L",HN,True,NEVER use HN
+kisspeptin,Kisspeptin,peptide,kisspeptin_axis,research_only,"Kisspeptin, Kisspeptin-10, KP-10, Metastin",,True,
+pt_141,PT-141 (Bremelanotide),peptide,melanocortin_agonist,approved,"PT-141, Bremelanotide",,True,
+melanotan_ii,Melanotan II,peptide,melanocortin_agonist,research_only,"Melanotan II, MT-II",MT2,True,avoid MT2
+melanotan_i,Melanotan I,peptide,melanocortin_agonist,approved,"Melanotan I, Afamelanotide",,True,Afamelanotide is the clean name
+dihexa,Dihexa,small_molecule,hgf_mimetic_synaptogenesis_modulator,research_only,"Dihexa, PNB-0408",,True,
+cerebrolysin,Cerebrolysin,mixture,neurotrophic_mixture,clinical,Cerebrolysin,,True,
+cagrilintide,Cagrilintide,peptide,amylin_analog,clinical,"Cagrilintide, AM833, AM-833",,True,
+aod_9604,AOD-9604,peptide,ghrh_analog,research_only,"AOD-9604, hGH fragment 176-191",,True,keep strict
+follistatin_344,Follistatin-344,peptide,myostatin_inhibitor,research_only,"Follistatin-344, FST-344",,True,
+igf_1_lr3,IGF-1 LR3,peptide,igf1_analog,research_only,"IGF-1 LR3, Long-R3 IGF-1",,True,
+igf_1_des,IGF-1 DES,peptide,igf1_analog,research_only,"IGF-1 DES, IGF-1 DES(1-3), IGF-1 (1-3)",,True,
+epitalon,Epitalon (Epithalon),peptide,nootropic_peptide,research_only,"Epitalon, Epithalon, Epithalamin",,True,
+thymalin,Thymalin,peptide,thymic_immunomodulator,research_only,Thymalin,,True,may need transliterations later
+pinealon,Pinealon,peptide,nootropic_peptide,research_only,Pinealon,,True,may need transliterations later
+ll_37,LL-37,peptide,antimicrobial_peptide,research_only,"LL-37, cathelicidin",CAMP,True,don’t search CAMP alone
+peg_mgf,PEG-MGF,peptide,igf1_analog,research_only,"PEG-MGF, PEGylated MGF",,True,keep strict
+mgf_igf1ec,MGF (IGF-1Ec),peptide,igf1_analog,research_only,"Mechano growth factor, IGF-1Ec, IGF1Ec, IGF-IEc",MGF (alone),True,MGF alone too broad
+gdf_11,GDF-11,peptide,tgf_beta_family,research_only,"GDF-11, growth differentiation factor 11",,True,
+kpv,KPV,peptide,melanocortin_antiinflammatory,research_only,"KPV, Lys-Pro-Val",,True,KPV alone risky; require context
+foxo4_dri,FOXO4-DRI,peptide,senolytic_peptide,research_only,"FOXO4-DRI, FOXO4 DRI",,True,
+ara_290,ARA-290 (Cibinetide),peptide,epor_tissue_protective,clinical,"ARA-290, Cibinetide",,True,
+p21_peptide,P21 peptide,peptide,senescence_pathway,research_only,"p21 peptide, CDKN1A peptide",,True,“p21” is broad—keep strict
+ss_31,SS-31 (Elamipretide),peptide,mitochondrial_targeted_peptide,clinical,"SS-31, Elamipretide, Bendavia",,True,SS-31 ok; still keep strict
+noopept,Noopept,small_molecule,nootropic_small_molecule,research_only,"Noopept, N-phenylacetyl-L-prolylglycine ethyl ester",,True,
+prl_8_53,PRL-8-53,peptide,nootropic_peptide,research_only,"PRL-8-53, PRL 8-53",,True,
+nsi_189,NSI-189,small_molecule,neurogenesis_modulator,research_only,"NSI-189, NSI 189",,True,
+isrib,ISRIB,small_molecule,integrated_stress_response_inhibitor,research_only,ISRIB,,True,
+tak_653,TAK-653,small_molecule,ampa_pam,research_only,"TAK-653, TAK 653",,True,
+amino_1mq,5-Amino-1MQ,small_molecule,nnmt_inhibitor,research_only,"5-Amino-1MQ, 5 amino 1MQ",,True,
+gw501516,GW501516 (Cardarine),small_molecule,ppar_delta_agonist,research_only,"GW501516, GW 501516, Cardarine",,True,
+sr9009,SR9009,small_molecule,rev_erb_agonist,research_only,"SR9009, SR 9009",,True,
+sr9011,SR9011,small_molecule,rev_erb_agonist,research_only,"SR9011, SR 9011",,True,
+urolithin_a,Urolithin A,small_molecule,mitophagy_modulator,clinical,Urolithin A,,True,
+nmn,NMN (Nicotinamide mononucleotide),small_molecule,nad_precursor,clinical,"Nicotinamide mononucleotide, NMN",NMN (alone),True,use co-term with nicotinamide
+nicotinamide_riboside,Nicotinamide Riboside (NR),small_molecule,nad_precursor,clinical,"Nicotinamide riboside, NR",NR (alone),True,NR alone too broad
+thymopentin,Thymopentin (TP5),peptide,thymic_immunomodulator,clinical,"Thymopentin, TP5",,True,TP5 can be broad; keep strict
+idr_1018,IDR-1018,peptide,immunomodulatory_peptide,research_only,"IDR-1018, IDR 1018",,True,
+setmelanotide,Setmelanotide,peptide,melanocortin_agonist,approved,"Setmelanotide, IMCIVREE",,True,
+tirzepatide,Tirzepatide,peptide,incretin_dual_agonist,approved,"Tirzepatide, LY3298176",,True,
+mazdutide,Mazdutide,peptide,glucagon_glp1_dual_agonist,clinical,"Mazdutide, IBI362, IBI-362",,True,
+survodutide,Survodutide,peptide,glucagon_glp1_dual_agonist,clinical,"Survodutide, BI 456906, BI-456906",,True,
+pemvidutide,Pemvidutide,peptide,glucagon_glp1_dual_agonist,clinical,"Pemvidutide, ALT-801, ALT 801",,True,
+orforglipron,Orforglipron,small_molecule,glp1ra_oral,clinical,"Orforglipron, LY3502970, LY-3502970",,True,
+vk2735,VK2735,peptide,incretin_dual_agonist,clinical,"VK2735, VK-2735",,True,
+danuglipron,Danuglipron,small_molecule,glp1ra_oral,clinical,"Danuglipron, PF-06882961, PF 06882961",,True,
+rapamycin,Rapamycin (Sirolimus),small_molecule,mtor_inhibitor,approved,"Rapamycin, Sirolimus",,True,
+metformin,Metformin,small_molecule,ampk_metabolic_modulator,approved,Metformin,,True,
+dasatinib,Dasatinib,small_molecule,senolytic_small_molecule,approved,Dasatinib,,True,
+quercetin,Quercetin,small_molecule,senolytic_small_molecule,supplement,Quercetin,,True,
+fisetin,Fisetin,small_molecule,senolytic_small_molecule,supplement,Fisetin,,True,
+akg,Alpha-Ketoglutarate (AKG),small_molecule,tca_metabolite,supplement,"Alpha-ketoglutarate, α-ketoglutarate, AKG",AKG (alone),True,use co-term with ketoglutarate
+vasculotide,Vasculotide,peptide,tie2_agonist_vascular_stability,preclinical,Vasculotide,,True,
+angiotensin_1_7,Angiotensin-(1-7) analogs,peptide,mas_receptor_axis,clinical,"Angiotensin-(1-7), Ang-(1-7), Ang 1-7",,True,query focuses on Ang-(1-7) + analog/agonist
+vilon,Vilon,peptide,thymic_immunomodulator,research_only,Vilon,,True,Russian bioregulator peptide
+vip,VIP (Vasoactive Intestinal Peptide),peptide,neuropeptide_vasodilator,clinical,"Vasoactive Intestinal Peptide, VIP",VIP alone broad,True,VIP must be tied to full name
+vesugen,Vesugen,peptide,vascular_bioregulator,research_only,Vesugen,,True,Khavinson peptide
+cartalax,Cartalax,peptide,cartilage_bioregulator,research_only,Cartalax,,True,
+cardogen,Cardogen / Cartagen,peptide,cardiac_bioregulator,research_only,"Cardogen, Cartagen",,True,transliteration variability
+corgen,CORGEN,peptide,cardiac_bioregulator,research_only,"CORGEN, Corgen",,True,avoid case-only match
+vesilute,VESILUTE,peptide,vascular_bioregulator,research_only,Vesilute,,True,
+prostamax,PROSTAMAX,peptide,prostate_bioregulator,research_only,Prostamax,,True,
+ldn,Low-Dose Naltrexone (LDN),small_molecule,opioid_receptor_modulator,off_label,"Low dose naltrexone, LDN",LDN alone ambiguous,True,must include naltrexone context
+methylene_blue,Methylene Blue,small_molecule,mitochondrial_redox_modulator,clinical,"Methylene blue, methylthioninium chloride",,True,broad but acceptable
+alcar,ALCAR (Acetyl-L-Carnitine),small_molecule,mitochondrial_metabolic_support,supplement,"Acetyl-L-carnitine, Acetyl L carnitine, ALCAR",ALCAR alone,True,require acetyl-L-carnitine term
+nadh,NADH,small_molecule,mitochondrial_redox_cofactor,supplement,"NADH, reduced nicotinamide adenine dinucleotide",NADH alone broad,True,require reduced form
+glutathione,Glutathione,small_molecule,antioxidant_redox,clinical,"Glutathione, GSH",GSH alone,True,GSH too broad
+p22_2,P-22–2,peptide,experimental_peptide,research_only,"P-22-2, P22-2, P 22-2",,True,verify PubMed presence

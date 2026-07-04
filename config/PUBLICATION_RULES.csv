@@ -1,0 +1,10 @@
+rule_id,website_section,match_lanes,match_roles,match_model,min_score_auto,min_score_candidate,display_priority_base,notes
+pub_human_intervention,Human evidence,human_intervention,*,*,58,38,95,Human interventional/RCT evidence for the molecule
+pub_evidence_synthesis,Reviews and overviews,review_or_meta_analysis,*,*,55,35,90,Systematic reviews and meta-analyses
+pub_preclinical_intervention,Preclinical evidence,preclinical_intervention,*,*,52,32,80,Animal/in-vitro direct intervention evidence
+pub_mechanism,Mechanisms and pathways,mechanism_or_pathway,*,*,60,34,70,Mechanistic / pathway findings
+pub_biomarker,Biomarkers and readouts,biomarker_or_readout,*,*,60,34,68,Molecule measured as biomarker/readout
+pub_comparator,Comparator and background,comparator_or_background,*,*,999,40,55,Comparator/background context; queue only (no auto-publish)
+pub_diagnostic,Methods assays and tools,diagnostic_or_tool_use|methods_assay_synthesis,*,*,999,999,45,Methods/diagnostic/tool records held from public sections by default
+pub_general,Background and context,general_context|unclear_manual_triage|environmental_or_materials,*,*,999,999,30,Low-value/unclear records held for triage
+pub_fallback,Background and context,*,*,*,999,999,20,Catch-all so every in-scope record is classified

@@ -1,0 +1,53 @@
+name: Historical backfill (manual)
+
+# One-off / repeatable large historical backfill. Walks backwards from a start
+# year, size-capped, resumable via data/backfill_checkpoint.json in the cache.
+# GitHub jobs cap at ~6h, so re-run this workflow until it reports the target
+# size is reached (the checkpoint means each run resumes where the last stopped).
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_year:
+        description: "Newest year to fetch (walk backwards from here)"
+        default: "2025"
+      min_year:
+        description: "Oldest year to attempt"
+        default: "1975"
+      target_gb:
+        description: "Stop once the SQLite reaches this size (GB)"
+        default: "10"
+
+permissions:
+  contents: read
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+
+      - name: Restore corpus cache
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: retarats-corpus-${{ github.run_id }}
+          restore-keys: |
+            retarats-corpus-
+
+      - name: Run backfill
+        env:
+          NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+          NCBI_EMAIL: ${{ secrets.NCBI_EMAIL }}
+          API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
+        run: |
+          python3 scripts/run_backfill.py \
+            --start-year ${{ github.event.inputs.start_year }} \
+            --min-year ${{ github.event.inputs.min_year }} \
+            --target-gb ${{ github.event.inputs.target_gb }} \
+            --db data/retarats_pubmed.sqlite --state-db data/retarats_state.sqlite

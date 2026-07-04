@@ -1,0 +1,6 @@
+[Sat Jul  4 14:09:16 EDT 2026] citation fill starting
+/Users/samrosenberg/Desktop/CAHBIR/Reta/retarats-auto/.venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+Papers: 36371; with citation_count: 4997; missing: 31374
+  chunk 1: queried 3000/31374, filled 2993 (OpenAlex 2987, S2 6)
+  chunk 2: queried 6000/31374, filled 5992 (OpenAlex 5986, S2 6)

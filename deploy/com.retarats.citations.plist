@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  macOS LaunchAgent: run the citation fill + rebuild automatically once a day.
+
+  This is the "lazy background cycle" for your Mac. It runs cite_cycle.sh daily
+  (at 3:00 AM); after the first full pass it only touches newly fetched papers,
+  so it stays quick. It runs only while you're logged in (LaunchAgent).
+
+  INSTALL (one time):
+    cp deploy/com.retarats.citations.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.retarats.citations.plist
+
+  RUN NOW (test):   launchctl start com.retarats.citations
+  STOP/REMOVE:      launchctl unload ~/Library/LaunchAgents/com.retarats.citations.plist
+  LOGS:             tail -f ~/Desktop/CAHBIR/Reta/retarats-auto/cite_cycle.log
+
+  If you move the project, update the two absolute paths below.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.retarats.citations</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/samrosenberg/Desktop/CAHBIR/Reta/retarats-auto/scripts/cite_cycle.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/samrosenberg/Desktop/CAHBIR/Reta/retarats-auto</string>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>3</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/samrosenberg/Desktop/CAHBIR/Reta/retarats-auto/cite_cycle.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/samrosenberg/Desktop/CAHBIR/Reta/retarats-auto/cite_cycle.log</string>
+</dict>
+</plist>

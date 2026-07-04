@@ -1,0 +1,16 @@
+field_id,evidence_field,requirement,applies_to,display_label,notes
+molecule,molecule_name,required,*,Molecule,The drug/compound the record is about
+identifier,pmid,required,*,PMID,PubMed identifier (DOI accepted as fallback via doi field)
+title,title,required,*,Title,Paper title
+model,model_type,required,*,Model,Human / animal / in vitro / review
+year,pub_year,required,*,Year,Publication year
+study_type,primary_study_type,required,*,Study type,Design classification
+role,role_category,required,*,Molecule role,How the molecule is used in the paper
+doi,doi,optional,*,DOI,Preferred permanent link; backfilled from Crossref/EuropePMC
+condition,condition_tags,optional,*,Condition,Indication / disease area
+endpoint,endpoint_tags,optional,*,Endpoint,Measured outcomes
+intervention,intervention_or_exposure,optional,*,Intervention,Exposure description
+outcome,outcome_direction,optional,*,Outcome direction,Beneficial / neutral / harmful
+dose_route,dose_route,optional,*,Dose / route,Dose and administration route
+comparator,comparator_or_control,optional,*,Comparator,Control / comparator arm
+sample_size,sample_size,optional,*,Sample size,Reported N
