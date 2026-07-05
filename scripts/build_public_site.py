@@ -2036,7 +2036,7 @@ _TEMPLATE = """<!DOCTYPE html>
     h3("What's published vs. the full corpus");
     p("A few molecules (for example metformin or rapamycin) have tens of thousands of "
       + "papers. To keep the site fast in your browser, each molecule publishes at most a "
-      + "few hundred records here, chosen best-first: every review and meta-analysis is "
+      + "few thousand records here, chosen best-first: every review and meta-analysis is "
       + "kept, then the highest-ranked human, most-cited, and most-recent studies. Older, "
       + "low-impact preclinical papers are the first held back. This is a display limit "
       + "only \\u2014 the FULL set of matching papers is retained in the project's data files; "

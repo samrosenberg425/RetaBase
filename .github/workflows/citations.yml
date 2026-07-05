@@ -9,6 +9,10 @@ on:
   schedule:
     - cron: "0 */6 * * *"   # every 6 hours
   workflow_dispatch:
+    inputs:
+      max_records:
+        description: "How many missing-citation papers to fill this run (OpenAlex). Raise (e.g. 25000) for a big manual catch-up; scheduled runs use 6000."
+        default: "6000"
 
 permissions:
   contents: read
@@ -42,4 +46,4 @@ jobs:
           API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
         run: |
           python3 scripts/run_impact_backfill.py --db data/retarats_pubmed.sqlite \
-            --newest-first --max-records 6000 || true
+            --newest-first --max-records ${{ github.event.inputs.max_records || '6000' }} || true

@@ -361,7 +361,13 @@ def _load_experimental(path: str = os.path.join("config", "EXPERIMENTAL_MOLECULE
 #     "dimensionality reduction": keep findings/methods of the important papers).
 # Molecules at or under the cap are published in full. Raising FEED_CAP_PER_MOLECULE
 # (or removing the cap) is all that's needed once hosting can handle more data.
-FEED_CAP_PER_MOLECULE = 500
+# site_data.json is compact (~230 bytes/record, no abstracts), so even ~100k
+# records is only ~24 MB -- well within GitHub Pages (~1 GB) and fine for the
+# browser. 3000/molecule publishes the large majority of the corpus while still
+# bounding the handful of mega-molecules (rapamycin/metformin/glutathione) so
+# client-side filtering stays snappy. Raise toward 10000 (or remove the cap) if
+# you move to a host that can serve a bigger feed and don't mind heavier filtering.
+FEED_CAP_PER_MOLECULE = 3000
 FEED_PRIORITY_SECTION = "Reviews and overviews"  # always kept, uncapped
 
 
