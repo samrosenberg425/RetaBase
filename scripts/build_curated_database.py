@@ -231,7 +231,15 @@ def build(db_path: str, out_dir: str, limit: int = 0) -> dict:
         json.dump(corpus_stats, fh, indent=2)
 
     # --- site_data.json (compact feed a hosted site fetches; rank-sorted) ---
-    _write_site_json(os.path.join(out_dir, "site_data.json"), public, _molecule_index(curated_rows), corpus_stats)
+    # Cap the PUBLISHED feed for very high-volume molecules so the browser-loaded
+    # JSON stays light; the full corpus is retained in public_records.csv above.
+    feed, feed_stats = _cap_site_feed(public)
+    corpus_stats["feed"] = feed_stats
+    if feed_stats["capped_molecule_count"]:
+        print(f"  site feed capped : {feed_stats['published_records']} of "
+              f"{feed_stats['total_public_records']} published "
+              f"({feed_stats['capped_molecule_count']} molecule(s) over {FEED_CAP_PER_MOLECULE})")
+    _write_site_json(os.path.join(out_dir, "site_data.json"), feed, _molecule_index(curated_rows), corpus_stats)
 
     # --- review_queue.csv ---
     queue = [r for r in curated_rows if r.get("publication_status") == "review"]
@@ -338,6 +346,59 @@ def _load_experimental(path: str = os.path.join("config", "EXPERIMENTAL_MOLECULE
                 continue
             out.append({k: (v or "").strip() for k, v in row.items()})
     return out
+
+
+# --- published-feed cap -----------------------------------------------------
+# The FULL corpus is always retained (public_records.csv + the SQLite cache).
+# But the browser downloads and filters site_data.json entirely in memory, so a
+# few very high-volume molecules (rapamycin ~52k, metformin ~35k, ...) would make
+# it too heavy for a static host. We therefore cap what each molecule PUBLISHES,
+# keeping the signal and shedding bulk:
+#   - every review / meta-analysis / synthesis is kept (uncapped; it's the signal),
+#   - the remaining budget is filled best-first by rank_score, which already
+#     weights human directness, impact (citations) and recency -- so older,
+#     low-impact preclinical papers are what drop out first (the user's
+#     "dimensionality reduction": keep findings/methods of the important papers).
+# Molecules at or under the cap are published in full. Raising FEED_CAP_PER_MOLECULE
+# (or removing the cap) is all that's needed once hosting can handle more data.
+FEED_CAP_PER_MOLECULE = 500
+FEED_PRIORITY_SECTION = "Reviews and overviews"  # always kept, uncapped
+
+
+def _cap_site_feed(records: List[dict], cap: int = FEED_CAP_PER_MOLECULE):
+    """Bound the PUBLISHED feed per molecule; return (feed_records, feed_stats).
+
+    ``records`` arrive globally rank-sorted (best first); grouping preserves that
+    order, so ``rest[:budget]`` is the top-ranked remainder for each molecule.
+    """
+    from collections import defaultdict
+
+    by_mol: Dict[str, List[dict]] = defaultdict(list)
+    for r in records:
+        by_mol[str(r.get("molecule_id", ""))].append(r)
+
+    kept: List[dict] = []
+    capped: Dict[str, dict] = {}
+    for mol, recs in by_mol.items():
+        if len(recs) <= cap:
+            kept.extend(recs)
+            continue
+        always = [r for r in recs if str(r.get("website_section", "")) == FEED_PRIORITY_SECTION]
+        rest = [r for r in recs if str(r.get("website_section", "")) != FEED_PRIORITY_SECTION]
+        budget = max(cap - len(always), 0)
+        chosen = always + rest[:budget]
+        kept.extend(chosen)
+        capped[mol] = {"total": len(recs), "published": len(chosen)}
+
+    kept.sort(key=lambda r: _int(r.get("rank_score")), reverse=True)
+    stats = {
+        "cap_per_molecule": cap,
+        "total_public_records": len(records),
+        "published_records": len(kept),
+        "capped_molecule_count": len(capped),
+        "capped_molecules": capped,
+    }
+    return kept, stats
 
 
 def _write_site_json(path: str, records: List[dict], molecules: List[dict], corpus_stats: dict | None = None) -> None:
