@@ -5,6 +5,8 @@ years that were marked done but came back nearly empty (a fetch that died partwa
 and still recorded the year), or years never attempted at all.
 
 Read-only: opens the SQLite corpus + checkpoint, prints a table, writes nothing.
+Papers are stored as JSON blobs (papers.payload_json), so pub_year is read from
+inside the JSON, not a column.
 
     python3 scripts/audit_corpus_years.py --db data/retarats_pubmed.sqlite
 
@@ -18,21 +20,34 @@ import argparse
 import json
 import os
 import sqlite3
+from collections import Counter
+from datetime import datetime
 
 # Years inside the target window that hold fewer than this are almost certainly
 # incomplete (a real year of retatrutide/metformin/etc. literature is far bigger).
 SUSPICIOUS_BELOW = 50
 
 
-def _table_and_year_col(conn: sqlite3.Connection):
-    """Find the papers table and its year column defensively across schema tweaks."""
-    tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")]
-    table = "papers" if "papers" in tables else (tables[0] if tables else "")
-    if not table:
-        return "", ""
-    cols = [r[1] for r in conn.execute(f"PRAGMA table_info('{table}')")]
-    year_col = "pub_year" if "pub_year" in cols else next((c for c in cols if "year" in c.lower()), "")
-    return table, year_col
+def _year_counts(conn: sqlite3.Connection):
+    """Return (Counter{year: n}, total_papers). Tries JSON1, falls back to Python."""
+    total = conn.execute("SELECT COUNT(*) FROM papers").fetchone()[0]
+    try:
+        rows = conn.execute(
+            "SELECT substr(json_extract(payload_json,'$.pub_year'),1,4) AS yr, COUNT(*) AS n "
+            "FROM papers WHERE json_extract(payload_json,'$.pub_year') IS NOT NULL "
+            "AND json_extract(payload_json,'$.pub_year') <> '' GROUP BY yr"
+        ).fetchall()
+        return Counter({str(y): int(n) for y, n in rows if y}), total
+    except sqlite3.OperationalError:
+        counts: Counter = Counter()
+        for (payload,) in conn.execute("SELECT payload_json FROM papers"):
+            try:
+                y = str(json.loads(payload).get("pub_year", ""))[:4]
+            except (ValueError, TypeError):
+                y = ""
+            if y:
+                counts[y] += 1
+        return counts, total
 
 
 def main() -> None:
@@ -47,16 +62,12 @@ def main() -> None:
         return
 
     conn = sqlite3.connect(args.db)
-    table, year_col = _table_and_year_col(conn)
-    if not table or not year_col:
-        print("Could not find a papers table / year column in the DB.")
+    tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+    if "papers" not in tables:
+        print(f"No 'papers' table in the DB (found: {tables}).")
         return
 
-    rows = conn.execute(
-        f"SELECT substr({year_col},1,4) AS yr, COUNT(DISTINCT pmid) AS n "
-        f"FROM {table} WHERE {year_col} <> '' GROUP BY yr ORDER BY yr DESC"
-    ).fetchall()
-    total = conn.execute(f"SELECT COUNT(DISTINCT pmid) FROM {table}").fetchone()[0]
+    counts, total = _year_counts(conn)
 
     completed = set()
     if os.path.exists(args.checkpoint):
@@ -65,11 +76,12 @@ def main() -> None:
         except (ValueError, OSError, json.JSONDecodeError):
             pass
 
-    print(f"Corpus: {total} distinct papers across {len(rows)} years\n")
+    print(f"Corpus: {total} distinct papers across {len(counts)} years\n")
     print(f"{'YEAR':>6}  {'PAPERS':>8}  {'CHECKPOINT':<11}  FLAG")
     print("-" * 48)
     suspicious = []
-    for yr, n in rows:
+    for yr in sorted(counts, reverse=True):
+        n = counts[yr]
         try:
             y = int(yr)
         except (TypeError, ValueError):
@@ -81,9 +93,7 @@ def main() -> None:
             suspicious.append(y)
         print(f"{yr:>6}  {n:>8}  {done:<11}  {flag}")
 
-    # Years in the window that produced no rows at all won't appear above.
-    present_years = {int(r[0]) for r in rows if str(r[0]).isdigit()}
-    from datetime import datetime
+    present_years = {int(y) for y in counts if str(y).isdigit()}
     missing = [y for y in range(args.min_year, datetime.utcnow().year + 1) if y not in present_years]
     if missing:
         print(f"\nYears with ZERO papers in [{args.min_year}-present]: {sorted(missing, reverse=True)}")
@@ -92,7 +102,7 @@ def main() -> None:
     if missing or suspicious:
         bad = sorted(set(suspicious) | set(missing))
         print(f"\nRe-fetch these with a forced backfill covering {min(bad)}-{max(bad)} "
-              "(Historical backfill -> force = true, min_year/start_year to span them).")
+              "(Historical backfill -> force = true, start_year = highest, min_year = lowest).")
     else:
         print(f"\nAll years >= {args.min_year} look adequately populated.")
 
