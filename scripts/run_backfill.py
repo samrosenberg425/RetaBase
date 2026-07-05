@@ -114,6 +114,7 @@ def main() -> None:
     print(f"Already completed: {sorted(done, reverse=True) or 'none'}")
 
     fetched_this_run = 0
+    failed_years: list[int] = []
     for year in range(args.start_year, args.min_year - 1, -1):
         size = _db_size_gb(args.db)
         if size >= args.target_gb:
@@ -125,8 +126,15 @@ def main() -> None:
         print(f"[{year}] fetching (db {size:.2f} GB)...", flush=True)
         rc = _fetch_year(year, args)
         if rc != 0:
-            print(f"[{year}] fetch returned rc={rc}; stopping so the run can be inspected/resumed.")
-            break
+            # A single year's fetch failing must NOT halt the whole walk (otherwise
+            # an early bad year silently strands every older year). Log it, record
+            # it as unfinished (NOT added to done, so it retries next run), and move
+            # on. fetched_this_run is unchanged so the failure doesn't burn the
+            # --max-years budget.
+            print(f"[{year}] fetch returned rc={rc}; SKIPPING this year and continuing. "
+                  "It stays unfinished and will be retried on a later run.")
+            failed_years.append(year)
+            continue
         done.add(year)
         ckpt["completed_years"] = sorted(done, reverse=True)
         ckpt["history"].append({"year": year, "db_gb_after": round(_db_size_gb(args.db), 3),
@@ -140,6 +148,10 @@ def main() -> None:
 
     final = _db_size_gb(args.db)
     print(f"Done. DB size {final:.2f} GB. Completed years: {sorted(done, reverse=True)}")
+    if failed_years:
+        print(f"WARNING: {len(failed_years)} year(s) FAILED and were skipped: "
+              f"{sorted(failed_years, reverse=True)}. Re-run to retry them "
+              "(they were not marked done, so a normal or --force run picks them up).")
 
     if args.rebuild:
         print("Rebuilding curated layer + site...")

@@ -16,6 +16,14 @@ from urllib3.exceptions import ProtocolError
 
 EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 
+# NCBI's history-server efetch cannot page past 10,000 records for a single
+# query: any request with retstart >= 10000 returns "400 Bad Request". A rule
+# whose year has more hits than this (very broad molecules like glutathione or
+# metformin in a busy year) would otherwise crash the whole fetch. We cap
+# pagination at this ceiling and log the shortfall; to capture more, narrow the
+# search rule or split the query by date.
+HISTORY_EFETCH_CEILING = 10000
+
 
 @dataclass
 class PubMedSearch:
@@ -113,12 +121,23 @@ class PubMedClient:
     def iter_records_from_search(self, search: PubMedSearch, *, batch_size: int = 100) -> Iterable[PubMedRecord]:
         if search.count <= 0:
             return
-        for retstart in range(0, search.count, batch_size):
+        reachable = min(search.count, HISTORY_EFETCH_CEILING)
+        if search.count > HISTORY_EFETCH_CEILING:
+            print(
+                f"    NOTE: {search.count} hits exceed NCBI's {HISTORY_EFETCH_CEILING}-record "
+                f"history-server limit; fetching the newest {HISTORY_EFETCH_CEILING} only. "
+                "Narrow this rule or split by date to capture the rest.",
+                flush=True,
+            )
+        for retstart in range(0, reachable, batch_size):
+            # Keep retstart + retmax within the 10k window so we never issue the
+            # retstart == 10000 request that NCBI rejects with a 400.
+            this_max = min(batch_size, reachable - retstart)
             xml_text = self.efetch_xml(
                 webenv=search.webenv,
                 query_key=search.query_key,
                 retstart=retstart,
-                retmax=batch_size,
+                retmax=this_max,
             )
             for record in parse_pubmed_xml(xml_text):
                 yield record
