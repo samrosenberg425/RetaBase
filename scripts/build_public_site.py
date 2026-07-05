@@ -118,6 +118,30 @@ EXPERIMENTAL_FIELDS = [
     "example_search_terms",
 ]
 
+# Clinical-trials registry rows (ClinicalTrials.gov via ``trials_data.json``).
+# These are study REGISTRATIONS, not published results, and are rendered on their
+# own tab. Every field is treated as hostile and rendered via textContent.
+TRIAL_FIELDS = [
+    "nct_id", "molecule_id", "molecule_name", "brief_title", "overall_status",
+    "phases", "study_type", "conditions", "interventions", "enrollment_count",
+    "start_date", "primary_completion_date", "completion_date", "lead_sponsor",
+    "has_results", "url", "ongoing",
+]
+
+# Preprint rows (bioRxiv/medRxiv via EuropePMC, ``preprints_data.json``). NOT
+# peer-reviewed; rendered on their own tab with a prominent caution.
+PREPRINT_FIELDS = [
+    "id", "molecule_id", "molecule_name", "title", "authors_short",
+    "server", "date", "doi", "url",
+]
+
+# Corpus-wide summary numbers (``corpus_stats`` inside site_data.json) shown as a
+# compact strip near the header. All numeric; formatted with thousands separators.
+CORPUS_STATS_FIELDS = [
+    "generated_utc", "total_papers", "total_evidence", "molecules_with_data",
+    "year_min", "year_max", "pct_citations_filled", "featured", "listed",
+]
+
 
 @dataclass
 class SiteData:
@@ -126,6 +150,11 @@ class SiteData:
     records: List[Dict[str, str]] = field(default_factory=list)
     molecules: List[Dict[str, str]] = field(default_factory=list)
     experimental: List[Dict[str, str]] = field(default_factory=list)
+    trials: List[Dict[str, object]] = field(default_factory=list)
+    preprints: List[Dict[str, str]] = field(default_factory=list)
+    corpus_stats: Dict[str, object] = field(default_factory=dict)
+    trials_generated_utc: str = ""
+    preprints_generated_utc: str = ""
     generated_utc: str = ""
 
 
@@ -164,6 +193,68 @@ def _norm_record(raw: Dict) -> Dict[str, str]:
     return out
 
 
+def _norm_trial(raw: Dict) -> Dict[str, object]:
+    """Normalize one trial row to the UI field set.
+
+    All fields are stringified EXCEPT ``ongoing`` which is kept as a real bool so
+    the UI's "Ongoing only" toggle can filter on it without string coercion.
+    """
+    out: Dict[str, object] = {}
+    for k in TRIAL_FIELDS:
+        v = raw.get(k, "")
+        if k == "ongoing":
+            out[k] = bool(v)
+        else:
+            out[k] = "" if v is None else str(v)
+    return out
+
+
+def _norm_preprint(raw: Dict) -> Dict[str, str]:
+    """Normalize one preprint row to the UI field set (all strings)."""
+    out: Dict[str, str] = {}
+    for k in PREPRINT_FIELDS:
+        v = raw.get(k, "")
+        out[k] = "" if v is None else str(v)
+    return out
+
+
+def _load_feed(curated_dir: str, name: str, list_key: str, normalizer):
+    """Load a sibling JSON feed (trials/preprints), tolerant of absence/emptiness.
+
+    Returns ``(rows, generated_utc)``. A missing file, unreadable JSON, or a feed
+    with no rows yields ``([], "")`` so the UI simply shows its "no data yet"
+    placeholder rather than crashing. The feeds are produced by a separate fetch
+    step and may not exist on an initial build.
+    """
+    path = os.path.join(curated_dir, name)
+    if not os.path.exists(path):
+        return [], ""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            feed = json.load(fh)
+    except (ValueError, OSError):
+        return [], ""
+    if not isinstance(feed, dict):
+        return [], ""
+    rows = [normalizer(r) for r in (feed.get(list_key) or []) if isinstance(r, dict)]
+    return rows, str(feed.get("generated_utc", "") or "")
+
+
+def _norm_corpus_stats(raw) -> Dict[str, object]:
+    """Normalize the corpus_stats object; non-dict/absent -> empty dict.
+
+    Numeric fields are preserved as-is (ints/floats) for thousands-separator
+    formatting in JS; generated_utc stays a string.
+    """
+    if not isinstance(raw, dict):
+        return {}
+    out: Dict[str, object] = {}
+    for k in CORPUS_STATS_FIELDS:
+        if k in raw and raw[k] is not None:
+            out[k] = raw[k]
+    return out
+
+
 def load_site_data(curated_dir: str) -> SiteData:
     """Load the curated feed, preferring site_data.json over public_records.csv.
 
@@ -174,10 +265,12 @@ def load_site_data(curated_dir: str) -> SiteData:
     """
     json_path = os.path.join(curated_dir, "site_data.json")
     generated = ""
+    corpus_stats: Dict[str, object] = {}
     if os.path.exists(json_path):
         with open(json_path, encoding="utf-8") as fh:
             feed = json.load(fh)
         records = [_norm_record(r) for r in feed.get("records", [])]
+        corpus_stats = _norm_corpus_stats(feed.get("corpus_stats"))
         molecules = [
             {k: ("" if m.get(k) is None else str(m.get(k, ""))) for k in MOLECULE_FIELDS}
             for m in feed.get("molecules", [])
@@ -207,8 +300,20 @@ def load_site_data(curated_dir: str) -> SiteData:
         or m.get("molecule_name") in present
         or m.get("molecule_id") in present
     ]
+
+    # New sibling feeds: registry trials + preprints. Both are optional (the fetch
+    # step may not have run yet) and degrade to empty lists -> UI placeholders.
+    trials, trials_gen = _load_feed(
+        curated_dir, "trials_data.json", "trials", _norm_trial)
+    preprints, preprints_gen = _load_feed(
+        curated_dir, "preprints_data.json", "preprints", _norm_preprint)
+
     return SiteData(records=records, molecules=molecules,
-                    experimental=experimental, generated_utc=generated)
+                    experimental=experimental, trials=trials,
+                    preprints=preprints, corpus_stats=corpus_stats,
+                    trials_generated_utc=trials_gen,
+                    preprints_generated_utc=preprints_gen,
+                    generated_utc=generated)
 
 
 def _safe_json_block(obj) -> str:
@@ -379,6 +484,15 @@ def build_site(curated_dir: str, out_dir: str, mode: str = "inline",
         # they are inlined in both inline and fetch modes: the tab works even when
         # the sibling feed hasn't loaded yet.
         "experimental": data.experimental,
+        # Registry trials + preprints: small feeds, inlined in inline mode and
+        # fetched at runtime in fetch mode (blanked here, filled by _mode below).
+        "trials": data.trials,
+        "preprints": data.preprints,
+        "trials_generated_utc": data.trials_generated_utc,
+        "preprints_generated_utc": data.preprints_generated_utc,
+        # Corpus-wide summary strip; small + trusted, so inlined in BOTH modes so
+        # the header stat line renders without waiting on a sibling fetch.
+        "corpus_stats": data.corpus_stats,
         "filters": [{"field": f, "label": lbl} for f, lbl in FILTER_FACETS],
         "multi": sorted(MULTI_VALUE_FIELDS),
         "aspects": [{"field": f, "cls": c, "label": lbl} for f, c, lbl in ASPECT_TAGS],
@@ -396,6 +510,10 @@ def build_site(curated_dir: str, out_dir: str, mode: str = "inline",
         cfg = dict(payload)
         cfg["records"] = []
         cfg["molecules"] = []
+        # trials/preprints are fetched at runtime like site_data.json (tolerate
+        # 404 -> empty). corpus_stats stays inlined (it is tiny, trusted config).
+        cfg["trials"] = []
+        cfg["preprints"] = []
         cfg["mode"] = "fetch"
         json_block = _safe_json_block(cfg)
         record_count = 0  # fetch mode inlines no record bodies
@@ -505,8 +623,9 @@ _TEMPLATE = """<!DOCTYPE html>
   .tabs .exp {{ background: var(--accent); color: #06101f; border: none; font-weight: 600; }}
   main {{ display: flex; gap: 0; align-items: flex-start; }}
   aside {{
-    width: 288px; min-width: 288px; padding: 16px; border-right: 1px solid var(--border);
+    width: 340px; min-width: 340px; padding: 16px; border-right: 1px solid var(--border);
     background: var(--panel); height: calc(100vh - 118px); overflow-y: auto; position: sticky; top: 0;
+    resize: horizontal;
   }}
   aside .fg {{ margin-bottom: 14px; }}
   aside label {{ display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }}
@@ -601,6 +720,41 @@ _TEMPLATE = """<!DOCTYPE html>
   .sl b {{ color: var(--accent2); }} .sl.lim b {{ color: var(--tier-limited); }}
   /* one-line descriptor under each tab/section */
   .tab-desc {{ font-size: 12px; color: var(--muted); margin: 2px 0 12px; }}
+  /* corpus-stats summary strip near the header */
+  .corpus-strip {{
+    display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
+    font-size: 12px; color: var(--muted); margin-top: 10px;
+    padding: 8px 12px; background: var(--panel2); border: 1px solid var(--border);
+    border-radius: 8px;
+  }}
+  .corpus-strip .cs-label {{ text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }}
+  .corpus-strip b {{ color: var(--text); }}
+  .corpus-strip .cs-sep {{ color: var(--border); }}
+  /* trials + preprints tables/lists */
+  .caution-banner {{
+    background: var(--panel2); border: 1px solid var(--tier-limited); border-left: 4px solid var(--tier-limited);
+    border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; font-size: 13px; color: var(--text);
+  }}
+  .caution-banner.hard {{ border-color: var(--tier-low); border-left-color: var(--tier-low); }}
+  .feed-toolbar {{ display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; margin-bottom: 12px; }}
+  .feed-toolbar input, .feed-toolbar select {{
+    padding: 6px 9px; background: var(--panel2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; font-size: 13px;
+  }}
+  .feed-toolbar input[type=search] {{ min-width: 200px; }}
+  .feed-toolbar label {{ display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); cursor: pointer; }}
+  .feed-toolbar label input {{ width: auto; }}
+  .trial-card, .pp-card {{
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; margin-bottom: 12px;
+  }}
+  .trial-card h3, .pp-card h3 {{ margin: 0 0 6px; font-size: 15px; line-height: 1.35; }}
+  .trial-card.ongoing {{ border-left: 4px solid var(--tier-high); }}
+  .status-badge {{ font-size: 11px; font-weight: 600; border-radius: 999px; padding: 2px 9px; border: 1px solid var(--border); color: var(--muted); }}
+  .status-badge.on {{ color: var(--tier-high); border-color: var(--tier-high); }}
+  .server-badge {{ font-size: 11px; font-weight: 600; border-radius: 999px; padding: 2px 9px; border: 1px solid var(--t-ind); color: var(--t-ind); text-transform: uppercase; letter-spacing: .03em; }}
+  .trial-grid {{ display: grid; grid-template-columns: 130px 1fr; gap: 4px 14px; font-size: 12px; margin: 8px 0; }}
+  .trial-grid .k {{ color: var(--muted); }}
   /* include/exclude multi-select filter groups */
   .fgroup {{ margin-bottom: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel2); }}
   .fgroup > summary {{
@@ -620,8 +774,9 @@ _TEMPLATE = """<!DOCTYPE html>
   }}
   .fbody .ftools button:hover {{ color: var(--text); }}
   .foptions {{ max-height: 190px; overflow-y: auto; }}
-  .fopt {{ display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 2px 0; text-transform: none; letter-spacing: 0; }}
-  .fopt .fname {{ flex: 1; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+  .fopt {{ display: flex; align-items: flex-start; gap: 6px; font-size: 12px; padding: 3px 0; text-transform: none; letter-spacing: 0; }}
+  .fopt .fname {{ flex: 1; color: var(--text); white-space: normal; overflow-wrap: anywhere; line-height: 1.3; }}
+  .fopt .fchk {{ flex: 0 0 auto; }}
   .fopt .fpapers {{ font-size: 11px; color: var(--muted); }}
   .fopt .fchk {{ display: flex; gap: 3px; }}
   .fopt .fchk label {{ display: inline-flex; align-items: center; gap: 2px; margin: 0; font-size: 10px; text-transform: uppercase; color: var(--muted); cursor: pointer; letter-spacing: .02em; }}
@@ -673,9 +828,12 @@ _TEMPLATE = """<!DOCTYPE html>
       <li>Open <b>About / Methods</b> for the exact formulas. Every metric is rule-based and auditable.</li>
     </ul>
   </details>
+  <div class="corpus-strip" id="corpus-strip" style="display:none"></div>
   <div class="tabs">
     <button id="tab-evidence" class="active" onclick="showTab('evidence')">Evidence</button>
     <button id="tab-clinical" onclick="showTab('clinical')">Clinical evidence</button>
+    <button id="tab-trials" onclick="showTab('trials')">Trials registry</button>
+    <button id="tab-preprints" onclick="showTab('preprints')">Preprints</button>
     <button id="tab-molecules" onclick="showTab('molecules')">Bioactives</button>
     <button id="tab-experimental" style="display:none" onclick="showTab('experimental')">Experimental</button>
     <button id="tab-about" onclick="showTab('about')">About / Methods</button>
@@ -703,8 +861,9 @@ _TEMPLATE = """<!DOCTYPE html>
       </div>
     </div>
     <div class="fg">
-      <label for="journal-sub">Journal contains</label>
-      <input id="journal-sub" type="search" placeholder="e.g. nature, diabetes" oninput="applyFilters()">
+      <label for="journal-sub">Journal name includes</label>
+      <input id="journal-sub" type="search" placeholder="type part of a journal, e.g. Lancet" oninput="applyFilters()">
+      <div class="note-hint">Text match on the journal name &mdash; a partial word works (e.g. &ldquo;diabetes&rdquo;).</div>
     </div>
     <div class="fg">
       <label for="min-cit">Min citations</label>
@@ -744,6 +903,35 @@ _TEMPLATE = """<!DOCTYPE html>
       <div class="count" id="experimental-count"></div>
       <div class="mol-grid" id="experimental-list"></div>
     </div>
+    <div id="trials-view" style="display:none">
+      <div class="tab-desc">Trials registry &mdash; ongoing &amp; completed studies from ClinicalTrials.gov &mdash; study registrations, not published results.</div>
+      <div class="caution-banner" id="trials-note"></div>
+      <div class="feed-toolbar" id="trials-toolbar" style="display:none">
+        <input id="trials-q" type="search" placeholder="search title / conditions..." oninput="renderTrials()">
+        <select id="trials-mol" onchange="renderTrials()"><option value="">All bioactives</option></select>
+        <select id="trials-sort" onchange="renderTrials()">
+          <option value="ongoing">Ongoing first</option>
+          <option value="start">Start date (newest)</option>
+        </select>
+        <label><input id="trials-ongoing" type="checkbox" onchange="renderTrials()"> Ongoing only</label>
+      </div>
+      <div class="count" id="trials-count"></div>
+      <div id="trials-list"></div>
+    </div>
+    <div id="preprints-view" style="display:none">
+      <div class="tab-desc">Preprints (bioRxiv/medRxiv) &mdash; NOT peer-reviewed; interpret with caution.</div>
+      <div class="caution-banner hard" id="preprints-note"></div>
+      <div class="feed-toolbar" id="preprints-toolbar" style="display:none">
+        <input id="pp-q" type="search" placeholder="search title / authors..." oninput="renderPreprints()">
+        <select id="pp-mol" onchange="renderPreprints()"><option value="">All bioactives</option></select>
+        <select id="pp-sort" onchange="renderPreprints()">
+          <option value="date">Date (newest)</option>
+          <option value="date-asc">Date (oldest)</option>
+        </select>
+      </div>
+      <div class="count" id="preprints-count"></div>
+      <div id="preprints-list"></div>
+    </div>
     <div id="about-view" style="display:none">
       <div class="about" id="about-body"></div>
     </div>
@@ -764,6 +952,9 @@ _TEMPLATE = """<!DOCTYPE html>
   var RECORDS = DATA.records || [];
   var MOLECULES = DATA.molecules || [];
   var EXPERIMENTAL = DATA.experimental || [];
+  var TRIALS = DATA.trials || [];
+  var PREPRINTS = DATA.preprints || [];
+  var CORPUS = DATA.corpus_stats || {{}};
   var FILTERS = DATA.filters || [];
   var MULTI = new Set(DATA.multi || []);
   var ASPECTS = DATA.aspects || [];
@@ -1509,6 +1700,225 @@ _TEMPLATE = """<!DOCTYPE html>
       EXPERIMENTAL.length ? "" : "none";
   }}
 
+  // ---- shared feed helpers (trials + preprints) ------------------------------
+  // A safe external link: textContent label, href built from a value we accept
+  // ONLY if it is an http(s) URL; otherwise no link is emitted. This blocks
+  // javascript:/data: schemes even though the values are trusted feeds.
+  function safeLink(label, url) {{
+    var u = String(url || "").trim();
+    if (!/^https?:\\/\\//i.test(u)) return null;
+    var a = el("a", null, label);
+    a.href = encodeURI(u);  // encode any stray unsafe chars; scheme already vetted
+    a.target = "_blank"; a.rel = "noopener noreferrer";
+    return a;
+  }}
+  // Populate a molecule <select> from the distinct molecule_name values in a feed.
+  function fillMolSelect(sel, rows) {{
+    var seen = {{}}, names = [];
+    rows.forEach(function(r) {{
+      var n = (r.molecule_name || "").trim();
+      if (n && !seen[n]) {{ seen[n] = true; names.push(n); }}
+    }});
+    names.sort();
+    names.forEach(function(n) {{
+      var o = document.createElement("option"); o.value = n;
+      o.textContent = n;  // textContent -> injection-safe
+      sel.appendChild(o);
+    }});
+  }}
+
+  // ---- Trials registry -------------------------------------------------------
+  var TRIALS_NOTE = "These are study REGISTRATIONS from ClinicalTrials.gov \\u2014 " +
+    "trial designs and status, NOT published results. A registration does not mean " +
+    "the intervention works. \\u201cOngoing\\u201d means recruiting or active.";
+  var TRIALS_EMPTY = "No registry studies indexed yet \\u2014 populates after the " +
+    "trials fetch runs.";
+  function trialsFeedInit() {{
+    var note = document.getElementById("trials-note");
+    var toolbar = document.getElementById("trials-toolbar");
+    if (!TRIALS.length) {{
+      note.textContent = TRIALS_EMPTY;
+      toolbar.style.display = "none";
+      document.getElementById("trials-count").textContent = "";
+      document.getElementById("trials-list").textContent = "";
+      return;
+    }}
+    note.textContent = TRIALS_NOTE;
+    toolbar.style.display = "";
+    fillMolSelect(document.getElementById("trials-mol"), TRIALS);
+    renderTrials();
+  }}
+  function trialDates(t) {{
+    var s = (t.start_date || "").trim();
+    var e = (t.completion_date || t.primary_completion_date || "").trim();
+    if (s && e) return s + " \\u2192 " + e;
+    return s || e || "";
+  }}
+  function renderTrials() {{
+    if (!TRIALS.length) return;
+    var q = (document.getElementById("trials-q").value || "").trim().toLowerCase();
+    var mol = document.getElementById("trials-mol").value;
+    var ongoingOnly = document.getElementById("trials-ongoing").checked;
+    var sortBy = document.getElementById("trials-sort").value;
+    var rows = TRIALS.filter(function(t) {{
+      if (ongoingOnly && !t.ongoing) return false;
+      if (mol && (t.molecule_name || "") !== mol) return false;
+      if (q) {{
+        var hay = ((t.brief_title || "") + " " + (t.conditions || "") + " " +
+                   (t.interventions || "")).toLowerCase();
+        if (hay.indexOf(q) === -1) return false;
+      }}
+      return true;
+    }});
+    rows = rows.map(function(t, i) {{ return [t, i]; }}).sort(function(a, b) {{
+      if (sortBy === "start") {{
+        var d = String(b[0].start_date || "").localeCompare(String(a[0].start_date || ""));
+        return d !== 0 ? d : a[1] - b[1];
+      }}
+      // ongoing-first (default), then feed order (already ongoing-first by start).
+      var oa = a[0].ongoing ? 0 : 1, ob = b[0].ongoing ? 0 : 1;
+      return oa !== ob ? oa - ob : a[1] - b[1];
+    }}).map(function(x) {{ return x[0]; }});
+    var ongoing = TRIALS.filter(function(t) {{ return t.ongoing; }}).length;
+    document.getElementById("trials-count").textContent =
+      "Showing " + fmtInt(rows.length) + " of " + fmtInt(TRIALS.length) +
+      " registered studies \\u00b7 " + fmtInt(ongoing) + " ongoing";
+    var list = document.getElementById("trials-list");
+    list.textContent = "";
+    if (!rows.length) {{ list.appendChild(el("div", "empty", "No studies match these filters.")); return; }}
+    var frag = document.createDocumentFragment();
+    rows.forEach(function(t) {{ frag.appendChild(renderTrialCard(t)); }});
+    list.appendChild(frag);
+  }}
+  window.renderTrials = renderTrials;
+  function renderTrialCard(t) {{
+    var card = el("div", "trial-card" + (t.ongoing ? " ongoing" : ""));
+    card.appendChild(el("h3", null, t.brief_title || t.nct_id || "(untitled study)"));
+    var meta = el("div", "meta");
+    if (t.molecule_name) meta.appendChild(el("span", "pill", t.molecule_name));
+    if (t.overall_status) {{
+      meta.appendChild(el("span", "status-badge" + (t.ongoing ? " on" : ""),
+        (t.ongoing ? "\\u25CF " : "") + t.overall_status));
+    }}
+    if (t.phases) meta.appendChild(el("span", "pill", t.phases));
+    if (t.study_type) meta.appendChild(el("span", "pill", t.study_type));
+    if (t.has_results === "true" || t.has_results === true || t.has_results === "1")
+      meta.appendChild(el("span", "pill", "has results"));
+    card.appendChild(meta);
+    var grid = el("div", "trial-grid");
+    function row(k, v) {{ if (v) {{ grid.appendChild(el("div", "k", k)); grid.appendChild(el("div", "v", v)); }} }}
+    row("Conditions", t.conditions);
+    row("Interventions", t.interventions);
+    row("Sponsor", t.lead_sponsor);
+    row("Enrollment", t.enrollment_count);
+    row("Dates", trialDates(t));
+    if (t.nct_id) grid.appendChild(el("div", "k", "Registry ID"));
+    if (t.nct_id) grid.appendChild(el("div", "v", t.nct_id));
+    card.appendChild(grid);
+    var links = el("div", "links");
+    var link = safeLink("View on ClinicalTrials.gov", t.url);
+    if (link) links.appendChild(link);
+    if (links.childNodes.length) card.appendChild(links);
+    return card;
+  }}
+
+  // ---- Preprints -------------------------------------------------------------
+  var PREPRINTS_NOTE = "\\u26A0 These are PREPRINTS (bioRxiv/medRxiv) \\u2014 they have " +
+    "NOT been peer-reviewed. Findings may change or be retracted; interpret with " +
+    "caution and do not treat them as established evidence.";
+  var PREPRINTS_EMPTY = "No preprints indexed yet \\u2014 populates after the " +
+    "preprints fetch runs.";
+  function preprintsFeedInit() {{
+    var note = document.getElementById("preprints-note");
+    var toolbar = document.getElementById("preprints-toolbar");
+    if (!PREPRINTS.length) {{
+      note.textContent = PREPRINTS_EMPTY;
+      toolbar.style.display = "none";
+      document.getElementById("preprints-count").textContent = "";
+      document.getElementById("preprints-list").textContent = "";
+      return;
+    }}
+    note.textContent = PREPRINTS_NOTE;
+    toolbar.style.display = "";
+    fillMolSelect(document.getElementById("pp-mol"), PREPRINTS);
+    renderPreprints();
+  }}
+  function renderPreprints() {{
+    if (!PREPRINTS.length) return;
+    var q = (document.getElementById("pp-q").value || "").trim().toLowerCase();
+    var mol = document.getElementById("pp-mol").value;
+    var sortBy = document.getElementById("pp-sort").value;
+    var rows = PREPRINTS.filter(function(p) {{
+      if (mol && (p.molecule_name || "") !== mol) return false;
+      if (q) {{
+        var hay = ((p.title || "") + " " + (p.authors_short || "")).toLowerCase();
+        if (hay.indexOf(q) === -1) return false;
+      }}
+      return true;
+    }});
+    rows = rows.map(function(p, i) {{ return [p, i]; }}).sort(function(a, b) {{
+      var d = String(b[0].date || "").localeCompare(String(a[0].date || ""));
+      if (sortBy === "date-asc") d = -d;
+      return d !== 0 ? d : a[1] - b[1];
+    }}).map(function(x) {{ return x[0]; }});
+    document.getElementById("preprints-count").textContent =
+      "Showing " + fmtInt(rows.length) + " of " + fmtInt(PREPRINTS.length) + " preprints";
+    var list = document.getElementById("preprints-list");
+    list.textContent = "";
+    if (!rows.length) {{ list.appendChild(el("div", "empty", "No preprints match these filters.")); return; }}
+    var frag = document.createDocumentFragment();
+    rows.forEach(function(p) {{ frag.appendChild(renderPreprintCard(p)); }});
+    list.appendChild(frag);
+  }}
+  window.renderPreprints = renderPreprints;
+  function renderPreprintCard(p) {{
+    var card = el("div", "pp-card");
+    card.appendChild(el("h3", null, p.title || "(untitled preprint)"));
+    var meta = el("div", "meta");
+    if (p.molecule_name) meta.appendChild(el("span", "pill", p.molecule_name));
+    if (p.server) meta.appendChild(el("span", "server-badge", p.server));
+    if (p.date) meta.appendChild(el("span", "pill", p.date));
+    card.appendChild(meta);
+    if (p.authors_short) card.appendChild(el("div", "authors", p.authors_short));
+    var links = el("div", "links");
+    var link = safeLink("Read preprint", p.url) ||
+      (p.doi ? safeLink("DOI", "https://doi.org/" + encodeURIComponent(p.doi)) : null);
+    if (link) links.appendChild(link);
+    // If url gave a link but a DOI also exists, surface DOI too.
+    if (p.url && p.doi) {{
+      var d = safeLink("DOI", "https://doi.org/" + encodeURIComponent(p.doi));
+      if (d) links.appendChild(d);
+    }}
+    if (links.childNodes.length) card.appendChild(links);
+    return card;
+  }}
+
+  // ---- corpus-stats strip ----------------------------------------------------
+  // Compact summary near the header, e.g. "Database: 36,371 papers · 29 bioactives
+  // with data · 2015-2026 · 42% with citations · updated <date>". Hidden when
+  // corpus_stats is absent/empty. Every value rendered via textContent.
+  function renderCorpusStrip() {{
+    var strip = document.getElementById("corpus-strip");
+    strip.textContent = "";
+    if (!CORPUS || !CORPUS.total_papers) {{ strip.style.display = "none"; return; }}
+    var parts = [];
+    parts.push(["Database", fmtInt(CORPUS.total_papers) + " papers"]);
+    if (CORPUS.molecules_with_data)
+      parts.push([null, fmtInt(CORPUS.molecules_with_data) + " bioactives with data"]);
+    var ymin = CORPUS.year_min, ymax = CORPUS.year_max;
+    if (ymin && ymax) parts.push([null, (ymin === ymax ? String(ymin) : ymin + "\\u2013" + ymax)]);
+    if (CORPUS.pct_citations_filled != null && CORPUS.pct_citations_filled !== "")
+      parts.push([null, CORPUS.pct_citations_filled + "% with citations"]);
+    var upd = String(CORPUS.generated_utc || "").slice(0, 10);
+    if (upd) parts.push([null, "updated " + upd]);
+    parts.forEach(function(pr, i) {{
+      if (i > 0) strip.appendChild(el("span", "cs-sep", "\\u00b7"));
+      if (pr[0]) {{ strip.appendChild(el("span", "cs-label", pr[0] + ":")); }}
+      strip.appendChild(el("b", null, pr[1]));
+    }});
+    strip.style.display = "";
+  }}
+
   // One-line descriptor per browser view.
   var BROWSER_DESC = {{
     evidence: "Every indexed paper across all bioactives \\u2014 filter, sort, and inspect the evidence.",
@@ -1522,17 +1932,25 @@ _TEMPLATE = """<!DOCTYPE html>
     var isBrowser = (name === "evidence" || name === "clinical");
     var isMol = name === "molecules";
     var isExp = name === "experimental";
+    var isTrials = name === "trials";
+    var isPreprints = name === "preprints";
     var isAbout = name === "about";
     document.getElementById("browser-view").style.display = isBrowser ? "" : "none";
     document.getElementById("molecules-view").style.display = isMol ? "" : "none";
     document.getElementById("experimental-view").style.display = isExp ? "" : "none";
+    document.getElementById("trials-view").style.display = isTrials ? "" : "none";
+    document.getElementById("preprints-view").style.display = isPreprints ? "" : "none";
     document.getElementById("about-view").style.display = isAbout ? "" : "none";
     document.getElementById("sidebar").style.display = isBrowser ? "" : "none";
     document.getElementById("tab-evidence").className = (name === "evidence") ? "active" : "";
     document.getElementById("tab-clinical").className = (name === "clinical") ? "active" : "";
+    document.getElementById("tab-trials").className = isTrials ? "active" : "";
+    document.getElementById("tab-preprints").className = isPreprints ? "active" : "";
     document.getElementById("tab-molecules").className = isMol ? "active" : "";
     document.getElementById("tab-experimental").className = isExp ? "active" : "";
     document.getElementById("tab-about").className = isAbout ? "active" : "";
+    if (isTrials) trialsFeedInit();
+    if (isPreprints) preprintsFeedInit();
     if (isBrowser) {{
       currentView = name;
       document.getElementById("browser-desc").textContent = BROWSER_DESC[name] || "";
@@ -1619,15 +2037,42 @@ _TEMPLATE = """<!DOCTYPE html>
       + "a human clinical (controlled or interventional), human observational, or evidence "
       + "synthesis class, or whose section is Human evidence or Reviews and overviews. It "
       + "reuses the same browser and filters, pre-filtered to those records.");
+
+    h3("Trials registry (NOT results)");
+    p("The Trials registry tab lists studies from ClinicalTrials.gov. These are study "
+      + "REGISTRATIONS \\u2014 trial designs, status, sponsors, and timelines \\u2014 not "
+      + "published, peer-reviewed results. A registration does not imply the intervention "
+      + "works. It is a distinct data type from the peer-reviewed Evidence and Clinical "
+      + "tabs; use the \\u201cOngoing only\\u201d toggle, molecule filter, and search to "
+      + "explore it. Populates after the trials fetch runs.");
+
+    h3("Preprints (NOT peer-reviewed)");
+    p("The Preprints tab lists bioRxiv/medRxiv preprints (via EuropePMC). Preprints have "
+      + "NOT been peer-reviewed \\u2014 their findings may change or be retracted and should "
+      + "be interpreted with caution. They are kept separate from the peer-reviewed evidence "
+      + "for exactly this reason. Populates after the preprints fetch runs.");
   }}
 
   function boot() {{
     buildFilters();
     if (INTERNAL) updateApSummary();
+    renderCorpusStrip();
     renderMolecules();
     renderExperimental();
     renderAbout();
     showTab("evidence");
+  }}
+
+  // In fetch mode the trials + preprints feeds are loaded at runtime like
+  // site_data.json; a 404 / parse error simply leaves the array empty so the
+  // tab shows its placeholder. Called before boot so the first tab click renders.
+  function fetchSideFeed(name, key, target) {{
+    return fetch(name).then(function(r) {{
+      if (!r.ok) return null;  // 404 etc. -> empty
+      return r.json();
+    }}).then(function(feed) {{
+      if (feed && feed[key]) target(feed[key]);
+    }}).catch(function() {{ /* tolerate absence -> empty feed */ }});
   }}
 
   if (DATA.mode === "fetch") {{
@@ -1637,11 +2082,19 @@ _TEMPLATE = """<!DOCTYPE html>
       MOLECULES = (feed.molecules || []).filter(function(m) {{ return true; }});
       // Prefer the feed's experimental list if present; else keep the inlined one.
       if (feed.experimental) EXPERIMENTAL = feed.experimental;
+      // corpus_stats travels with the main feed; prefer it, else keep inlined.
+      if (feed.corpus_stats) CORPUS = feed.corpus_stats;
+      // Trials + preprints are separate sibling feeds (may 404 -> stay empty).
+      return Promise.all([
+        fetchSideFeed("trials_data.json", "trials", function(v) {{ TRIALS = v || []; }}),
+        fetchSideFeed("preprints_data.json", "preprints", function(v) {{ PREPRINTS = v || []; }}),
+      ]);
+    }}).then(function() {{
       boot();
     }}).catch(function() {{
       document.getElementById("records-list").appendChild(el("div", "empty",
         "Could not load site_data.json (fetch mode requires it be served alongside this page)."));
-      buildFilters(); if (INTERNAL) updateApSummary(); renderExperimental(); renderAbout();
+      buildFilters(); if (INTERNAL) updateApSummary(); renderCorpusStrip(); renderExperimental(); renderAbout();
     }});
   }} else {{
     boot();

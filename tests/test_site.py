@@ -465,6 +465,190 @@ def run():
         check("Clinical tab wires to clinical view",
               "showTab('clinical')" in clin_html)
 
+    # 16) Trials + preprints feeds load from their sibling JSON, are empty-safe,
+    #     thread corpus_stats through, and keep the security invariants with
+    #     hostile trial/preprint fields.
+    # 16a) Feeds load from curated_dir when present; ongoing kept as a real bool.
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, "site_data.json"), "w", encoding="utf-8") as fh:
+            json.dump({
+                "records": [{"molecule_id": "retatrutide", "molecule_name": "R", "title": "T"}],
+                "molecules": [{"molecule_id": "retatrutide", "molecule_name": "R", "auto_published": "1"}],
+                "corpus_stats": {"generated_utc": "2026-07-04T00:00:00Z", "total_papers": 36371,
+                                 "molecules_with_data": 29, "year_min": 2015, "year_max": 2026,
+                                 "pct_citations_filled": 42, "featured": 22, "listed": 173},
+            }, fh)
+        with open(os.path.join(d, "trials_data.json"), "w", encoding="utf-8") as fh:
+            json.dump({"generated_utc": "2026-07-04T01:00:00Z", "count": 2, "ongoing_count": 1,
+                       "trials": [
+                           {"nct_id": "NCT01", "molecule_name": "R", "brief_title": "Ongoing trial",
+                            "overall_status": "RECRUITING", "phases": "PHASE2",
+                            "conditions": "Obesity", "lead_sponsor": "Acme", "url": "https://clinicaltrials.gov/study/NCT01",
+                            "start_date": "2025-01-01", "completion_date": "2027-01-01", "ongoing": True},
+                           {"nct_id": "NCT02", "molecule_name": "R", "brief_title": "Done trial",
+                            "overall_status": "COMPLETED", "conditions": "Diabetes",
+                            "url": "https://clinicaltrials.gov/study/NCT02", "start_date": "2020-01-01",
+                            "ongoing": False},
+                       ]}, fh)
+        with open(os.path.join(d, "preprints_data.json"), "w", encoding="utf-8") as fh:
+            json.dump({"generated_utc": "2026-07-04T02:00:00Z", "count": 1, "preprints": [
+                {"id": "PP1", "molecule_name": "R", "title": "A preprint",
+                 "authors_short": "Doe J; Roe K", "server": "bioRxiv", "date": "2026-05-01",
+                 "doi": "10.1101/xyz", "url": "https://www.biorxiv.org/content/xyz"},
+            ]}, fh)
+        sd = site.load_site_data(d)
+        check("trials feed loads", len(sd.trials) == 2)
+        check("preprints feed loads", len(sd.preprints) == 1)
+        check("trial ongoing is a real bool True", sd.trials[0]["ongoing"] is True)
+        check("trial ongoing is a real bool False", sd.trials[1]["ongoing"] is False)
+        check("corpus_stats threaded through", sd.corpus_stats.get("total_papers") == 36371)
+        check("trials generated_utc captured", sd.trials_generated_utc == "2026-07-04T01:00:00Z")
+        check("preprints generated_utc captured", sd.preprints_generated_utc == "2026-07-04T02:00:00Z")
+
+    # 16b) Absent feeds -> empty lists, absent corpus_stats -> empty dict (no crash).
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, "site_data.json"), "w", encoding="utf-8") as fh:
+            json.dump({"records": [], "molecules": []}, fh)
+        sd = site.load_site_data(d)
+        check("absent trials feed -> empty list", sd.trials == [])
+        check("absent preprints feed -> empty list", sd.preprints == [])
+        check("absent corpus_stats -> empty dict", sd.corpus_stats == {})
+
+    # 16c) Empty (present-but-no-rows) feeds are safe too.
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, "site_data.json"), "w", encoding="utf-8") as fh:
+            json.dump({"records": [], "molecules": []}, fh)
+        with open(os.path.join(d, "trials_data.json"), "w", encoding="utf-8") as fh:
+            json.dump({"generated_utc": "z", "count": 0, "ongoing_count": 0, "trials": []}, fh)
+        with open(os.path.join(d, "preprints_data.json"), "w", encoding="utf-8") as fh:
+            json.dump({"generated_utc": "z", "count": 0, "preprints": []}, fh)
+        sd = site.load_site_data(d)
+        check("empty trials feed -> empty list", sd.trials == [])
+        check("empty preprints feed -> empty list", sd.preprints == [])
+
+    # 16d) Corrupt feed JSON degrades to empty rather than raising.
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, "site_data.json"), "w", encoding="utf-8") as fh:
+            json.dump({"records": [], "molecules": []}, fh)
+        with open(os.path.join(d, "trials_data.json"), "w", encoding="utf-8") as fh:
+            fh.write("{not valid json")
+        sd = site.load_site_data(d)
+        check("corrupt trials feed -> empty list (no raise)", sd.trials == [])
+
+    # 16e) The built page carries the new tabs, subtitles, and empty-placeholder
+    #      text, and renders the corpus-stats strip with formatted numbers.
+    with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as out:
+        with open(os.path.join(src, "site_data.json"), "w", encoding="utf-8") as fh:
+            json.dump({
+                "records": [{"molecule_id": "retatrutide", "molecule_name": "R", "title": "T",
+                             "facet_all": "x"}],
+                "molecules": [{"molecule_id": "retatrutide", "molecule_name": "R", "auto_published": "1"}],
+                "corpus_stats": {"generated_utc": "2026-07-04T00:00:00Z", "total_papers": 36371,
+                                 "molecules_with_data": 29, "year_min": 2015, "year_max": 2026,
+                                 "pct_citations_filled": 42},
+            }, fh)
+        site.build_site(src, out, mode="inline")
+        with open(os.path.join(out, "index.html"), encoding="utf-8") as fh:
+            feed3 = fh.read()
+        check("Trials registry tab present", "Trials registry" in feed3)
+        check("Preprints tab present", ">Preprints<" in feed3)
+        check("trials tab wires to trials view", "showTab('trials')" in feed3)
+        check("preprints tab wires to preprints view", "showTab('preprints')" in feed3)
+        check("trials subtitle mentions ClinicalTrials.gov, not results",
+              "ClinicalTrials.gov" in feed3 and "not published results" in feed3)
+        check("preprints subtitle: NOT peer-reviewed",
+              "not peer-reviewed" in feed3.lower())
+        check("trials empty placeholder text present",
+              "populates after the" in feed3 and "trials fetch runs" in feed3)
+        check("preprints empty placeholder text present",
+              "preprints fetch runs" in feed3)
+        check("ongoing-only toggle present",
+              'id="trials-ongoing"' in feed3 and "ongoingOnly" in feed3)
+        check("ongoing filter drops non-ongoing when checked",
+              "if (ongoingOnly && !t.ongoing) return false" in feed3)
+        # corpus_stats: numbers inlined AND formatted with thousands separators in JS.
+        check("corpus_stats total_papers inlined", "36371" in feed3)
+        check("corpus strip renderer present", "function renderCorpusStrip" in feed3)
+        check("corpus strip uses thousands-sep formatter",
+              "fmtInt(CORPUS.total_papers)" in feed3)
+        check("corpus strip hidden when stats absent",
+              "if (!CORPUS || !CORPUS.total_papers)" in feed3)
+        # trial link safety: only http(s) allowed, encoded, no javascript:.
+        check("safeLink rejects non-http(s) schemes",
+              "/^https?:\\/\\//i.test(u)" in feed3)
+        check("trial/preprint links via safeLink helper", "function safeLink" in feed3)
+
+    # 16f) Corpus strip hides gracefully when corpus_stats is absent from the feed.
+    with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as out:
+        with open(os.path.join(src, "site_data.json"), "w", encoding="utf-8") as fh:
+            json.dump({"records": [{"molecule_id": "r", "molecule_name": "R", "title": "T",
+                                    "facet_all": "x"}],
+                       "molecules": [{"molecule_id": "r", "molecule_name": "R", "auto_published": "1"}]}, fh)
+        site.build_site(src, out, mode="inline")
+        with open(os.path.join(out, "index.html"), encoding="utf-8") as fh:
+            nostats = fh.read()
+        check("empty corpus_stats inlined as {}", '"corpus_stats":{}' in nostats)
+
+    # 16g) Security: hostile trial + preprint fields render inert (inside the JSON
+    #      data block, </ neutralized) and produce no breakout / no js: href. A
+    #      hostile url must NOT become a link (safeLink rejects non-http(s)).
+    with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as out:
+        with open(os.path.join(src, "site_data.json"), "w", encoding="utf-8") as fh:
+            json.dump({"records": [], "molecules": []}, fh)
+        with open(os.path.join(src, "trials_data.json"), "w", encoding="utf-8") as fh:
+            json.dump({"trials": [{
+                "nct_id": "NCT99",
+                "brief_title": "</script><img src=x onerror=alert(1)>",
+                "lead_sponsor": '"><script>alert(2)</script>',
+                "overall_status": "RECRUITING", "conditions": "x",
+                "url": "javascript:alert(3)", "ongoing": True,
+            }]}, fh)
+        with open(os.path.join(src, "preprints_data.json"), "w", encoding="utf-8") as fh:
+            json.dump({"preprints": [{
+                "id": "P99", "title": "</script><b>evil</b>",
+                "authors_short": "</script>x", "server": "bioRxiv",
+                "date": "2026-01-01", "url": "data:text/html,evil", "doi": "10.1/x",
+            }]}, fh)
+        site.build_site(src, out, mode="inline")
+        with open(os.path.join(out, "index.html"), encoding="utf-8") as fh:
+            hostile_html = fh.read()
+        # Data goes inside the SAME single application/json block, so still exactly
+        # two literal </script> tags (data block close + logic script close).
+        check("hostile feeds: exactly 2 </script> tags", hostile_html.count("</script>") == 2)
+        check("hostile feeds: no </script> breakout", "</script><" not in hostile_html)
+        check("hostile feeds: breakout neutralized in block", "<\\/script><img" in hostile_html)
+        check("hostile feeds: no javascript: href", 'href="javascript:' not in hostile_html.lower())
+        check("hostile feeds: no data: href", 'href="data:' not in hostile_html.lower())
+        # hostile url stored inert in the block but rejected by safeLink at runtime.
+        check("hostile trial url present only as inert data",
+              "javascript:alert(3)" in hostile_html)
+
+    # 16h) fetch mode blanks trials/preprints (fetched at runtime) but keeps
+    #      corpus_stats inlined, and wires the runtime side-feed fetch + 404 tolerance.
+    with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as out:
+        with open(os.path.join(src, "site_data.json"), "w", encoding="utf-8") as fh:
+            json.dump({"records": [{"molecule_id": "r", "molecule_name": "R", "title": "T",
+                                    "facet_all": "x"}],
+                       "molecules": [{"molecule_id": "r", "molecule_name": "R", "auto_published": "1"}],
+                       "corpus_stats": {"total_papers": 100, "generated_utc": "2026-07-04T00:00:00Z"}}, fh)
+        with open(os.path.join(src, "trials_data.json"), "w", encoding="utf-8") as fh:
+            json.dump({"trials": [{"nct_id": "NCT1", "brief_title": "t", "ongoing": True,
+                                   "url": "https://clinicaltrials.gov/study/NCT1"}]}, fh)
+        with open(os.path.join(src, "preprints_data.json"), "w", encoding="utf-8") as fh:
+            json.dump({"preprints": [{"id": "p", "title": "t", "url": "https://x/y"}]}, fh)
+        site.build_site(src, out, mode="fetch")
+        with open(os.path.join(out, "index.html"), encoding="utf-8") as fh:
+            fetch_html = fh.read()
+        check("fetch mode blanks inlined trials", '"trials":[]' in fetch_html)
+        check("fetch mode blanks inlined preprints", '"preprints":[]' in fetch_html)
+        check("fetch mode keeps corpus_stats inlined", '"total_papers":100' in fetch_html)
+        check("fetch mode fetches trials_data.json at runtime",
+              'fetchSideFeed("trials_data.json"' in fetch_html)
+        check("fetch mode fetches preprints_data.json at runtime",
+              'fetchSideFeed("preprints_data.json"' in fetch_html)
+        check("fetch mode tolerates 404 on side feeds", "if (!r.ok) return null" in fetch_html)
+        check("fetch mode: still exactly 2 </script> tags", fetch_html.count("</script>") == 2)
+
     print(f"\n{PASS} passed, {FAIL} failed")
     return 0 if FAIL == 0 else 1
 

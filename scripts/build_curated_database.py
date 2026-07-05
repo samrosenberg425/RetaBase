@@ -225,8 +225,13 @@ def build(db_path: str, out_dir: str, limit: int = 0) -> dict:
     featured = [r for r in curated_rows if r.get("publication_status") == "featured"]
     _write_csv(os.path.join(out_dir, "featured_records.csv"), featured, curated_cols)
 
+    # --- corpus progress stats (cheap; computed from rows already in memory) ---
+    corpus_stats = _corpus_stats(curated_rows, papers, evidence)
+    with open(os.path.join(out_dir, "corpus_stats.json"), "w", encoding="utf-8") as fh:
+        json.dump(corpus_stats, fh, indent=2)
+
     # --- site_data.json (compact feed a hosted site fetches; rank-sorted) ---
-    _write_site_json(os.path.join(out_dir, "site_data.json"), public, _molecule_index(curated_rows))
+    _write_site_json(os.path.join(out_dir, "site_data.json"), public, _molecule_index(curated_rows), corpus_stats)
 
     # --- review_queue.csv ---
     queue = [r for r in curated_rows if r.get("publication_status") == "review"]
@@ -254,7 +259,44 @@ def build(db_path: str, out_dir: str, limit: int = 0) -> dict:
     _write_schema(out_dir, curated_cols, required)
 
     return {"stats": stats, "curated": len(curated_rows), "facets_long": len(facets_long_rows),
-            "public": len(public), "queue": len(queue), "molecules": len(mol_rows)}
+            "public": len(public), "queue": len(queue), "molecules": len(mol_rows),
+            "corpus_stats": corpus_stats}
+
+
+def _corpus_stats(curated_rows: List[dict], papers: List[dict], evidence: List[dict]) -> dict:
+    """Compute lightweight "progress of the growing database" stats.
+
+    Cheap: derived from rows already in memory during the build. Note ``papers``
+    / ``evidence`` are the raw corpus tables (so ``total_papers`` reflects the
+    full corpus, not just the limited slice ``curated_rows`` may represent).
+    """
+    import datetime as _dt
+
+    years: List[int] = []
+    for r in curated_rows:
+        y = _int(r.get("pub_year"))
+        if y and 1900 < y < 2100:
+            years.append(y)
+
+    filled = sum(1 for r in curated_rows if _int(r.get("citation_count")) > 0 or str(r.get("citation_count", "")).strip() not in {"", "0"})
+    total_curated = len(curated_rows)
+    pct_citations = round(100.0 * filled / total_curated, 1) if total_curated else 0.0
+
+    molecules_with_data = len({str(r.get("molecule_id", "")) for r in curated_rows if r.get("molecule_id")})
+    featured = sum(1 for r in curated_rows if r.get("publication_status") == "featured")
+    listed = sum(1 for r in curated_rows if r.get("publication_status") == "listed")
+
+    return {
+        "generated_utc": _dt.datetime.utcnow().isoformat() + "Z",
+        "total_papers": len(papers),
+        "total_evidence": len(evidence),
+        "molecules_with_data": molecules_with_data,
+        "year_min": min(years) if years else None,
+        "year_max": max(years) if years else None,
+        "pct_citations_filled": pct_citations,
+        "featured": featured,
+        "listed": listed,
+    }
 
 
 # Compact field set the browsable site needs (keeps site_data.json small).
@@ -298,7 +340,7 @@ def _load_experimental(path: str = os.path.join("config", "EXPERIMENTAL_MOLECULE
     return out
 
 
-def _write_site_json(path: str, records: List[dict], molecules: List[dict]) -> None:
+def _write_site_json(path: str, records: List[dict], molecules: List[dict], corpus_stats: dict | None = None) -> None:
     """Compact, rank-sorted JSON feed for a hosted (fetch-based) site."""
     import datetime as _dt
 
@@ -311,6 +353,7 @@ def _write_site_json(path: str, records: List[dict], molecules: List[dict]) -> N
         "records": trimmed,
         "molecules": molecules,
         "experimental": experimental,
+        "corpus_stats": corpus_stats or {},
     }
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, separators=(",", ":"), ensure_ascii=False)

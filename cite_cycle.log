@@ -9,3 +9,43 @@ Papers: 36371; with citation_count: 4997; missing: 31374
   chunk 5: queried 15000/31374, filled 14984 (OpenAlex 14964, S2 20)
   chunk 6: queried 18000/31374, filled 17983 (OpenAlex 17963, S2 20)
   chunk 7: queried 21000/31374, filled 20982 (OpenAlex 20962, S2 20)
+  chunk 8: queried 24000/31374, filled 23979 (OpenAlex 23959, S2 20)
+  chunk 9: queried 27000/31374, filled 26979 (OpenAlex 26959, S2 20)
+  chunk 10: queried 30000/31374, filled 29977 (OpenAlex 29955, S2 22)
+  chunk 11: queried 31374/31374, filled 31350 (OpenAlex 31328, S2 22)
+Live: queried 31374 papers, filled 31350 citation counts (OpenAlex 31328, Semantic Scholar fallback 22).
+Re-run the curated build so ranking picks up the new impact values.
+[Sat Jul  4 18:04:26 EDT 2026] rebuilding curated layer + site so ranking picks up citations
+=== Curation pipeline ===
+  db          : data/retarats_pubmed.sqlite
+  curated-dir : exports/curated
+  site-dir    : exports/site
+
+[1/2] Building curated database (SQLite -> curated CSVs)...
+$ /Users/samrosenberg/Desktop/CAHBIR/Reta/retarats-auto/.venv/bin/python scripts/build_curated_database.py --db data/retarats_pubmed.sqlite --out-dir exports/curated --limit 0
+Curated 37821 evidence rows -> exports/curated/
+  facets_long rows : 575275
+  public_records   : 35974
+  review_queue     : 0
+  molecule_index   : 73
+  auto_publish_eligible: 2110
+  missing required fields: 0
+  model_primary != model_type (disambiguation impact): 3878
+  publication_status: {'featured': 2110, 'listed': 33864, 'excluded_noise': 1847}
+  reliability_tier  : {'high': 1980, 'limited': 23049, 'moderate': 10945, 'not_applicable': 1847}
+  website_section   : {'Mechanisms and pathways': 16418, 'Methods, assays, and tools': 10196, 'Comparator and background': 2453, 'Biomarkers and readouts': 1598, 'Preclinical evidence': 1581, 'Human evidence': 1412, 'Background and context': 1373, 'Reviews and overviews': 943}
+  species facets    : {'human': 17671, 'cell_line': 9271, 'mouse': 8417, 'rat': 4331, 'pig': 377, 'zebrafish': 342, 'drosophila': 159, 'c_elegans': 155, 'rabbit': 143, 'dog': 123, 'nonhuman_primate': 54}
+
+[2/2] Building public site (curated CSVs -> index.html)...
+$ /Users/samrosenberg/Desktop/CAHBIR/Reta/retarats-auto/.venv/bin/python scripts/build_public_site.py --curated-dir exports/curated --out-dir exports/site --mode inline --max-inline 4000
+warning: 35974 records exceeds --max-inline 4000; inlining the top 4000 by rank (use --mode fetch to serve all).
+Built site (inline, public) -> exports/site/index.html
+  records  : 4000 inlined / 35974 total (31974 truncated)
+  molecules: 73
+  size     : 9204.8 KiB (9425717 bytes)
+
+Done.
+  Curated CSVs : exports/curated/
+  Public site  : exports/site/index.html
+  Open the index.html directly in a browser (no server needed).
+[Sat Jul  4 18:07:01 EDT 2026] done

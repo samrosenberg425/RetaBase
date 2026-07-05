@@ -4,6 +4,13 @@ name: Update database and publish site
 # layer + site, and deploy the static dashboard to GitHub Pages. The (large)
 # SQLite corpus is kept in the Actions cache (~10 GB free per repo) so the git
 # repo stays small; only the compact site + curated exports are published.
+#
+# Two jobs (GitHub's canonical Pages pattern):
+#   build  -> fetch + rebuild + upload the Pages artifact (serialized with the
+#             other corpus workflows via the shared 'retarats-corpus' lock).
+#   deploy -> deploy the artifact, in its OWN 'pages' concurrency group so
+#             overlapping runs never collide at the deploy step (that collision
+#             is what produced the transient "Deployment failed, try again later").
 
 on:
   schedule:
@@ -15,16 +22,14 @@ permissions:
   pages: write
   id-token: write
 
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
-
 jobs:
-  update:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+    # Serialized with backfill/citations/registry so only one job writes the
+    # shared corpus cache at a time (prevents cache-overwrite races).
+    concurrency:
+      group: retarats-corpus
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
@@ -66,12 +71,27 @@ jobs:
           python3 scripts/build_public_site.py --curated-dir exports/curated --out-dir exports/site --mode fetch
           python3 scripts/validate_curated.py --curated-dir exports/curated || true
           cp exports/curated/site_data.json exports/site/site_data.json
+          # Publish the separate registry feeds (built by registry.yml) alongside
+          # the curated feed. Guarded so a missing feed doesn't fail the deploy.
+          cp exports/curated/trials_data.json exports/site/trials_data.json 2>/dev/null || true
+          cp exports/curated/preprints_data.json exports/site/preprints_data.json 2>/dev/null || true
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: exports/site
 
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # Dedicated Pages-deploy lock: overlapping deploys queue instead of colliding.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
       - name: Deploy to GitHub Pages
         id: deploy
         uses: actions/deploy-pages@v4

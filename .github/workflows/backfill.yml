@@ -1,11 +1,15 @@
-name: Historical backfill (manual)
+name: Historical backfill (auto)
 
-# One-off / repeatable large historical backfill. Walks backwards from a start
-# year, size-capped, resumable via data/backfill_checkpoint.json in the cache.
-# GitHub jobs cap at ~6h, so re-run this workflow until it reports the target
-# size is reached (the checkpoint means each run resumes where the last stopped).
+# Large historical backfill that CONTINUES ITSELF on a schedule until done.
+# Walks backwards from a start year, size-capped, resumable via
+# data/backfill_checkpoint.json in the cache. GitHub jobs cap at ~6h, so each
+# scheduled run does another ~6h chunk and the checkpoint resumes where the last
+# stopped. Once it reaches target_gb (or min_year) later runs are quick no-ops.
+# You can also trigger it manually with custom bounds.
 
 on:
+  schedule:
+    - cron: "15 */6 * * *"   # every 6 h: auto-continue the fill until the target is reached
   workflow_dispatch:
     inputs:
       start_year:
@@ -13,13 +17,18 @@ on:
         default: "2025"
       min_year:
         description: "Oldest year to attempt"
-        default: "1975"
+        default: "1965"
       target_gb:
         description: "Stop once the SQLite reaches this size (GB)"
-        default: "10"
+        default: "8"
 
 permissions:
   contents: read
+
+concurrency:
+  # Serialized with update + citations so corpus-cache writes never race.
+  group: retarats-corpus
+  cancel-in-progress: false
 
 jobs:
   backfill:
@@ -47,7 +56,7 @@ jobs:
           API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
         run: |
           python3 scripts/run_backfill.py \
-            --start-year ${{ github.event.inputs.start_year }} \
-            --min-year ${{ github.event.inputs.min_year }} \
-            --target-gb ${{ github.event.inputs.target_gb }} \
+            --start-year ${{ github.event.inputs.start_year || '2025' }} \
+            --min-year ${{ github.event.inputs.min_year || '1965' }} \
+            --target-gb ${{ github.event.inputs.target_gb || '8' }} \
             --db data/retarats_pubmed.sqlite --state-db data/retarats_state.sqlite

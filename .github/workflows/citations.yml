@@ -14,7 +14,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: citations
+  # Shared with the fetch/backfill + update workflows: only ONE job may touch the
+  # corpus cache at a time, so concurrent runs can't overwrite each other's writes.
+  group: retarats-corpus
   cancel-in-progress: false
 
 jobs:

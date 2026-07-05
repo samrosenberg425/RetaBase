@@ -1,0 +1,63 @@
+name: Registry sources (trials + preprints)
+
+# Weekly (and on-demand) fetch of the SEPARATE, non-peer-reviewed corpus sources:
+# ClinicalTrials.gov registry trials + EuropePMC preprints. Fetches into their
+# own SQLite DBs (data/retarats_trials.sqlite, data/retarats_preprints.sqlite),
+# then rebuilds the compact JSON feeds (trials_data.json, preprints_data.json).
+#
+# This workflow does NOT deploy Pages — update.yml owns publishing and copies the
+# feeds into exports/site. Here we only fetch + build the JSON.
+
+on:
+  schedule:
+    - cron: "0 7 * * 1"     # weekly, Mondays 07:00 UTC (after the main update)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Serialized with update/backfill/citations: only one job touches the shared
+  # corpus cache at a time so writes never race/overwrite each other.
+  group: retarats-corpus
+  cancel-in-progress: false
+
+jobs:
+  registry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Restore the corpus + registry DBs (same cache path/key as the other
+      # corpus workflows) so the separate trials/preprints DBs persist too.
+      - name: Restore corpus cache
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: retarats-corpus-${{ github.run_id }}
+          restore-keys: |
+            retarats-corpus-
+
+      - name: Fetch ClinicalTrials.gov registry trials
+        env:
+          API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
+        run: |
+          python3 scripts/run_trials_fetch.py --db data/retarats_trials.sqlite || true
+
+      - name: Fetch EuropePMC preprints
+        env:
+          API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
+        run: |
+          python3 scripts/run_preprints_fetch.py --db data/retarats_preprints.sqlite || true
+
+      - name: Build registry JSON feeds
+        run: |
+          python3 scripts/build_trials_json.py --db data/retarats_trials.sqlite --out exports/curated/trials_data.json
+          python3 scripts/build_preprints_json.py --db data/retarats_preprints.sqlite --out exports/curated/preprints_data.json
