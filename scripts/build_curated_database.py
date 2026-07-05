@@ -33,7 +33,7 @@ from typing import Dict, Iterable, List
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from retarats_pipeline.curation.appraisal import APPRAISAL_FIELDS, appraise_evidence
-from retarats_pipeline.curation.extractors import REFINED_FIELDS, refine_extraction
+from retarats_pipeline.curation.extractors import REFINED_FIELDS, off_focus_reason, refine_extraction
 from retarats_pipeline.curation.facets import FACET_GROUPS, derive_facets, load_facet_defs
 from retarats_pipeline.curation.journal import JOURNAL_FIELDS, journal_reputation
 from retarats_pipeline.curation.publication_status import (
@@ -167,6 +167,9 @@ def build(db_path: str, out_dir: str, limit: int = 0) -> dict:
         row["journal_tier"] = jr.journal_tier
         row["journal_rationale"] = jr.journal_rationale
 
+        # 4a) off-focus noise (opinion / infodemiology) the search can't catch.
+        row["off_focus_reason"] = off_focus_reason(row, paper)
+
         # 4) publication decision (broad inclusion; reads evidence_class + directness).
         decision = decide_publication(row, rules, required)
         row.update(decision.to_dict())
@@ -238,7 +241,8 @@ def build(db_path: str, out_dir: str, limit: int = 0) -> dict:
     if feed_stats["capped_molecule_count"]:
         print(f"  site feed capped : {feed_stats['published_records']} of "
               f"{feed_stats['total_public_records']} published "
-              f"({feed_stats['capped_molecule_count']} molecule(s) over {FEED_CAP_PER_MOLECULE})")
+              f"({feed_stats['capped_molecule_count']} molecule(s) capped; "
+              f"focus<= {feed_stats['focus_cap']}, other<= {feed_stats['other_cap']})")
     _write_site_json(os.path.join(out_dir, "site_data.json"), feed, _molecule_index(curated_rows), corpus_stats)
 
     # --- review_queue.csv ---
@@ -361,21 +365,24 @@ def _load_experimental(path: str = os.path.join("config", "EXPERIMENTAL_MOLECULE
 #     "dimensionality reduction": keep findings/methods of the important papers).
 # Molecules at or under the cap are published in full. Raising FEED_CAP_PER_MOLECULE
 # (or removing the cap) is all that's needed once hosting can handle more data.
-# site_data.json is compact (~230 bytes/record, no abstracts), so even ~100k
-# records is only ~24 MB -- well within GitHub Pages (~1 GB) and fine for the
-# browser. 3000/molecule publishes the large majority of the corpus while still
-# bounding the handful of mega-molecules (rapamycin/metformin/glutathione) so
-# client-side filtering stays snappy. Raise toward 10000 (or remove the cap) if
-# you move to a host that can serve a bigger feed and don't mind heavier filtering.
-FEED_CAP_PER_MOLECULE = 3000
-FEED_PRIORITY_SECTION = "Reviews and overviews"  # always kept, uncapped
+# The published feed is capped per molecule so the browser-loaded JSON stays light,
+# but the cap is SECTION-AWARE rather than a flat number: the two things RetaBase is
+# about -- therapeutic use (Human evidence) and mechanism of action (Mechanisms and
+# pathways), plus Reviews -- get a high ceiling so well-studied molecules can show
+# lots of evidence; the lower-value sections (methods/assays, comparator/background,
+# biomarkers, background/context) are limited hard so they don't bloat the feed.
+# site_data.json is ~230 bytes/record, so even a big molecule at ~4400 records is a
+# few MB. Raise these if you move to a heavier-duty host.
+FEED_FOCUS_SECTIONS = {"Human evidence", "Mechanisms and pathways", "Reviews and overviews"}
+FEED_FOCUS_CAP = 4000   # per molecule, for the therapy + MoA + review sections
+FEED_OTHER_CAP = 400    # per molecule, for every other (lower-value) section
 
 
-def _cap_site_feed(records: List[dict], cap: int = FEED_CAP_PER_MOLECULE):
-    """Bound the PUBLISHED feed per molecule; return (feed_records, feed_stats).
+def _cap_site_feed(records: List[dict], focus_cap: int = FEED_FOCUS_CAP, other_cap: int = FEED_OTHER_CAP):
+    """Bound the PUBLISHED feed per molecule, section-aware; return (feed, stats).
 
     ``records`` arrive globally rank-sorted (best first); grouping preserves that
-    order, so ``rest[:budget]`` is the top-ranked remainder for each molecule.
+    order, so slicing keeps the top-ranked records within each bucket.
     """
     from collections import defaultdict
 
@@ -386,19 +393,19 @@ def _cap_site_feed(records: List[dict], cap: int = FEED_CAP_PER_MOLECULE):
     kept: List[dict] = []
     capped: Dict[str, dict] = {}
     for mol, recs in by_mol.items():
-        if len(recs) <= cap:
-            kept.extend(recs)
-            continue
-        always = [r for r in recs if str(r.get("website_section", "")) == FEED_PRIORITY_SECTION]
-        rest = [r for r in recs if str(r.get("website_section", "")) != FEED_PRIORITY_SECTION]
-        budget = max(cap - len(always), 0)
-        chosen = always + rest[:budget]
+        focus = [r for r in recs if str(r.get("website_section", "")) in FEED_FOCUS_SECTIONS]
+        other = [r for r in recs if str(r.get("website_section", "")) not in FEED_FOCUS_SECTIONS]
+        chosen = focus[:focus_cap] + other[:other_cap]
         kept.extend(chosen)
-        capped[mol] = {"total": len(recs), "published": len(chosen)}
+        if len(chosen) < len(recs):
+            capped[mol] = {"total": len(recs), "published": len(chosen),
+                           "focus": min(len(focus), focus_cap), "other": min(len(other), other_cap)}
 
     kept.sort(key=lambda r: _int(r.get("rank_score")), reverse=True)
     stats = {
-        "cap_per_molecule": cap,
+        "focus_cap": focus_cap,
+        "other_cap": other_cap,
+        "focus_sections": sorted(FEED_FOCUS_SECTIONS),
         "total_public_records": len(records),
         "published_records": len(kept),
         "capped_molecule_count": len(capped),

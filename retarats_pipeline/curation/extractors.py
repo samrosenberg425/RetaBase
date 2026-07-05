@@ -223,6 +223,32 @@ def _dedupe(items) -> List[str]:
     return out
 
 
+# Off-focus noise the search query can't catch: opinion / infodemiology studies
+# (public perception of a bioactive, social-media / Google-Trends analyses, media
+# coverage). These can legitimately carry the molecule in the title, so title/MeSH
+# anchoring won't drop them -- but they are about DISCOURSE, not therapeutic use or
+# mechanism, so they don't belong in the evidence base. Deliberately narrow: only
+# unambiguous opinion/infodemiology signals, so real clinical/mechanistic work is
+# left untouched.
+_OFF_FOCUS_OPINION = re.compile(
+    r"\b(social media|twitter|reddit|tiktok|instagram|facebook|youtube|"
+    r"google trends|infodemiolog\w*|sentiment analysis|"
+    r"public (?:opinion|perception|perceptions|attitude|attitudes|awareness)|"
+    r"online (?:forum|forums|discourse|posts?|content|communities)|"
+    r"misinformation|news coverage|media coverage|web search(?:es)?)\b",
+    re.IGNORECASE,
+)
+
+
+def off_focus_reason(evidence: dict, paper: dict) -> str:
+    """Reason string if the paper is off-focus noise (opinion / infodemiology),
+    else "". Routes such records to excluded_noise. Narrow by design so it never
+    catches genuine therapeutic-use or mechanistic studies."""
+    if _OFF_FOCUS_OPINION.search(_text_blob(evidence, paper)):
+        return "opinion / infodemiology study (public discourse, not therapeutic use or mechanism)"
+    return ""
+
+
 # --- public field-level parsers --------------------------------------------
 
 

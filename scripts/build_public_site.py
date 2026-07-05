@@ -2035,12 +2035,14 @@ _TEMPLATE = """<!DOCTYPE html>
 
     h3("What's published vs. the full corpus");
     p("A few molecules (for example metformin or rapamycin) have tens of thousands of "
-      + "papers. To keep the site fast in your browser, each molecule publishes at most a "
-      + "few thousand records here, chosen best-first: every review and meta-analysis is "
-      + "kept, then the highest-ranked human, most-cited, and most-recent studies. Older, "
-      + "low-impact preclinical papers are the first held back. This is a display limit "
-      + "only \\u2014 the FULL set of matching papers is retained in the project's data files; "
-      + "nothing is deleted, just what loads in the browser is bounded.");
+      + "papers. To keep the site fast in your browser, the published feed is capped per "
+      + "molecule, but weighted toward what this database is about: the human-evidence "
+      + "(therapeutic use), mechanism-of-action, and review sections get a high ceiling so "
+      + "well-studied molecules can show a lot, while lower-value sections (methods/assays, "
+      + "comparator/background, biomarkers) are limited more tightly. Within each, records "
+      + "are kept best-first by rank. This is a display limit only \\u2014 the FULL set of "
+      + "matching papers is retained in the project's data files; nothing is deleted, just "
+      + "what loads in the browser is bounded.");
 
     h3("Filters");
     p("Every facet supports INCLUDE and EXCLUDE. Include is OR within a domain (a paper "

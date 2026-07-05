@@ -259,6 +259,22 @@ def decide_publication(
             missing_required_fields="; ".join(missing),
         )
 
+    # 1b) Off-focus noise: opinion / infodemiology papers (public discourse about a
+    #     bioactive, not its therapeutic use or mechanism). Flag set upstream from
+    #     the title/abstract; excluded so the evidence base stays use/MoA-focused.
+    off_focus = str(evidence.get("off_focus_reason", "") or "")
+    if off_focus:
+        return PublicationDecision(
+            publication_status="excluded_noise",
+            website_section="",
+            auto_publish_eligible=False,
+            review_reason=off_focus,
+            publish_rule_id="broad_v1:off_focus",
+            display_priority=0,
+            required_fields_present=present,
+            missing_required_fields="; ".join(missing),
+        )
+
     section = SECTION_BY_LANE.get(lane) or SECTION_BY_CLASS.get(ev_class) or "Background and context"
 
     # 2) Missing required metadata -> included but flagged for a curator.
