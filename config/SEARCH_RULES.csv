@@ -34,7 +34,7 @@ igf_1_des_strict_tiab_v1,igf_1_des,strict,"(""IGF-1 DES""[tiab] OR ""IGF-1 DES(1
 epitalon_strict_tiab_v1,epitalon,strict,"(""Epitalon""[tiab] OR ""Epithalon""[tiab] OR ""Epithalamin""[tiab])",True,
 thymalin_strict_tiab_v1,thymalin,strict,"(""Thymalin""[tiab])",True,
 pinealon_strict_tiab_v1,pinealon,strict,"(""Pinealon""[tiab])",True,
-ll_37_strict_tiab_v1,ll_37,strict,"(""LL-37""[ti] OR (""Cathelicidins""[majr] AND ""LL-37""[tiab]))",True,subject-anchored (title, or cathelicidin major topic + LL-37); avoids cathelicidin-only flood
+ll_37_strict_tiab_v1,ll_37,strict,"(""LL-37""[ti] OR (""Cathelicidins""[majr] AND ""LL-37""[tiab]))",True,subject-anchored to title or cathelicidin major topic; avoids cathelicidin-only flood
 peg_mgf_strict_tiab_v1,peg_mgf,strict,"(""PEG-MGF""[tiab] OR (""PEGylated""[tiab] AND (""mechano growth factor""[tiab] OR ""MGF""[tiab])))",True,
 mgf_igf1ec_strict_tiab_v1,mgf_igf1ec,strict,"(""mechano growth factor""[tiab] OR ""IGF-1Ec""[tiab] OR ""IGF1Ec""[tiab] OR ""IGF-IEc""[tiab])",True,no MGF alone
 gdf_11_strict_tiab_v1,gdf_11,strict,"(""GDF-11""[tiab] OR ""growth differentiation factor 11""[tiab])",True,
@@ -68,7 +68,7 @@ danuglipron_strict_tiab_v1,danuglipron,strict,"(""Danuglipron""[tiab] OR ""PF-06
 rapamycin_strict_tiab_v1,rapamycin,strict,"(""Sirolimus""[majr] OR ""Rapamycin""[ti] OR ""Sirolimus""[ti])",True,subject-anchored (MeSH major topic Sirolimus OR title); drops mTOR-tool-use mentions
 metformin_strict_tiab_v1,metformin,strict,"(""Metformin""[majr] OR ""Metformin""[ti])",True,subject-anchored (MeSH major topic OR title) to drop incidental-mention papers
 dasatinib_strict_tiab_v1,dasatinib,strict,"(""Dasatinib""[majr] OR ""Dasatinib""[ti])",True,subject-anchored (MeSH major topic OR title)
-quercetin_strict_tiab_v1,quercetin,strict,"(""Quercetin""[majr] OR ""Quercetin""[ti])",True,subject-anchored (MeSH major topic OR title) to capture use + mechanism, not incidental mentions
+quercetin_strict_tiab_v1,quercetin,strict,"(""Quercetin""[majr] OR ""Quercetin""[ti])",True,subject-anchored (MeSH major topic OR title) to capture use and mechanism (not incidental mentions)
 fisetin_strict_tiab_v1,fisetin,strict,"(""Fisetin""[tiab])",True,
 akg_strict_tiab_v1,akg,strict,"(""alpha-ketoglutarate""[ti] OR ""α-ketoglutarate""[ti] OR (""AKG""[ti] AND ketoglutarate[tiab]))",True,subject-anchored (title); avoids AKG ambiguity
 vasculotide_strict_tiab_v1,vasculotide,strict,"(""Vasculotide""[tiab])",True,
