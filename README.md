@@ -164,6 +164,20 @@ python3 tests/test_curation.py && python3 tests/test_extractors.py \
 
 Rule-based and **auditable** (every tag, score, and decision is explainable from config), **non-destructive** (enrichment proposes, never overwrites), **offline curation** (no LLM/network needed to rebuild the site), and **broad inclusion** (reliability is a label, not a hide-gate). No PRISMA compliance is claimed, but the search/curation is PRISMA-S-informed and defensible.
 
+## How to cite
+
+If RetaBase is useful in your work, please credit it. GitHub shows a **"Cite this repository"** button (generated from `CITATION.cff`) with a ready-made citation.
+
+Provisional citation:
+
+> Rosenberg, S. (2026). *RetaBase: a transparent, auto-updating evidence database for retatrutide and related bioactives* [Software]. https://github.com/samrosenberg425/RetaBase
+
+**For a permanent, academically-citable DOI (recommended):** connect the repo to [Zenodo](https://zenodo.org) (log in with GitHub → toggle on the RetaBase repo), then publish a release on GitHub. Zenodo mints a DOI for that release; add it to `CITATION.cff` (`doi:` field) and to the citation above.
+
+## License
+
+Licensed under the **MIT License** — anyone may use, modify, and build on RetaBase **provided the copyright notice (attribution) is retained**. See [`LICENSE`](LICENSE). The underlying literature metadata comes from public sources (PubMed/PMC, OpenAlex, Crossref, EuropePMC, ClinicalTrials.gov) under their own terms; RetaBase's contribution is the curation, scoring, and presentation layer.
+
 ---
 
 *RetaBase is an independent research tool and is not affiliated with, or endorsed by, any drug manufacturer or regulatory body.*

@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use RetaBase in your research, please cite it as below."
+title: "RetaBase: a transparent, auto-updating evidence database for retatrutide and related bioactives"
+abstract: >-
+  RetaBase continuously pulls the biomedical literature for a curated set of
+  bioactive molecules (peptides, incretin agonists, metabolic and longevity
+  compounds), scores each paper for within-class study quality and translational
+  directness with rule-based, auditable methods, and publishes a browsable,
+  filterable dashboard ranked so the most reliable and impactful evidence
+  appears first. It also surfaces ClinicalTrials.gov registry studies and
+  preprints in separate, clearly labeled sections.
+type: software
+authors:
+  - family-names: Rosenberg
+    given-names: Samuel
+    # orcid: "https://orcid.org/0000-0000-0000-0000"  # add your ORCID if you have one
+license: MIT
+repository-code: "https://github.com/samrosenberg425/RetaBase"
+url: "https://samrosenberg425.github.io/RetaBase/"
+keywords:
+  - retatrutide
+  - peptides
+  - incretin
+  - GLP-1
+  - evidence synthesis
+  - biomedical literature
+  - PubMed
+# version: "1.0.0"        # set when you cut a release
+# date-released: 2026-07-05
+# doi: "10.5281/zenodo.XXXXXXX"   # fill in after connecting Zenodo (see README "How to cite")
