@@ -20,7 +20,7 @@ dsip_strict_tiab_v1,dsip,strict,"(""DSIP""[tiab] OR ""delta sleep-inducing pepti
 mots_c_strict_tiab_v1,mots_c,strict,"(""MOTS-c""[tiab] OR ""MOTS C""[tiab] OR ""MOTSc""[tiab])",True,
 humanin_strict_tiab_v1,humanin,strict,"(""Humanin""[tiab] OR ""mitochondrial-derived peptide""[tiab] OR ""mitochondrial derived peptide""[tiab])",True,removes HN
 humanin_broad_gene_v1,humanin,broad,"(""Humanin""[All Fields] OR ""MTRNR2""[All Fields] OR ""MTRNR2L""[All Fields]) NOT (""head and neck""[tiab] OR ""H&N""[tiab])",True,optional
-kisspeptin_strict_tiab_v1,kisspeptin,strict,"(""Kisspeptin""[tiab] OR ""Kisspeptin-10""[tiab] OR ""KP-10""[tiab] OR ""Metastin""[tiab])",True,
+kisspeptin_strict_tiab_v1,kisspeptin,strict,"(""Kisspeptins""[majr] OR ""Kisspeptin""[ti] OR ""Kisspeptin-10""[ti] OR ""KP-10""[ti] OR ""Metastin""[ti])",True,subject-anchored (MeSH major topic OR title)
 pt_141_strict_tiab_v1,pt_141,strict,"(""PT-141""[tiab] OR ""Bremelanotide""[tiab])",True,
 melanotan_ii_strict_tiab_v1,melanotan_ii,strict,"(""Melanotan II""[tiab] OR ""MT-II""[tiab])",True,
 melanotan_i_strict_tiab_v1,melanotan_i,strict,"(""Afamelanotide""[tiab] OR ""Melanotan I""[tiab])",True,
@@ -34,7 +34,7 @@ igf_1_des_strict_tiab_v1,igf_1_des,strict,"(""IGF-1 DES""[tiab] OR ""IGF-1 DES(1
 epitalon_strict_tiab_v1,epitalon,strict,"(""Epitalon""[tiab] OR ""Epithalon""[tiab] OR ""Epithalamin""[tiab])",True,
 thymalin_strict_tiab_v1,thymalin,strict,"(""Thymalin""[tiab])",True,
 pinealon_strict_tiab_v1,pinealon,strict,"(""Pinealon""[tiab])",True,
-ll_37_strict_tiab_v1,ll_37,strict,"(""LL-37""[tiab] OR (""cathelicidin""[tiab] AND ""LL-37""[tiab]))",True,avoids cathelicidin-only flood
+ll_37_strict_tiab_v1,ll_37,strict,"(""LL-37""[ti] OR (""Cathelicidins""[majr] AND ""LL-37""[tiab]))",True,subject-anchored (title, or cathelicidin major topic + LL-37); avoids cathelicidin-only flood
 peg_mgf_strict_tiab_v1,peg_mgf,strict,"(""PEG-MGF""[tiab] OR (""PEGylated""[tiab] AND (""mechano growth factor""[tiab] OR ""MGF""[tiab])))",True,
 mgf_igf1ec_strict_tiab_v1,mgf_igf1ec,strict,"(""mechano growth factor""[tiab] OR ""IGF-1Ec""[tiab] OR ""IGF1Ec""[tiab] OR ""IGF-IEc""[tiab])",True,no MGF alone
 gdf_11_strict_tiab_v1,gdf_11,strict,"(""GDF-11""[tiab] OR ""growth differentiation factor 11""[tiab])",True,
@@ -65,12 +65,12 @@ pemvidutide_strict_tiab_v1,pemvidutide,strict,"(""Pemvidutide""[tiab] OR ""ALT-8
 orforglipron_strict_tiab_v1,orforglipron,strict,"(""Orforglipron""[tiab] OR ""LY3502970""[tiab] OR ""LY-3502970""[tiab])",True,
 vk2735_strict_tiab_v1,vk2735,strict,"(""VK2735""[tiab] OR ""VK-2735""[tiab])",True,
 danuglipron_strict_tiab_v1,danuglipron,strict,"(""Danuglipron""[tiab] OR ""PF-06882961""[tiab] OR ""PF 06882961""[tiab])",True,
-rapamycin_strict_tiab_v1,rapamycin,strict,"(""Rapamycin""[tiab] OR ""Sirolimus""[tiab])",True,
+rapamycin_strict_tiab_v1,rapamycin,strict,"(""Sirolimus""[majr] OR ""Rapamycin""[ti] OR ""Sirolimus""[ti])",True,subject-anchored (MeSH major topic Sirolimus OR title); drops mTOR-tool-use mentions
 metformin_strict_tiab_v1,metformin,strict,"(""Metformin""[majr] OR ""Metformin""[ti])",True,subject-anchored (MeSH major topic OR title) to drop incidental-mention papers
-dasatinib_strict_tiab_v1,dasatinib,strict,"(""Dasatinib""[tiab])",True,
-quercetin_strict_tiab_v1,quercetin,strict,"(""Quercetin""[tiab]) AND (supplement*[tiab] OR administ*[tiab] OR infus*[tiab] OR ingest*[tiab] OR diet*[tiab] OR intake[tiab] OR consum*[tiab] OR gavage[tiab] OR ""dietary supplement""[tiab] OR ""therapeutic use""[sh] OR ""administration and dosage""[sh] OR ""drug therapy""[sh] OR ""diet therapy""[sh])",True,restricted to intake/administration context (dietary flavonoid; drops biomarker-only mentions)
+dasatinib_strict_tiab_v1,dasatinib,strict,"(""Dasatinib""[majr] OR ""Dasatinib""[ti])",True,subject-anchored (MeSH major topic OR title)
+quercetin_strict_tiab_v1,quercetin,strict,"(""Quercetin""[majr] OR ""Quercetin""[ti])",True,subject-anchored (MeSH major topic OR title) to capture use + mechanism, not incidental mentions
 fisetin_strict_tiab_v1,fisetin,strict,"(""Fisetin""[tiab])",True,
-akg_strict_tiab_v1,akg,strict,"(""alpha-ketoglutarate""[tiab] OR ""α-ketoglutarate""[tiab] OR (""AKG""[tiab] AND ketoglutarate[tiab])) AND (supplement*[tiab] OR administ*[tiab] OR infus*[tiab] OR ingest*[tiab] OR diet*[tiab] OR intake[tiab] OR consum*[tiab] OR gavage[tiab] OR ""dietary supplement""[tiab] OR ""therapeutic use""[sh] OR ""administration and dosage""[sh] OR ""drug therapy""[sh] OR ""diet therapy""[sh])",True,avoids AKG ambiguity; restricted to intake/administration context
+akg_strict_tiab_v1,akg,strict,"(""alpha-ketoglutarate""[ti] OR ""α-ketoglutarate""[ti] OR (""AKG""[ti] AND ketoglutarate[tiab]))",True,subject-anchored (title); avoids AKG ambiguity
 vasculotide_strict_tiab_v1,vasculotide,strict,"(""Vasculotide""[tiab])",True,
 angiotensin_1_7_strict_tiab_v1,angiotensin_1_7,strict,"((""angiotensin-(1-7)""[tiab] OR ""Ang-(1-7)""[tiab] OR ""Ang 1-7""[tiab]) AND (analog*[tiab] OR agonist*[tiab] OR ""Mas receptor""[tiab] OR ""AVE 0991""[tiab]))",True,focuses on analog/axis
 vilon_strict_tiab_v1,vilon,strict,"(""Vilon""[tiab])",True,
@@ -82,9 +82,9 @@ corgen_strict_tiab_v1,corgen,strict,"(""CORGEN""[tiab] OR ""Corgen""[tiab])",Tru
 vesilute_strict_tiab_v1,vesilute,strict,"(""Vesilute""[tiab])",True,
 prostamax_strict_tiab_v1,prostamax,strict,"(""Prostamax""[tiab])",True,
 ldn_strict_tiab_v1,ldn,strict,"((""low dose naltrexone""[tiab] OR ""low-dose naltrexone""[tiab]) OR (""LDN""[tiab] AND naltrexone[tiab]))",True,prevents LDN acronym noise
-methylene_blue_strict_tiab_v1,methylene_blue,strict,"(""Methylene blue""[tiab] OR ""methylthioninium chloride""[tiab]) AND (supplement*[tiab] OR administ*[tiab] OR infus*[tiab] OR ingest*[tiab] OR diet*[tiab] OR intake[tiab] OR consum*[tiab] OR gavage[tiab] OR ""dietary supplement""[tiab] OR ""therapeutic use""[sh] OR ""administration and dosage""[sh] OR ""drug therapy""[sh] OR ""diet therapy""[sh])",True,restricted to therapeutic/administration context (drops lab-dye/stain use)
+methylene_blue_strict_tiab_v1,methylene_blue,strict,"(""Methylene Blue""[majr] OR ""Methylene blue""[ti] OR ""methylthioninium chloride""[ti]) AND (supplement*[tiab] OR administ*[tiab] OR infus*[tiab] OR ingest*[tiab] OR diet*[tiab] OR intake[tiab] OR consum*[tiab] OR gavage[tiab] OR ""dietary supplement""[tiab] OR ""therapeutic use""[sh] OR ""administration and dosage""[sh] OR ""drug therapy""[sh] OR ""diet therapy""[sh])",True,subject-anchored + intake context (excludes lab-dye/stain use)
 alcar_strict_tiab_v1,alcar,strict,"(""Acetyl-L-carnitine""[tiab] OR ""Acetyl L carnitine""[tiab] OR (""ALCAR""[tiab] AND carnitine[tiab]))",True,avoids standalone ALCAR
-nadh_strict_tiab_v1,nadh,strict,"(""reduced nicotinamide adenine dinucleotide""[tiab] OR (""NADH""[tiab] AND nicotinamide[tiab])) AND (supplement*[tiab] OR administ*[tiab] OR infus*[tiab] OR ingest*[tiab] OR diet*[tiab] OR intake[tiab] OR consum*[tiab] OR gavage[tiab] OR ""dietary supplement""[tiab] OR ""therapeutic use""[sh] OR ""administration and dosage""[sh] OR ""drug therapy""[sh] OR ""diet therapy""[sh])",True,restricted to intake/administration context
+nadh_strict_tiab_v1,nadh,strict,"(""reduced nicotinamide adenine dinucleotide""[ti] OR (""NADH""[ti] AND nicotinamide[tiab]))",True,subject-anchored (title)
 glutathione_strict_tiab_v1,glutathione,strict,"((""Glutathione""[majr] OR ""Glutathione""[ti] OR (""GSH""[ti] AND glutathione[tiab])) NOT (""glutathione peroxidase""[ti] OR ""glutathione S-transferase""[ti] OR ""glutathione-S-transferase""[ti] OR ""glutathione transferase""[ti] OR ""glutathione reductase""[ti] OR ""glutathione synthetase""[ti] OR ""glutathione disulfide""[ti])) AND (supplement*[tiab] OR administ*[tiab] OR infus*[tiab] OR ingest*[tiab] OR diet*[tiab] OR intake[tiab] OR consum*[tiab] OR gavage[tiab] OR ""dietary supplement""[tiab] OR ""therapeutic use""[sh] OR ""administration and dosage""[sh] OR ""drug therapy""[sh] OR ""diet therapy""[sh])",True,subject-anchored (MeSH major topic OR title; excludes GSH-enzyme titles) + intake/use context
 p22_2_strict_tiab_v1,p22_2,strict,"(""P-22-2""[tiab] OR ""P22-2""[tiab] OR ""P 22-2""[tiab])",True,
 semaglutide_strict_tiab_v1,semaglutide,strict,"(""Semaglutide""[tiab] OR ""NN9535""[tiab] OR ""Ozempic""[tiab] OR ""Wegovy""[tiab] OR ""Rybelsus""[tiab])",True,added 2026
@@ -107,14 +107,14 @@ abaloparatide_strict_tiab_v1,abaloparatide,strict,"(""Abaloparatide""[tiab] OR "
 navitoclax_strict_tiab_v1,navitoclax,strict,"(""Navitoclax""[tiab] OR ""ABT-263""[tiab])",True,added 2026
 trofinetide_strict_tiab_v1,trofinetide,strict,"(""Trofinetide""[tiab] OR ""NNZ-2566""[tiab] OR ""Daybue""[tiab])",True,added 2026
 mk_677_strict_tiab_v1,mk_677,strict,"(""MK-677""[tiab] OR ""MK677""[tiab] OR ""MK 677""[tiab] OR ""Ibutamoren""[tiab] OR ""L-163191""[tiab])",True,added 2026
-apelin_strict_tiab_v1,apelin,strict,"(""Apelin""[tiab] OR ""Apelin-13""[tiab] OR ""Apelin-17""[tiab] OR ""Apelin-36""[tiab])",True,do not use APJ/APLN gene alone
+apelin_strict_tiab_v1,apelin,strict,"(""Apelin""[majr] OR ""Apelin""[ti] OR ""Apelin-13""[ti] OR ""Apelin-17""[ti] OR ""Apelin-36""[ti])",True,subject-anchored (MeSH major topic OR title); do not use APJ/APLN gene alone
 elabela_strict_tiab_v1,elabela,strict,"(""Elabela""[tiab] OR ""Apela""[tiab] OR ""Toddler peptide""[tiab])",True,apelin receptor ligand
 serelaxin_strict_tiab_v1,serelaxin,strict,"(""Serelaxin""[tiab] OR ""RLX030""[tiab] OR ""recombinant human relaxin-2""[tiab] OR ""rhRLX""[tiab])",True,added 2026
-gdf15_strict_tiab_v1,gdf15,strict,"(""GDF15""[tiab] OR ""GDF-15""[tiab] OR ""growth differentiation factor 15""[tiab] OR ""NAG-1""[tiab] OR (""MIC-1""[tiab] AND (""GDF15""[tiab] OR ""GFRAL""[tiab] OR cachexia[tiab])))",True,MIC-1 gated to avoid antigen-noise
-klotho_strict_tiab_v1,klotho,strict,"(""Klotho""[tiab] OR ""alpha-Klotho""[tiab] OR ""α-Klotho""[tiab] OR ""soluble klotho""[tiab] OR ""sKlotho""[tiab])",True,longevity factor
-fgf21_strict_tiab_v1,fgf21,strict,"(""FGF21""[tiab] OR ""FGF-21""[tiab] OR ""fibroblast growth factor 21""[tiab])",True,native FGF21
-myostatin_strict_tiab_v1,myostatin,strict,"(""Myostatin""[tiab] OR ""GDF-8""[tiab] OR ""GDF8""[tiab] OR ""growth differentiation factor 8""[tiab])",True,avoid bare MSTN gene token
-follistatin_strict_tiab_v1,follistatin,strict,"(""Follistatin""[tiab] OR ""follistatin-315""[tiab] OR ""FS-315""[tiab])",True,avoid bare FST token
+gdf15_strict_tiab_v1,gdf15,strict,"(""Growth Differentiation Factor 15""[majr] OR ""GDF15""[ti] OR ""GDF-15""[ti] OR ""growth differentiation factor 15""[ti] OR ""NAG-1""[ti])",True,subject-anchored (MeSH major topic OR title)
+klotho_strict_tiab_v1,klotho,strict,"(""Klotho Proteins""[majr] OR ""Klotho""[ti] OR ""alpha-Klotho""[ti] OR ""α-Klotho""[ti] OR ""soluble klotho""[ti] OR ""sKlotho""[ti])",True,subject-anchored (MeSH major topic OR title); longevity factor
+fgf21_strict_tiab_v1,fgf21,strict,"(""fibroblast growth factor 21""[majr] OR ""FGF21""[ti] OR ""FGF-21""[ti] OR ""fibroblast growth factor 21""[ti])",True,subject-anchored (major topic OR title); native FGF21
+myostatin_strict_tiab_v1,myostatin,strict,"(""Myostatin""[majr] OR ""Myostatin""[ti] OR ""GDF-8""[ti] OR ""GDF8""[ti] OR ""growth differentiation factor 8""[ti])",True,subject-anchored (MeSH major topic OR title)
+follistatin_strict_tiab_v1,follistatin,strict,"(""Follistatin""[majr] OR ""Follistatin""[ti] OR ""follistatin-315""[ti] OR ""FS-315""[ti])",True,subject-anchored (MeSH major topic OR title)
 ace_031_strict_tiab_v1,ace_031,strict,"(""ACE-031""[tiab] OR ""Ramatercept""[tiab] OR ""ActRIIB-Fc""[tiab])",True,activin ligand trap
 sotatercept_strict_tiab_v1,sotatercept,strict,"(""Sotatercept""[tiab] OR ""ACE-011""[tiab] OR ""ACE011""[tiab] OR ""Winrevair""[tiab])",True,activin ligand trap
 nnc0165_1875_strict_tiab_v1,nnc0165_1875,strict,"(""NNC0165-1875""[tiab] OR ""NNC0165 1875""[tiab])",True,long-acting amylin analog
@@ -123,8 +123,8 @@ empagliflozin_strict_tiab_v1,empagliflozin,strict,"(""Empagliflozin""[tiab] OR "
 dapagliflozin_strict_tiab_v1,dapagliflozin,strict,"(""Dapagliflozin""[tiab] OR ""BMS-512148""[tiab] OR ""Farxiga""[tiab] OR ""Forxiga""[tiab])",True,SGLT2 inhibitor
 canagliflozin_strict_tiab_v1,canagliflozin,strict,"(""Canagliflozin""[tiab] OR ""JNJ-28431754""[tiab] OR ""TA-7284""[tiab] OR ""Invokana""[tiab])",True,SGLT2 inhibitor
 17_alpha_estradiol_strict_tiab_v1,17_alpha_estradiol,strict,"(""17-alpha-estradiol""[tiab] OR ""17alpha-estradiol""[tiab] OR ""17α-estradiol""[tiab] OR ""alfatradiol""[tiab])",True,ITP geroprotector
-spermidine_strict_tiab_v1,spermidine,strict,"(""Spermidine""[tiab]) AND (supplement*[tiab] OR administ*[tiab] OR infus*[tiab] OR ingest*[tiab] OR diet*[tiab] OR intake[tiab] OR consum*[tiab] OR gavage[tiab] OR ""dietary supplement""[tiab] OR ""therapeutic use""[sh] OR ""administration and dosage""[sh] OR ""drug therapy""[sh] OR ""diet therapy""[sh])",True,autophagy inducer; restricted to intake/administration context
+spermidine_strict_tiab_v1,spermidine,strict,"(""Spermidine""[majr] OR ""Spermidine""[ti])",True,subject-anchored (MeSH major topic OR title); autophagy inducer
 ergothioneine_strict_tiab_v1,ergothioneine,strict,"(""Ergothioneine""[tiab] OR ""L-ergothioneine""[tiab] OR (""EGT""[tiab] AND ergothioneine[tiab]))",True,avoid bare EGT
-taurine_strict_tiab_v1,taurine,strict,"(""Taurine""[tiab] OR ""2-aminoethanesulfonic acid""[tiab]) AND (supplement*[tiab] OR administ*[tiab] OR infus*[tiab] OR ingest*[tiab] OR diet*[tiab] OR intake[tiab] OR consum*[tiab] OR gavage[tiab] OR ""dietary supplement""[tiab] OR ""therapeutic use""[sh] OR ""administration and dosage""[sh] OR ""drug therapy""[sh] OR ""diet therapy""[sh])",True,longevity/metabolic; restricted to intake/administration context
+taurine_strict_tiab_v1,taurine,strict,"(""Taurine""[majr] OR ""Taurine""[ti] OR ""2-aminoethanesulfonic acid""[ti])",True,subject-anchored (MeSH major topic OR title); longevity/metabolic
 cotadutide_strict_tiab_v1,cotadutide,strict,"(""Cotadutide""[tiab] OR ""MEDI0382""[tiab] OR ""MEDI-0382""[tiab])",True,GLP-1/glucagon dual agonist
 insulin_icodec_strict_tiab_v1,insulin_icodec,strict,"(""Insulin icodec""[tiab] OR ""NN1436""[tiab] OR ""Awiqli""[tiab])",True,once-weekly basal insulin
