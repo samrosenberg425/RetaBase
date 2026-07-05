@@ -16,8 +16,8 @@ on:
         description: "Newest year to fetch (walk backwards from here)"
         default: "2025"
       min_year:
-        description: "Oldest year to attempt"
-        default: "1965"
+        description: "Oldest year to attempt (2000 = the priority target; lower it later for pre-2000)"
+        default: "2000"
       target_gb:
         description: "Stop once the SQLite reaches this size (GB)"
         default: "8"
@@ -64,7 +64,7 @@ jobs:
         run: |
           python3 scripts/run_backfill.py \
             --start-year ${{ github.event.inputs.start_year || '2025' }} \
-            --min-year ${{ github.event.inputs.min_year || '1965' }} \
+            --min-year ${{ github.event.inputs.min_year || '2000' }} \
             --target-gb ${{ github.event.inputs.target_gb || '8' }} \
             --max-years ${{ github.event.inputs.max_years || '3' }} \
             ${{ github.event.inputs.force == 'true' && '--force' || '' }} \

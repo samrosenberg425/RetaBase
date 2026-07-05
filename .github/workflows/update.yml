@@ -71,10 +71,12 @@ jobs:
           python3 scripts/build_public_site.py --curated-dir exports/curated --out-dir exports/site --mode fetch
           python3 scripts/validate_curated.py --curated-dir exports/curated || true
           cp exports/curated/site_data.json exports/site/site_data.json
-          # Publish the separate registry feeds (built by registry.yml) alongside
-          # the curated feed. Guarded so a missing feed doesn't fail the deploy.
-          cp exports/curated/trials_data.json exports/site/trials_data.json 2>/dev/null || true
-          cp exports/curated/preprints_data.json exports/site/preprints_data.json 2>/dev/null || true
+          # Rebuild + publish the registry feeds straight from the trials/preprints
+          # SQLite DBs that registry.yml populates in the SHARED cache (exports/ is
+          # ephemeral, so we can't rely on a file it wrote). Guarded so that if those
+          # DBs don't exist yet (registry.yml hasn't run), the deploy still succeeds.
+          python3 scripts/build_trials_json.py --db data/retarats_trials.sqlite --out exports/site/trials_data.json 2>/dev/null || true
+          python3 scripts/build_preprints_json.py --db data/retarats_preprints.sqlite --out exports/site/preprints_data.json 2>/dev/null || true
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
