@@ -1922,7 +1922,7 @@ _TEMPLATE = """<!DOCTYPE html>
 
   // One-line descriptor per browser view.
   var BROWSER_DESC = {{
-    evidence: "Every indexed paper across all bioactives \\u2014 filter, sort, and inspect the evidence.",
+    evidence: "Every indexed paper for the bioactives RetaBase tracks (listed under the Bioactives tab) \\u2014 filter, sort, and inspect the evidence.",
     clinical: "Human data only \\u2014 clinical trials, observational studies, and evidence syntheses (no animal / in-vitro / methods)."
   }};
 
@@ -1981,10 +1981,17 @@ _TEMPLATE = """<!DOCTYPE html>
       + "paper is scored by an auditable rubric \\u2014 no black-box model decides what "
       + "ranks first. The whole site is a single offline HTML file; the underlying feed "
       + "and scoring code can be inspected and reproduced.");
+    p("Scope: RetaBase indexes the biomedical literature only for the specific molecules "
+      + "it tracks \\u2014 the ones listed under the Bioactives tab \\u2014 not every paper on "
+      + "every peptide or drug. \\u201cAll\\u201d and \\u201cevery\\u201d on this site always mean "
+      + "\\u201call of the papers found for those tracked bioactives,\\u201d and even within that set "
+      + "coverage depends on what the searches have fetched so far (the historical backfill is "
+      + "still filling in older years).");
     p("Each paper carries two independent axes \\u2014 how well it was conducted "
       + "(reliability) and how directly it applies to humans (directness) \\u2014 plus a "
-      + "combined rank used for best-first ordering. The tabs let you browse all evidence, "
-      + "restrict to human/clinical data, list the bioactives, or view candidate compounds.");
+      + "combined rank used for best-first ordering. The tabs let you browse the full indexed "
+      + "set for the tracked bioactives, restrict to human/clinical data, list the bioactives, "
+      + "or view candidate compounds.");
 
     h3("Reliability \\u2014 within-class study quality (0\\u2013100)");
     p("Reliability measures how well a study was conducted FOR ITS TYPE, using a "

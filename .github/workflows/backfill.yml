@@ -21,6 +21,13 @@ on:
       target_gb:
         description: "Stop once the SQLite reaches this size (GB)"
         default: "8"
+      max_years:
+        description: "How many years to fetch in THIS run (bounds it under the 6h job limit)"
+        default: "3"
+      force:
+        description: "Re-fetch years even if the checkpoint marks them done (use after changing search terms). Set to true for a corrective re-run."
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -59,5 +66,6 @@ jobs:
             --start-year ${{ github.event.inputs.start_year || '2025' }} \
             --min-year ${{ github.event.inputs.min_year || '1965' }} \
             --target-gb ${{ github.event.inputs.target_gb || '8' }} \
-            --max-years 3 \
+            --max-years ${{ github.event.inputs.max_years || '3' }} \
+            ${{ github.event.inputs.force == 'true' && '--force' || '' }} \
             --db data/retarats_pubmed.sqlite --state-db data/retarats_state.sqlite
