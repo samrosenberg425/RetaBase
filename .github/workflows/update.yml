@@ -84,10 +84,12 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    # Dedicated Pages-deploy lock: overlapping deploys queue instead of colliding.
+    # Dedicated Pages-deploy lock. cancel-in-progress: a newer deploy supersedes
+    # an older in-flight one instead of both failing with "try again later"
+    # (which happens when runs stack up and compete for the single Pages env).
     concurrency:
       group: pages
-      cancel-in-progress: false
+      cancel-in-progress: true
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
