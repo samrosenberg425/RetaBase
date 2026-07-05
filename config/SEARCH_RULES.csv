@@ -68,13 +68,13 @@ danuglipron_strict_tiab_v1,danuglipron,strict,"(""Danuglipron""[tiab] OR ""PF-06
 rapamycin_strict_tiab_v1,rapamycin,strict,"(""Rapamycin""[tiab] OR ""Sirolimus""[tiab])",True,
 metformin_strict_tiab_v1,metformin,strict,"(""Metformin""[tiab])",True,
 dasatinib_strict_tiab_v1,dasatinib,strict,"(""Dasatinib""[tiab])",True,
-quercetin_strict_tiab_v1,quercetin,strict,"(""Quercetin""[tiab])",True,
+quercetin_strict_tiab_v1,quercetin,strict,"(""Quercetin""[tiab]) AND (supplement*[tiab] OR administ*[tiab] OR infus*[tiab] OR ingest*[tiab] OR diet*[tiab] OR intake[tiab] OR consum*[tiab] OR gavage[tiab] OR ""dietary supplement""[tiab] OR ""therapeutic use""[sh] OR ""administration and dosage""[sh] OR ""drug therapy""[sh] OR ""diet therapy""[sh])",True,restricted to intake/administration context (dietary flavonoid; drops biomarker-only mentions)
 fisetin_strict_tiab_v1,fisetin,strict,"(""Fisetin""[tiab])",True,
-akg_strict_tiab_v1,akg,strict,"(""alpha-ketoglutarate""[tiab] OR ""α-ketoglutarate""[tiab] OR (""AKG""[tiab] AND ketoglutarate[tiab]))",True,avoids AKG ambiguity
+akg_strict_tiab_v1,akg,strict,"(""alpha-ketoglutarate""[tiab] OR ""α-ketoglutarate""[tiab] OR (""AKG""[tiab] AND ketoglutarate[tiab])) AND (supplement*[tiab] OR administ*[tiab] OR infus*[tiab] OR ingest*[tiab] OR diet*[tiab] OR intake[tiab] OR consum*[tiab] OR gavage[tiab] OR ""dietary supplement""[tiab] OR ""therapeutic use""[sh] OR ""administration and dosage""[sh] OR ""drug therapy""[sh] OR ""diet therapy""[sh])",True,avoids AKG ambiguity; restricted to intake/administration context
 vasculotide_strict_tiab_v1,vasculotide,strict,"(""Vasculotide""[tiab])",True,
 angiotensin_1_7_strict_tiab_v1,angiotensin_1_7,strict,"((""angiotensin-(1-7)""[tiab] OR ""Ang-(1-7)""[tiab] OR ""Ang 1-7""[tiab]) AND (analog*[tiab] OR agonist*[tiab] OR ""Mas receptor""[tiab] OR ""AVE 0991""[tiab]))",True,focuses on analog/axis
 vilon_strict_tiab_v1,vilon,strict,"(""Vilon""[tiab])",True,
-vip_strict_tiab_v1,vip,strict,"(""Vasoactive Intestinal Peptide""[tiab] OR (""VIP""[tiab] AND ""vasoactive intestinal peptide""[tiab]))",True,avoids VIP acronym noise
+vip_strict_tiab_v1,vip,strict,"(""Vasoactive Intestinal Peptide""[tiab] OR (""VIP""[tiab] AND ""vasoactive intestinal peptide""[tiab])) AND (supplement*[tiab] OR administ*[tiab] OR infus*[tiab] OR ingest*[tiab] OR diet*[tiab] OR intake[tiab] OR consum*[tiab] OR gavage[tiab] OR ""dietary supplement""[tiab] OR ""therapeutic use""[sh] OR ""administration and dosage""[sh] OR ""drug therapy""[sh] OR ""diet therapy""[sh])",True,avoids VIP acronym noise; restricted to therapeutic/administration context
 vesugen_strict_tiab_v1,vesugen,strict,"(""Vesugen""[tiab])",True,
 cartalax_strict_tiab_v1,cartalax,strict,"(""Cartalax""[tiab])",True,
 cardogen_strict_tiab_v1,cardogen,strict,"(""Cardogen""[tiab] OR ""Cartagen""[tiab])",True,
@@ -82,9 +82,9 @@ corgen_strict_tiab_v1,corgen,strict,"(""CORGEN""[tiab] OR ""Corgen""[tiab])",Tru
 vesilute_strict_tiab_v1,vesilute,strict,"(""Vesilute""[tiab])",True,
 prostamax_strict_tiab_v1,prostamax,strict,"(""Prostamax""[tiab])",True,
 ldn_strict_tiab_v1,ldn,strict,"((""low dose naltrexone""[tiab] OR ""low-dose naltrexone""[tiab]) OR (""LDN""[tiab] AND naltrexone[tiab]))",True,prevents LDN acronym noise
-methylene_blue_strict_tiab_v1,methylene_blue,strict,"(""Methylene blue""[tiab] OR ""methylthioninium chloride""[tiab])",True,
+methylene_blue_strict_tiab_v1,methylene_blue,strict,"(""Methylene blue""[tiab] OR ""methylthioninium chloride""[tiab]) AND (supplement*[tiab] OR administ*[tiab] OR infus*[tiab] OR ingest*[tiab] OR diet*[tiab] OR intake[tiab] OR consum*[tiab] OR gavage[tiab] OR ""dietary supplement""[tiab] OR ""therapeutic use""[sh] OR ""administration and dosage""[sh] OR ""drug therapy""[sh] OR ""diet therapy""[sh])",True,restricted to therapeutic/administration context (drops lab-dye/stain use)
 alcar_strict_tiab_v1,alcar,strict,"(""Acetyl-L-carnitine""[tiab] OR ""Acetyl L carnitine""[tiab] OR (""ALCAR""[tiab] AND carnitine[tiab]))",True,avoids standalone ALCAR
-nadh_strict_tiab_v1,nadh,strict,"(""reduced nicotinamide adenine dinucleotide""[tiab] OR (""NADH""[tiab] AND nicotinamide[tiab]))",True,
+nadh_strict_tiab_v1,nadh,strict,"(""reduced nicotinamide adenine dinucleotide""[tiab] OR (""NADH""[tiab] AND nicotinamide[tiab])) AND (supplement*[tiab] OR administ*[tiab] OR infus*[tiab] OR ingest*[tiab] OR diet*[tiab] OR intake[tiab] OR consum*[tiab] OR gavage[tiab] OR ""dietary supplement""[tiab] OR ""therapeutic use""[sh] OR ""administration and dosage""[sh] OR ""drug therapy""[sh] OR ""diet therapy""[sh])",True,restricted to intake/administration context
 glutathione_strict_tiab_v1,glutathione,strict,"(""Glutathione""[tiab] OR (""GSH""[tiab] AND glutathione[tiab])) AND (supplement*[tiab] OR administ*[tiab] OR infus*[tiab] OR ingest*[tiab] OR diet*[tiab] OR intake[tiab] OR consum*[tiab] OR gavage[tiab] OR ""dietary supplement""[tiab] OR ""therapeutic use""[sh] OR ""administration and dosage""[sh] OR ""drug therapy""[sh] OR ""diet therapy""[sh])",True,restricted to intake/administration context (supplement/administer/diet) to drop biomarker-only mentions
 p22_2_strict_tiab_v1,p22_2,strict,"(""P-22-2""[tiab] OR ""P22-2""[tiab] OR ""P 22-2""[tiab])",True,
 semaglutide_strict_tiab_v1,semaglutide,strict,"(""Semaglutide""[tiab] OR ""NN9535""[tiab] OR ""Ozempic""[tiab] OR ""Wegovy""[tiab] OR ""Rybelsus""[tiab])",True,added 2026
@@ -123,8 +123,8 @@ empagliflozin_strict_tiab_v1,empagliflozin,strict,"(""Empagliflozin""[tiab] OR "
 dapagliflozin_strict_tiab_v1,dapagliflozin,strict,"(""Dapagliflozin""[tiab] OR ""BMS-512148""[tiab] OR ""Farxiga""[tiab] OR ""Forxiga""[tiab])",True,SGLT2 inhibitor
 canagliflozin_strict_tiab_v1,canagliflozin,strict,"(""Canagliflozin""[tiab] OR ""JNJ-28431754""[tiab] OR ""TA-7284""[tiab] OR ""Invokana""[tiab])",True,SGLT2 inhibitor
 17_alpha_estradiol_strict_tiab_v1,17_alpha_estradiol,strict,"(""17-alpha-estradiol""[tiab] OR ""17alpha-estradiol""[tiab] OR ""17α-estradiol""[tiab] OR ""alfatradiol""[tiab])",True,ITP geroprotector
-spermidine_strict_tiab_v1,spermidine,strict,"(""Spermidine""[tiab])",True,autophagy inducer
+spermidine_strict_tiab_v1,spermidine,strict,"(""Spermidine""[tiab]) AND (supplement*[tiab] OR administ*[tiab] OR infus*[tiab] OR ingest*[tiab] OR diet*[tiab] OR intake[tiab] OR consum*[tiab] OR gavage[tiab] OR ""dietary supplement""[tiab] OR ""therapeutic use""[sh] OR ""administration and dosage""[sh] OR ""drug therapy""[sh] OR ""diet therapy""[sh])",True,autophagy inducer; restricted to intake/administration context
 ergothioneine_strict_tiab_v1,ergothioneine,strict,"(""Ergothioneine""[tiab] OR ""L-ergothioneine""[tiab] OR (""EGT""[tiab] AND ergothioneine[tiab]))",True,avoid bare EGT
-taurine_strict_tiab_v1,taurine,strict,"(""Taurine""[tiab] OR ""2-aminoethanesulfonic acid""[tiab])",True,longevity/metabolic
+taurine_strict_tiab_v1,taurine,strict,"(""Taurine""[tiab] OR ""2-aminoethanesulfonic acid""[tiab]) AND (supplement*[tiab] OR administ*[tiab] OR infus*[tiab] OR ingest*[tiab] OR diet*[tiab] OR intake[tiab] OR consum*[tiab] OR gavage[tiab] OR ""dietary supplement""[tiab] OR ""therapeutic use""[sh] OR ""administration and dosage""[sh] OR ""drug therapy""[sh] OR ""diet therapy""[sh])",True,longevity/metabolic; restricted to intake/administration context
 cotadutide_strict_tiab_v1,cotadutide,strict,"(""Cotadutide""[tiab] OR ""MEDI0382""[tiab] OR ""MEDI-0382""[tiab])",True,GLP-1/glucagon dual agonist
 insulin_icodec_strict_tiab_v1,insulin_icodec,strict,"(""Insulin icodec""[tiab] OR ""NN1436""[tiab] OR ""Awiqli""[tiab])",True,once-weekly basal insulin

@@ -2033,6 +2033,15 @@ _TEMPLATE = """<!DOCTYPE html>
       + "filter option\\u2019s number is the count of papers with that value under all your "
       + "OTHER active filters (cross-filtered).");
 
+    h3("What's published vs. the full corpus");
+    p("A few molecules (for example metformin or rapamycin) have tens of thousands of "
+      + "papers. To keep the site fast in your browser, each molecule publishes at most a "
+      + "few hundred records here, chosen best-first: every review and meta-analysis is "
+      + "kept, then the highest-ranked human, most-cited, and most-recent studies. Older, "
+      + "low-impact preclinical papers are the first held back. This is a display limit "
+      + "only \\u2014 the FULL set of matching papers is retained in the project's data files; "
+      + "nothing is deleted, just what loads in the browser is bounded.");
+
     h3("Filters");
     p("Every facet supports INCLUDE and EXCLUDE. Include is OR within a domain (a paper "
       + "matches if it has ANY selected include value); exclude drops a paper that has ANY "
