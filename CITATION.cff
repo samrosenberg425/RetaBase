@@ -25,6 +25,6 @@ keywords:
   - evidence synthesis
   - biomedical literature
   - PubMed
-# version: "1.0.0"        # set when you cut a release
-# date-released: 2026-07-05
-# doi: "10.5281/zenodo.XXXXXXX"   # fill in after connecting Zenodo (see README "How to cite")
+version: "0.1.0-beta"
+date-released: 2026-07-05
+doi: "10.5281/zenodo.21207064"

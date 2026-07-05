@@ -166,13 +166,13 @@ Rule-based and **auditable** (every tag, score, and decision is explainable from
 
 ## How to cite
 
-If RetaBase is useful in your work, please credit it. GitHub shows a **"Cite this repository"** button (generated from `CITATION.cff`) with a ready-made citation.
+If RetaBase is useful in your work, please credit it. GitHub also shows a **"Cite this repository"** button (generated from `CITATION.cff`).
 
-Provisional citation:
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21207064.svg)](https://doi.org/10.5281/zenodo.21207064)
 
-> Rosenberg, S. (2026). *RetaBase: a transparent, auto-updating evidence database for retatrutide and related bioactives* [Software]. https://github.com/samrosenberg425/RetaBase
+> Rosenberg, S. (2026). *RetaBase: a transparent, auto-updating evidence database for retatrutide and related bioactives* (Version 0.1.0-beta) [Software]. Zenodo. https://doi.org/10.5281/zenodo.21207064
 
-**For a permanent, academically-citable DOI (recommended):** connect the repo to [Zenodo](https://zenodo.org) (log in with GitHub → toggle on the RetaBase repo), then publish a release on GitHub. Zenodo mints a DOI for that release; add it to `CITATION.cff` (`doi:` field) and to the citation above.
+This DOI archives the `v0.1.0-beta` pre-release. On the [Zenodo record](https://doi.org/10.5281/zenodo.21207064) you'll also find a **"Cite all versions"** concept DOI that always resolves to the latest release — use that one if you'd prefer a citation that stays current as RetaBase is updated. Cut a new GitHub release (e.g. `v1.0.0` when it leaves beta) and Zenodo mints a fresh version DOI automatically; update `CITATION.cff` to match.
 
 ## License
 
