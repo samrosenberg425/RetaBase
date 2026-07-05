@@ -14,7 +14,7 @@ name: Update database and publish site
 
 on:
   schedule:
-    - cron: "0 6 * * 1"     # weekly, Mondays 06:00 UTC (change to "0 6 * * *" for daily)
+    - cron: "0 6 * * *"     # daily 06:00 UTC — rebuild + republish from the growing corpus
   workflow_dispatch:         # allow manual runs
 
 permissions:

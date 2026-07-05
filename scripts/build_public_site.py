@@ -866,8 +866,9 @@ _TEMPLATE = """<!DOCTYPE html>
       <div class="note-hint">Text match on the journal name &mdash; a partial word works (e.g. &ldquo;diabetes&rdquo;).</div>
     </div>
     <div class="fg">
-      <label for="min-cit">Min citations</label>
+      <label for="min-cit">Min times cited</label>
       <input id="min-cit" type="number" placeholder="0" min="0" oninput="applyFilters()">
+      <div class="note-hint">How often the paper has been cited by others (via OpenAlex).</div>
     </div>
     <div id="facet-filters"></div>
     <button class="reset" onclick="resetFilters()">Reset filters</button>
@@ -882,7 +883,7 @@ _TEMPLATE = """<!DOCTYPE html>
             <option value="rank">Rank (best first)</option>
             <option value="reliability">Reliability</option>
             <option value="directness">Directness</option>
-            <option value="citations">Citations (most cited)</option>
+            <option value="citations">Times cited (most)</option>
             <option value="year">Year (newest)</option>
           </select>
         </label>
@@ -1240,7 +1241,7 @@ _TEMPLATE = """<!DOCTYPE html>
     }}
     meta.appendChild(reliabilityMeter(r));
     meta.appendChild(directnessBadge(r));
-    meta.appendChild(el("span", "pill", "cited " + citationText(r)));
+    meta.appendChild(el("span", "pill", "Cited by " + citationText(r)));
     card.appendChild(meta);
 
     var au = authorsLine(r);
@@ -1385,7 +1386,7 @@ _TEMPLATE = """<!DOCTYPE html>
       kvNode(grid, "Journal", jcell);
     }}
     if (r.author_count && r.author_count !== "0") kv(grid, "Authors", r.author_count + " total");
-    kv(grid, "Citations", citationText(r));
+    kv(grid, "Cited by", citationText(r));
     kv(grid, "Year", r.pub_year);
     kv(grid, "Evidence class", r.evidence_class_label);
     kv(grid, "Website section", r.website_section);
@@ -1908,7 +1909,7 @@ _TEMPLATE = """<!DOCTYPE html>
     var ymin = CORPUS.year_min, ymax = CORPUS.year_max;
     if (ymin && ymax) parts.push([null, (ymin === ymax ? String(ymin) : ymin + "\\u2013" + ymax)]);
     if (CORPUS.pct_citations_filled != null && CORPUS.pct_citations_filled !== "")
-      parts.push([null, CORPUS.pct_citations_filled + "% with citations"]);
+      parts.push([null, CORPUS.pct_citations_filled + "% with cited-by counts"]);
     var upd = String(CORPUS.generated_utc || "").slice(0, 10);
     if (upd) parts.push([null, "updated " + upd]);
     parts.forEach(function(pr, i) {{
@@ -2009,7 +2010,7 @@ _TEMPLATE = """<!DOCTYPE html>
       "Quality \\u2014 the reliability score above (within-class study quality).",
       "Relevance \\u2014 topical fit to the bioactive and its core indications/endpoints.",
       "Recency \\u2014 how recent the publication year is.",
-      "Impact \\u2014 log-scaled citation count (so a few extra citations matter more at the low end than the high end).",
+      "Impact \\u2014 log-scaled times-cited count, i.e. how often the paper has been cited by OTHER papers (so a few extra citations matter more at the low end than the high end). This is not about whether the paper has a reference list.",
       "Venue \\u2014 journal reputation / tier."
     ]);
     formula("rank_score = 0.33\\u00b7directness + 0.28\\u00b7quality + 0.20\\u00b7relevance "
@@ -2029,8 +2030,8 @@ _TEMPLATE = """<!DOCTYPE html>
     p("Every facet supports INCLUDE and EXCLUDE. Include is OR within a domain (a paper "
       + "matches if it has ANY selected include value); exclude drops a paper that has ANY "
       + "selected exclude value. Year filters on publication year (before / after / range), "
-      + "\\u201cjournal contains\\u201d is a case-insensitive substring, and \\u201cmin "
-      + "citations\\u201d sets a citation floor.");
+      + "\\u201cjournal name includes\\u201d is a case-insensitive substring, and \\u201cmin "
+      + "times cited\\u201d sets a floor on how often the paper has been cited by others.");
 
     h3("Clinical evidence view");
     p("The Clinical evidence tab restricts to human data: papers whose evidence class is "

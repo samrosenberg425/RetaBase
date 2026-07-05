@@ -99,6 +99,10 @@ def main() -> None:
     ap.add_argument("--force", action="store_true",
                     help="Ignore the checkpoint and re-fetch every year in range (use after a run "
                          "that recorded years as done but fetched nothing).")
+    ap.add_argument("--max-years", type=int, default=0,
+                    help="Stop after fetching this many NEW years in one invocation (0 = unlimited). "
+                         "On CI, bound each run so it finishes and saves the cache before the ~6h job "
+                         "timeout; the schedule + checkpoint then continue the walk across runs.")
     args = ap.parse_args()
 
     ckpt = _load_ckpt(args.checkpoint)
@@ -109,6 +113,7 @@ def main() -> None:
     print(f"Backfill: {args.start_year} -> {args.min_year}, target {args.target_gb} GB, db={args.db}")
     print(f"Already completed: {sorted(done, reverse=True) or 'none'}")
 
+    fetched_this_run = 0
     for year in range(args.start_year, args.min_year - 1, -1):
         size = _db_size_gb(args.db)
         if size >= args.target_gb:
@@ -127,6 +132,11 @@ def main() -> None:
         ckpt["history"].append({"year": year, "db_gb_after": round(_db_size_gb(args.db), 3),
                                 "at": dt.datetime.utcnow().isoformat() + "Z"})
         _save_ckpt(args.checkpoint, ckpt)
+        fetched_this_run += 1
+        if args.max_years and fetched_this_run >= args.max_years:
+            print(f"Fetched {fetched_this_run} new year(s) this run (--max-years {args.max_years}); "
+                  "stopping so progress is saved to the cache. The schedule resumes the walk next run.")
+            break
 
     final = _db_size_gb(args.db)
     print(f"Done. DB size {final:.2f} GB. Completed years: {sorted(done, reverse=True)}")

@@ -59,4 +59,5 @@ jobs:
             --start-year ${{ github.event.inputs.start_year || '2025' }} \
             --min-year ${{ github.event.inputs.min_year || '1965' }} \
             --target-gb ${{ github.event.inputs.target_gb || '8' }} \
+            --max-years 3 \
             --db data/retarats_pubmed.sqlite --state-db data/retarats_state.sqlite

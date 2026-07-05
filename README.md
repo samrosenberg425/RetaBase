@@ -1,135 +1,169 @@
-# retarats-pubmed-pipeline
+# RetaBase
 
-A PubMed ingestion + classification pipeline that reads a Google Sheet config (molecules + search rules), queries PubMed, and writes results into Google Sheets dashboards.
+**A transparent, auto-updating evidence database for retatrutide and related bioactives** (peptides, incretin agonists, metabolic & longevity compounds, and more).
 
-## New companion pipeline
+🔎 **Live dashboard:** https://samrosenberg425.github.io/RetaBase/
 
-This repo now also includes `retarats_v2.py`, a local/Colab-friendly companion pipeline. It keeps rule-based classification, adds concise comparison summaries, reads the local Excel workbooks in `inputs/`, characterizes the molecule's role in each paper, and can write to local SQLite, Google Sheets, and Airtable.
+RetaBase continuously pulls the biomedical literature for a curated set of bioactive molecules, scores each paper for **study quality** and **translational directness** with rule-based, auditable methods, and publishes a browsable, filterable dashboard — ranked so the most reliable and impactful evidence comes first. It also surfaces **ClinicalTrials.gov** registry studies and **preprints** in separate, clearly-labeled sections.
 
-Start here for the v2 flow:
+> ⚠️ **Not medical advice.** RetaBase is a research/literature-aggregation tool. Nothing here is a recommendation to use, dose, or avoid any substance. Many of these compounds are experimental or not approved for the uses discussed. Consult a qualified clinician.
 
-Double-click this file in Finder:
+---
 
-```text
-RUN_PIPELINE.command
+## Who it's for
+
+- **Physicians** whose patients ask about these compounds and who want the evidence landscape at a glance.
+- **Researchers** who want a filterable, exportable map of the literature (human vs preclinical, by indication, endpoint, mechanism, etc.).
+- **Curious readers** who want to understand what the science actually says, with reliability made explicit.
+
+---
+
+## How it works
+
+```
+PubMed / PMC ─┐
+OpenAlex ─────┤  fetch + enrich        curation (rule-based, offline)          publish
+Semantic ─────┼──► SQLite corpus ─────► facets → reliability → directness ─────► site_data.json ─► GitHub Pages
+  Scholar     │    (Actions cache)      → relevance → recency → impact           (+ trials/preprints    (dashboard)
+CT.gov ───────┤                         → venue → rank → publication status       feeds)
+EuropePMC ────┘                         → appraisal
 ```
 
-Then choose option `1` for a smoke test. This avoids Terminal paste issues such
-as stray `00~` text.
+1. **Fetch** — `retarats_v2.py` queries PubMed for every molecule/rule in `config/SEARCH_RULES.csv` and stores titles, abstracts, MeSH, authors, journal, DOI, etc. in a SQLite corpus.
+2. **Enrich** — citation counts from **OpenAlex** (fallback **Semantic Scholar**); registry trials from **ClinicalTrials.gov**; preprints from **EuropePMC** (bioRxiv/medRxiv).
+3. **Curate** (`retarats_pipeline/curation/`, pure rule-based, offline, non-destructive):
+   - **facets** — normalized tags (species incl. non-human primate, indication, endpoint, mechanism, route, drug class, population, sex, formulation, evidence direction).
+   - **reliability** — study quality scored *within evidence class* (GRADE/SYRCLE/ARRIVE-informed), so a rigorous in-vitro study can score high for its type.
+   - **directness** — how directly the evidence applies to humans (human RCT high → in-vitro low).
+   - **ranking** — a transparent blend that surfaces the best evidence first (see below).
+   - **publication status** — broad inclusion; only genuinely off-topic records are excluded.
+   - **appraisal** — rule-based strengths/limitations + an LLM-ready summary slot.
+4. **Publish** — `build_curated_database.py` writes a compact `site_data.json`; `build_public_site.py` renders a single self-contained `index.html`; GitHub Pages serves it.
 
-Terminal backup:
+### The ranking (fully auditable)
+
+`rank_score` (0–100) is a weighted blend, each axis shown in the record's breakdown:
+
+| axis | weight | meaning |
+|---|---|---|
+| directness | 33% | translational evidence level (human RCT > … > in-vitro) |
+| quality | 28% | within-class study quality (reliability) |
+| relevance | 20% | how central the molecule is to the paper |
+| recency | 10% | newer evidence ranked higher |
+| impact | 5% | citation count (log-scaled; 0 until backfilled) |
+| venue | 4% | journal reputation (curated; neutral for unknown) |
+
+Full method write-up is in the dashboard's **About / Methods** tab and `docs/curation_and_publication.md`.
+
+---
+
+## The dashboard
+
+- **Evidence** — all records, rank-sorted, with include/exclude multi-select filters (with select-all per domain), year (before/after/range), journal-name, and min-citations filters, plus cross-filter counts.
+- **Clinical evidence** — human data only (no animal/in-vitro/methods).
+- **Trials registry** — ongoing & completed ClinicalTrials.gov studies (registrations, not results).
+- **Preprints** — bioRxiv/medRxiv (not peer-reviewed).
+- **Bioactives** — per-molecule index.
+- **About / Methods** — how every metric is defined and computed.
+
+Each paper shows authors (linked to Google Scholar), journal + reputation tier, a reliability meter, a directness badge, citation count, a plain-language summary, and strengths/limitations. A per-paper detail view shows every field with the score breakdowns. Everything renders safely (all values via `textContent`; no injection).
+
+**Embed it anywhere** with an iframe:
+```html
+<iframe src="https://samrosenberg425.github.io/RetaBase/"
+        style="width:100%;height:900px;border:0;border-radius:8px" loading="lazy"></iframe>
+```
+
+---
+
+## Automation (set-and-forget)
+
+All free, on GitHub Actions; the growing SQLite corpus lives in the **Actions cache** (~10 GB) so the git repo stays small. Workflows are serialized by a shared `retarats-corpus` concurrency lock so they never corrupt the cache.
+
+| Workflow | Schedule | Does |
+|---|---|---|
+| `update.yml` | **daily** | incremental PubMed fetch + citation top-up → rebuild → **deploy to Pages** |
+| `backfill.yml` | **every 6 h** (auto) | historical fill, **3 years per run** (bounded so it finishes & caches before the 6 h job limit); resumes via checkpoint until it reaches `min_year`/`target_gb` |
+| `citations.yml` | every 6 h | OpenAlex→Semantic-Scholar citation backfill |
+| `registry.yml` | weekly | ClinicalTrials.gov trials + EuropePMC preprints |
+
+You can also trigger any of them manually (Actions → *workflow* → **Run workflow**).
+
+---
+
+## Run it locally
 
 ```bash
-/opt/anaconda3/envs/research/bin/python scripts/run_full_local_pipeline.py --mode daily --daily-days 30 --molecule retatrutide --max-records-per-rule 5
+git clone https://github.com/samrosenberg425/RetaBase.git
+cd RetaBase
+cp .env.example .env          # add NCBI_EMAIL, NCBI_API_KEY, API_CONTACT_EMAIL
+bash setup.sh                 # venv + deps + offline tests
+
+# fetch a small window, backfill citations, rebuild the site:
+./run_local.sh 2025 2022      # start_year min_year
+open exports/site/index.html
 ```
 
-By default, `config/ROLE_RULES.csv` separates likely public direct-intervention
-evidence from comparator/background, biomarker, pathway, assay, synthesis, and
-environmental/material records. The public-facing flag is intentionally
-conservative: records are public candidates only when the molecule appears to be
-directly tested/administered and the evidence is at least animal-level.
+- Historical backfill (resumable, size-capped): `python3 scripts/run_backfill.py --start-year 2025 --min-year 1990 --target-gb 8 --rebuild`
+- Citations for the whole DB in the background: `nohup ./scripts/cite_cycle.sh &`
+- Rebuild the site only: `python3 scripts/run_curation_pipeline.py --db data/retarats_pubmed.sqlite`
+- Internal (curator) build with approve/reject UI: add `--internal` to `build_public_site.py`.
 
-When role rules change, re-score local results without calling PubMed:
+---
+
+## Configuration
+
+| File | Purpose |
+|---|---|
+| `config/MOLECULES.csv` | the bioactives tracked (id, name, class, synonyms, exclusions, active) |
+| `config/SEARCH_RULES.csv` | per-molecule PubMed `[tiab]` queries with synonyms + ambiguity guards |
+| `config/FACETS.csv` | controlled facet vocabulary (species, indication, endpoint, …) |
+| `config/PUBLICATION_RULES.csv`, `REQUIRED_FIELDS.csv` | inclusion / section policy |
+| `config/EXPERIMENTAL_MOLECULES.csv` | candidate molecules (promoted ones marked `live_*`) |
+| `retarats_pipeline/curation/ranking.py` | `RANK_WEIGHTS` — tune the ordering here |
+
+Add a molecule: append a row to `MOLECULES.csv` + a `[tiab]` rule to `SEARCH_RULES.csv`; the next backfill picks it up.
+
+---
+
+## Repo layout
+
+```
+retarats_v2.py                 PubMed fetch → SQLite
+retarats_pipeline/
+  config.py                    load molecules + search rules
+  pubmed.py, classifier.py …   fetch/parse/classify
+  curation/                    facets, reliability, ranking, publication_status,
+                               appraisal, extractors, journal   (rule-based, offline)
+  enrichment/                  clients (OpenAlex, S2, CT.gov, EuropePMC, PMC), backfill, registry
+scripts/
+  run_backfill.py, run_impact_backfill.py, run_trials_fetch.py, run_preprints_fetch.py
+  build_curated_database.py, build_public_site.py, run_curation_pipeline.py
+  validate_curated.py, list_experimental.py, cite_cycle.sh
+.github/workflows/             update, backfill, citations, registry
+config/                        molecules, search rules, facets, policy
+docs/                          curation_and_publication.md, ONLINE_DEPLOYMENT.md, …
+tests/                         test_curation, test_extractors, test_site, test_sources
+```
+
+---
+
+## Data & credentials
+
+- **PubMed/PMC, OpenAlex, Crossref, EuropePMC, ClinicalTrials.gov** — free, keyless (OpenAlex/Crossref/Unpaywall just want a contact email). An **NCBI API key** raises PubMed limits 3→10 req/s (recommended for backfills).
+- Secrets live in a gitignored `.env` locally and in **GitHub Actions secrets** (`NCBI_API_KEY`, `NCBI_EMAIL`) — never committed. Deployment details: `docs/ONLINE_DEPLOYMENT.md`.
+
+## Tests
 
 ```bash
-python scripts/run_full_local_pipeline.py --skip-fetch
+python3 tests/test_curation.py && python3 tests/test_extractors.py \
+  && python3 tests/test_site.py && python3 tests/test_sources.py
 ```
 
-The postprocessing pipeline treats broad role categories as routing signals,
-then sends records into lane-specific files for interventions, mechanisms,
-biomarkers, reviews, methods, comparators, and unclear records.
+## Design principles
 
-The enrichment layer adds the newer multilayer schema after paper
-characterization. It now uses PubMed title/abstract/MeSH metadata as a formal
-first extraction source, then optionally tries PMC full text only for eligible
-incomplete records. It proposes `abstract_*`, `pmc_*`, `suggested_*`, and
-`suggest_replace_*` fields without overwriting the original extraction fields.
-To smoke test the abstract-first layer without API calls or SQLite writes,
-choose option `5` in `RUN_PIPELINE.command` or run:
+Rule-based and **auditable** (every tag, score, and decision is explainable from config), **non-destructive** (enrichment proposes, never overwrites), **offline curation** (no LLM/network needed to rebuild the site), and **broad inclusion** (reliability is a label, not a hide-gate). No PRISMA compliance is claimed, but the search/curation is PRISMA-S-informed and defensible.
 
-```bash
-/opt/anaconda3/envs/research/bin/python scripts/run_enrichment_pipeline.py --db data/retarats_pubmed.sqlite --offline --csv-only --max-records 25
-```
+---
 
-To test a very small live PMC pass, choose option `7` or run:
-
-```bash
-/opt/anaconda3/envs/research/bin/python scripts/run_enrichment_pipeline.py --db data/retarats_pubmed.sqlite --mode basic --csv-only --max-records 100 --enable-pmc --pmc-max-records 2
-```
-
-Saved review slices in `config/REVIEW_SLICES.csv` work like filtered decks built
-from tags. They export narrower PICO/PECO-like spreadsheets under
-`exports/review_slices/` plus PRISMA-S-informed audit files under
-`exports/prisma/`.
-
-See `docs/v2_local_and_colab.md` for Airtable, Google Sheets, Colab, and role-review notes. See `docs/repo_architecture.md` for the full repo map and the defensible query/classification principles.
-
-## What the script reads (required)
-This script reads a Google Spreadsheet named:
-* `CONFIG_SHEET_NAME` (default: `Moleculessearch`)
-
-That Google Sheet must contain **two tabs** with these exact names:
-* `MOLECULES`
-* `SEARCH_RULES`
-
-The repo includes the exact CSV exports of those two tabs:
-
-* `MOLECULES.csv`
-* `SEARCH_RULES.csv`
-
-You should import/paste these into your own Google Sheet to get started.
-
-## Quick start
-### 1) Create your config Google Sheet
-
-1. Go to Google Sheets and create a new spreadsheet
-2. Name it: `Moleculessearch` (or any name you want — just match `CONFIG_SHEET_NAME`)
-3. Create two tabs:
-
-   * `MOLECULES`
-   * `SEARCH_RULES`
-
-### 2) Import the CSVs into the tabs
-
-* Open `MOLECULES.csv` from this repo, copy all rows, paste into the `MOLECULES` tab starting at cell A1
-* Open `SEARCH_RULES.csv` from this repo, copy all rows, paste into the `SEARCH_RULES` tab starting at cell A1
-
-(You can also use File → Import → Upload in Google Sheets and import each CSV into the correct tab.)
-
-### 3) Set environment variables (“bring your own keys”)
-
-Copy `.env.example` to `.env` and fill in:
-
-* `NCBI_EMAIL` (required)
-* `NCBI_API_KEY` (recommended)
-* `CONFIG_SHEET_NAME` (default: `Moleculessearch`)
-
-### 4) Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 5) Authenticate Google access
-
-This script uses Google Application Default Credentials (ADC).
-
-Common approaches:
-
-* `gcloud auth application-default login`
-* OR set `GOOGLE_APPLICATION_CREDENTIALS=/path/to/service_account.json`
-
-### 6) Run
-
-```bash
-python retarats.py
-```
-
-## Output
-
-The pipeline creates Google Sheets in your Drive (folder: `DRIVE_FOLDER_PATH`, default `My Drive/Retarats`) including:
-
-* `..._PEPTIDE_DATA` / `..._PEPTIDE_TABS`
-* `..._SMALL_MOLECULE_DATA` / `..._SMALL_MOLECULE_TABS`
-* `..._MIXTURE_DATA` / `..._MIXTURE_TABS`
-  with `PAPERS_MASTER`, `STATS`, and `QUALITY_ALERTS` tabs
+*RetaBase is an independent research tool and is not affiliated with, or endorsed by, any drug manufacturer or regulatory body.*
