@@ -55,7 +55,7 @@ def _existing_ids(db_path: str) -> Set[str]:
 
 def run(
     db_path: str = DEFAULT_DB,
-    page_size: int = 20,
+    page_size: int = 100,
     refresh: bool = False,
     offline: bool = False,
     molecules_csv: str = "config/MOLECULES.csv",
@@ -113,7 +113,7 @@ def run(
 def main() -> None:
     ap = argparse.ArgumentParser(description="Fetch EuropePMC preprints (SRC:PPR) per molecule.")
     ap.add_argument("--db", default=DEFAULT_DB)
-    ap.add_argument("--page-size", type=int, default=20, help="Results per molecule query.")
+    ap.add_argument("--page-size", type=int, default=100, help="Results per molecule query.")
     ap.add_argument("--refresh", action="store_true", help="Re-fetch and overwrite already-stored ids.")
     ap.add_argument("--offline", action="store_true", help="No network; just report molecule counts.")
     ap.add_argument("--molecules", default="config/MOLECULES.csv")

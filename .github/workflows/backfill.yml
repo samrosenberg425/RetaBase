@@ -48,6 +48,9 @@ jobs:
           python-version: "3.11"
       - run: pip install -r requirements.txt
 
+      - name: Validate config CSVs (fail fast on a malformed rule file)
+        run: python3 scripts/validate_config.py
+
       - name: Restore corpus cache
         uses: actions/cache@v4
         with:
@@ -69,3 +72,20 @@ jobs:
             --max-years ${{ github.event.inputs.max_years || '3' }} \
             ${{ github.event.inputs.force == 'true' && '--force' || '' }} \
             --db data/retarats_pubmed.sqlite --state-db data/retarats_state.sqlite
+
+      # Citations run IN THIS SAME JOB so they never compete with the backfill for
+      # the corpus lock. This advances them every 6 h automatically -- even when the
+      # fetch above is a no-op (target reached), this step still tops up citations.
+      - name: Top up citations for the corpus (OpenAlex)
+        env:
+          API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
+        run: |
+          python3 scripts/run_impact_backfill.py --db data/retarats_pubmed.sqlite \
+            --newest-first --max-records 8000 || true
+
+      # Enrich with NIH iCite metrics (RCR, APT, human/animal/molecular, triangle
+      # coords, clinical flags). Same job = same lock, so no workflow competition.
+      - name: Enrich with NIH iCite metrics
+        run: |
+          python3 scripts/run_icite_backfill.py --db data/retarats_pubmed.sqlite \
+            --newest-first --max-records 20000 || true

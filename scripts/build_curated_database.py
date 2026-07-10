@@ -46,7 +46,16 @@ from retarats_pipeline.curation.ranking import RANK_FIELDS, compute_rank
 from retarats_pipeline.curation.reliability import RELIABILITY_FIELDS as _RELIABILITY_FIELDS, assess_reliability
 
 # Paper fields we merge onto each evidence row (identity + links + text for facets).
-PAPER_MERGE_FIELDS = ["title", "abstract", "doi", "pubmed_url", "journal", "mesh_terms", "keywords", "chemicals", "citation_count"]
+PAPER_MERGE_FIELDS = [
+    "title", "abstract", "doi", "pubmed_url", "journal", "mesh_terms", "keywords", "chemicals",
+    "citation_count",
+    # NIH iCite metrics (from run_icite_backfill.py) merged onto each evidence row so
+    # curation/ranking can use them. All optional; everything falls back if absent.
+    "icite_rcr", "icite_nih_percentile", "icite_apt",
+    "icite_human", "icite_animal", "icite_molecular",
+    "icite_x_coord", "icite_y_coord", "icite_is_clinical",
+    "icite_citation_count", "icite_field_citation_rate",
+]
 
 IDENTITY_FIELDS = [
     "evidence_id", "molecule_id", "molecule_name", "pmid", "doi", "pubmed_url",
@@ -264,7 +273,7 @@ def build(db_path: str, out_dir: str, limit: int = 0) -> dict:
         mol_rows,
         ["molecule_id", "molecule_name", "total_records", "auto_published", "listed",
          "review_candidates", "held", "human_evidence", "preclinical_evidence",
-         "reviews", "max_reliability", "top_conditions", "sections_present"],
+         "reviews", "max_reliability", "top_conditions", "sections_present", "pubchem_cid"],
     )
 
     # --- schema files ---
@@ -315,6 +324,9 @@ def _corpus_stats(curated_rows: List[dict], papers: List[dict], evidence: List[d
 SITE_JSON_FIELDS = [
     "molecule_id", "molecule_name", "pmid", "doi", "title", "journal", "pub_year",
     "authors_short", "first_author", "author_count", "citation_count",
+    "icite_rcr", "icite_nih_percentile", "icite_apt",
+    "icite_human", "icite_animal", "icite_molecular",
+    "icite_x_coord", "icite_y_coord", "icite_is_clinical",
     "website_section", "evidence_class", "evidence_class_label", "publication_status",
     "reliability_score", "reliability_tier", "evidence_directness", "directness_tier",
     "reliability_components", "rank_components",
@@ -324,6 +336,9 @@ SITE_JSON_FIELDS = [
     "facet_species", "facet_indication", "facet_endpoint", "facet_study_type",
     "facet_model_system", "facet_route",
     "facet_drug_class", "facet_population", "facet_sex", "facet_formulation", "facet_evidence_direction",
+    # NIH iCite-derived facets (impact tier + clinical-article flag) so the site can
+    # offer them as filters. Absent on un-enriched papers -> empty string.
+    "facet_evidence_impact", "facet_clinical_article",
     "facet_all",
 ]
 
@@ -374,8 +389,22 @@ def _load_experimental(path: str = os.path.join("config", "EXPERIMENTAL_MOLECULE
 # site_data.json is ~230 bytes/record, so even a big molecule at ~4400 records is a
 # few MB. Raise these if you move to a heavier-duty host.
 FEED_FOCUS_SECTIONS = {"Human evidence", "Mechanisms and pathways", "Reviews and overviews"}
-FEED_FOCUS_CAP = 4000   # per molecule, for the therapy + MoA + review sections
-FEED_OTHER_CAP = 400    # per molecule, for every other (lower-value) section
+FEED_FOCUS_CAP = 6000   # per molecule, for the therapy + MoA + review sections
+FEED_OTHER_CAP = 500    # per molecule, for every other (lower-value) section
+# Regardless of section/cap, ALWAYS publish the highest-signal papers so landmark
+# older work is never dropped: every evidence synthesis (review / meta-analysis)
+# and anything at/above this NIH percentile (iCite, field/time-normalized impact).
+FEED_KEEP_PERCENTILE = 90.0
+
+
+def _is_landmark(r: dict) -> bool:
+    """High-signal record that is always published regardless of the section cap."""
+    if str(r.get("evidence_class", "")) == "evidence_synthesis":
+        return True
+    try:
+        return float(r.get("icite_nih_percentile")) >= FEED_KEEP_PERCENTILE
+    except (TypeError, ValueError):
+        return False
 
 
 def _cap_site_feed(records: List[dict], focus_cap: int = FEED_FOCUS_CAP, other_cap: int = FEED_OTHER_CAP):
@@ -393,12 +422,14 @@ def _cap_site_feed(records: List[dict], focus_cap: int = FEED_FOCUS_CAP, other_c
     kept: List[dict] = []
     capped: Dict[str, dict] = {}
     for mol, recs in by_mol.items():
-        focus = [r for r in recs if str(r.get("website_section", "")) in FEED_FOCUS_SECTIONS]
-        other = [r for r in recs if str(r.get("website_section", "")) not in FEED_FOCUS_SECTIONS]
-        chosen = focus[:focus_cap] + other[:other_cap]
+        landmark = [r for r in recs if _is_landmark(r)]                       # always kept
+        rest = [r for r in recs if not _is_landmark(r)]
+        focus = [r for r in rest if str(r.get("website_section", "")) in FEED_FOCUS_SECTIONS]
+        other = [r for r in rest if str(r.get("website_section", "")) not in FEED_FOCUS_SECTIONS]
+        chosen = landmark + focus[:focus_cap] + other[:other_cap]
         kept.extend(chosen)
         if len(chosen) < len(recs):
-            capped[mol] = {"total": len(recs), "published": len(chosen),
+            capped[mol] = {"total": len(recs), "published": len(chosen), "landmark": len(landmark),
                            "focus": min(len(focus), focus_cap), "other": min(len(other), other_cap)}
 
     kept.sort(key=lambda r: _int(r.get("rank_score")), reverse=True)
@@ -433,7 +464,36 @@ def _write_site_json(path: str, records: List[dict], molecules: List[dict], corp
         json.dump(payload, fh, separators=(",", ":"), ensure_ascii=False)
 
 
-def _molecule_index(rows: List[dict]) -> List[dict]:
+# Optional PubChem enrichment (scripts/enrich_pubchem.py). NETWORK is required to
+# generate it, so the file may be absent on a fresh/offline build. Everything here
+# degrades gracefully: no file, or a molecule with no CID, simply yields "".
+PUBCHEM_CIDS_PATH = os.path.join("config", "pubchem_cids.csv")
+
+
+def _load_pubchem_cids(path: str = PUBCHEM_CIDS_PATH) -> Dict[str, str]:
+    """Map molecule_id -> pubchem_cid from the optional enrichment CSV.
+
+    Fully optional: a missing/unreadable file or a row without a CID contributes
+    nothing, so the build never errors on its absence.
+    """
+    out: Dict[str, str] = {}
+    if not os.path.exists(path):
+        return out
+    try:
+        with open(path, newline="", encoding="utf-8") as fh:
+            for row in csv.DictReader(fh):
+                mid = str(row.get("molecule_id", "") or "").strip()
+                cid = str(row.get("pubchem_cid", "") or "").strip()
+                if mid and cid:
+                    out[mid] = cid
+    except (OSError, csv.Error):
+        return {}
+    return out
+
+
+def _molecule_index(rows: List[dict], pubchem_by_mol: Dict[str, str] | None = None) -> List[dict]:
+    if pubchem_by_mol is None:
+        pubchem_by_mol = _load_pubchem_cids()
     by_mol = defaultdict(list)
     for r in rows:
         by_mol[str(r.get("molecule_id", ""))].append(r)
@@ -466,6 +526,9 @@ def _molecule_index(rows: List[dict]) -> List[dict]:
                 "max_reliability": max_rel,
                 "top_conditions": "; ".join(f"{c}({n})" for c, n in conditions.most_common(5)),
                 "sections_present": "; ".join(f"{s}({n})" for s, n in sections.most_common()),
+                # Optional PubChem CID for the "View on PubChem" link on the
+                # Bioactives page. "" when unknown or the enrichment file is absent.
+                "pubchem_cid": pubchem_by_mol.get(mol_id, ""),
             }
         )
     out.sort(key=lambda r: r["auto_published"], reverse=True)

@@ -7,7 +7,11 @@ name: Backfill citations (lazy background)
 
 on:
   schedule:
-    - cron: "0 */6 * * *"   # every 6 hours
+    # Daily backstop only. The recurring 6-hourly citation top-up now happens
+    # INSIDE the backfill job (same lock, no competition), so this standalone job
+    # no longer fires every 6 h -- that was starving itself by getting superseded
+    # while pending behind long backfill runs.
+    - cron: "30 3 * * *"   # daily 03:30 UTC
   workflow_dispatch:
     inputs:
       max_records:

@@ -30,11 +30,11 @@ EuropePMC ────┘                         → appraisal
 ```
 
 1. **Fetch** — `retarats_v2.py` queries PubMed for every molecule/rule in `config/SEARCH_RULES.csv` and stores titles, abstracts, MeSH, authors, journal, DOI, etc. in a SQLite corpus.
-2. **Enrich** — citation counts from **OpenAlex** (fallback **Semantic Scholar**); registry trials from **ClinicalTrials.gov**; preprints from **EuropePMC** (bioRxiv/medRxiv).
+2. **Enrich** — citation counts from **OpenAlex** (fallback **Semantic Scholar**); **NIH iCite** field/time-normalized metrics (Relative Citation Ratio, NIH percentile, Approximate Potential to Translate, the human/animal/molecular "triangle of translation", and clinical-article flags); **PubChem** compound IDs (CID links + synonyms); registry trials from **ClinicalTrials.gov**; preprints from **EuropePMC** (bioRxiv/medRxiv).
 3. **Curate** (`retarats_pipeline/curation/`, pure rule-based, offline, non-destructive):
-   - **facets** — normalized tags (species incl. non-human primate, indication, endpoint, mechanism, route, drug class, population, sex, formulation, evidence direction).
+   - **facets** — normalized tags (species incl. non-human primate, indication, endpoint, mechanism, route, drug class, population, sex, formulation, evidence direction, plus iCite-derived evidence-impact tier and clinical-article status).
    - **reliability** — study quality scored *within evidence class* (GRADE/SYRCLE/ARRIVE-informed), so a rigorous in-vitro study can score high for its type.
-   - **directness** — how directly the evidence applies to humans (human RCT high → in-vitro low).
+   - **directness** — how directly the evidence applies to humans (human RCT high → in-vitro low); iCite's APT, human/animal/molecular triangle, and clinical-article flag inform directness and the human/animal/in-vitro classification when the keyword heuristics are silent.
    - **ranking** — a transparent blend that surfaces the best evidence first (see below).
    - **publication status** — broad inclusion; only genuinely off-topic records are excluded.
    - **appraisal** — rule-based strengths/limitations + an LLM-ready summary slot.
@@ -50,7 +50,7 @@ EuropePMC ────┘                         → appraisal
 | quality | 28% | within-class study quality (reliability) |
 | relevance | 20% | how central the molecule is to the paper |
 | recency | 10% | newer evidence ranked higher |
-| impact | 5% | citation count (log-scaled; 0 until backfilled) |
+| impact | 5% | prefers iCite field-normalized metrics (NIH percentile, then RCR) over raw citation count (log-scaled); 0 until backfilled |
 | venue | 4% | journal reputation (curated; neutral for unknown) |
 
 Full method write-up is in the dashboard's **About / Methods** tab and `docs/curation_and_publication.md`.
@@ -82,12 +82,12 @@ All free, on GitHub Actions; the growing SQLite corpus lives in the **Actions ca
 
 | Workflow | Schedule | Does |
 |---|---|---|
-| `update.yml` | **daily** | incremental PubMed fetch + citation top-up → rebuild → **deploy to Pages** |
-| `backfill.yml` | **every 6 h** (auto) | historical fill, **3 years per run** (bounded so it finishes & caches before the 6 h job limit); resumes via checkpoint until it reaches `min_year`/`target_gb` |
-| `citations.yml` | every 6 h | OpenAlex→Semantic-Scholar citation backfill |
-| `registry.yml` | weekly | ClinicalTrials.gov trials + EuropePMC preprints |
+| `update.yml` | **daily** | `validate_config` fail-fast → incremental PubMed fetch + citation top-up → rebuild → **deploy to Pages** |
+| `backfill.yml` | **every 6 h** (auto) | `validate_config` fail-fast → historical fetch (bounded per run; resumes via checkpoint until `min_year`/`target_gb`) **+ OpenAlex citation top-up + NIH iCite enrichment**, all in one job |
+| `citations.yml` | **daily** | OpenAlex→Semantic-Scholar citation backfill (a lazy daily backstop to the 6 h job) |
+| `registry.yml` | **twice weekly** (Mon + Thu) | ClinicalTrials.gov trials + EuropePMC preprints |
 
-You can also trigger any of them manually (Actions → *workflow* → **Run workflow**).
+You can also trigger any of them manually (Actions → *workflow* → **Run workflow**). The full recommended run order is in [`docs/UPLOAD_CHECKLIST.md`](docs/UPLOAD_CHECKLIST.md).
 
 ---
 
@@ -138,8 +138,11 @@ retarats_pipeline/
   enrichment/                  clients (OpenAlex, S2, CT.gov, EuropePMC, PMC), backfill, registry
 scripts/
   run_backfill.py, run_impact_backfill.py, run_trials_fetch.py, run_preprints_fetch.py
+  run_icite_backfill.py, enrich_pubchem.py            NIH iCite + PubChem enrichment
   build_curated_database.py, build_public_site.py, run_curation_pipeline.py
-  validate_curated.py, list_experimental.py, cite_cycle.sh
+  validate_config.py, validate_curated.py             fail-fast config + curated checks
+  audit_corpus_years.py, audit_rule_counts.py         coverage / rule-count audits
+  list_experimental.py, cite_cycle.sh
 .github/workflows/             update, backfill, citations, registry
 config/                        molecules, search rules, facets, policy
 docs/                          curation_and_publication.md, ONLINE_DEPLOYMENT.md, …
@@ -150,7 +153,7 @@ tests/                         test_curation, test_extractors, test_site, test_s
 
 ## Data & credentials
 
-- **PubMed/PMC, OpenAlex, Crossref, EuropePMC, ClinicalTrials.gov** — free, keyless (OpenAlex/Crossref/Unpaywall just want a contact email). An **NCBI API key** raises PubMed limits 3→10 req/s (recommended for backfills).
+- **PubMed/PMC, OpenAlex, Crossref, EuropePMC, ClinicalTrials.gov, NIH iCite, PubChem** — free, keyless (OpenAlex/Crossref/Unpaywall just want a contact email; iCite and PubChem need no key). An **NCBI API key** raises PubMed limits 3→10 req/s (recommended for backfills).
 - Secrets live in a gitignored `.env` locally and in **GitHub Actions secrets** (`NCBI_API_KEY`, `NCBI_EMAIL`) — never committed. Deployment details: `docs/ONLINE_DEPLOYMENT.md`.
 
 ## Tests

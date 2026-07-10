@@ -51,6 +51,8 @@ FACET_GROUPS = (
     "molecule_role",
     "signal",
     "year_bucket",
+    "evidence_impact",
+    "clinical_article",
 )
 
 _DEFAULT_FACETS_CSV = os.path.join("config", "FACETS.csv")
@@ -288,6 +290,12 @@ def derive_facets(evidence: dict, paper: dict, facet_defs: Sequence[FacetDef] | 
     for sig_val, sig_label, src in _signal_facets(evidence):
         add("signal", sig_val, sig_label, src)
 
+    # 5b) NIH iCite impact + clinical-status (structured; guarded so absent -> nothing)
+    for v, l, src in _evidence_impact_facet(evidence):
+        add("evidence_impact", v, l, src)
+    for v, l, src in _clinical_article_facet(evidence):
+        add("clinical_article", v, l, src)
+
     # 6) year bucket (structured)
     yb = _year_bucket(evidence.get("pub_year"))
     if yb:
@@ -390,6 +398,64 @@ def _signal_facets(evidence: dict) -> List[Tuple[str, str, str]]:
         if any(t in safety for t in ["adverse", "toxicity", "serious", "nausea", "vomiting", "death", "hypoglycem"]):
             out.append(("safety_concern", "Safety concern mentioned", "structured:safety_signal"))
     return out
+
+
+def _truthy_flag(value) -> bool:
+    """Loose truthiness for iCite flag fields ("Yes"/"No", 1/0, "1"/"0", bool).
+
+    Blank / None / unparseable -> False. Kept local so facets stays self-contained.
+    """
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    s = str(value).strip().lower()
+    if s in {"yes", "y", "true", "t"}:
+        return True
+    if s in {"no", "n", "false", "f", ""}:
+        return False
+    try:
+        return float(s) != 0.0
+    except ValueError:
+        return False
+
+
+def _evidence_impact_facet(evidence: dict) -> List[Tuple[str, str, str]]:
+    """Bucket NIH iCite's field/time-normalized percentile (0-100) into an impact
+    facet. Absent/blank/unparseable -> no facet (matches the codebase convention
+    of emitting nothing for missing structured data), so un-enriched papers are
+    unaffected.
+    """
+    raw = evidence.get("icite_nih_percentile")
+    if raw in (None, ""):
+        return []
+    try:
+        pct = float(str(raw).strip())
+    except (TypeError, ValueError):
+        return []
+    if pct >= 90:
+        v, l = "top_decile", "Top-decile impact (NIH percentile >=90)"
+    elif pct >= 75:
+        v, l = "high", "High impact (NIH percentile >=75)"
+    elif pct >= 25:
+        v, l = "typical", "Typical impact (NIH percentile 25-75)"
+    else:
+        v, l = "low", "Low impact (NIH percentile <25)"
+    return [(v, l, "structured:icite_nih_percentile")]
+
+
+def _clinical_article_facet(evidence: dict) -> List[Tuple[str, str, str]]:
+    """"yes"/"no" clinical-article facet from iCite's is_clinical flag. Blank/None
+    -> no facet, so un-enriched papers are unaffected.
+    """
+    raw = evidence.get("icite_is_clinical")
+    if raw in (None, ""):
+        return []
+    if _truthy_flag(raw):
+        return [("yes", "Clinical article (iCite)", "structured:icite_is_clinical")]
+    return [("no", "Non-clinical article (iCite)", "structured:icite_is_clinical")]
 
 
 def _year_bucket(year) -> str:

@@ -111,12 +111,32 @@ def _recency(evidence: dict) -> float:
 
 
 def _impact(evidence: dict) -> float:
-    """0-100 from citation count when available, else 0 (never negative).
+    """0-100 impact, preferring NIH iCite's field/time-normalized metrics over a
+    raw count (which is unfair to newer work and to smaller fields):
 
-    Log-scaled so a handful of highly-cited papers don't dominate: ~100 cites
-    -> ~66, ~1000 -> ~100.
+      1) ``icite_nih_percentile`` (0-100) used directly -- 90th percentile -> 90.
+      2) ``icite_rcr`` (Relative Citation Ratio; 1.0 = field median) log-scaled so
+         1.0 -> 50, ~10 -> ~100, 0.1 -> 0.
+      3) raw citation_count (iCite's, else OpenAlex's) log-scaled -- old fallback,
+         for papers iCite has not scored.
+
+    Never negative; 0 when nothing is available.
     """
-    cites = evidence.get("citation_count")
+    pct = evidence.get("icite_nih_percentile")
+    if pct not in (None, ""):
+        try:
+            return max(0.0, min(100.0, float(pct)))
+        except (TypeError, ValueError):
+            pass
+    rcr = evidence.get("icite_rcr")
+    if rcr not in (None, ""):
+        try:
+            r = float(rcr)
+            if r > 0:
+                return max(0.0, min(100.0, 50.0 + 50.0 * math.log10(r)))
+        except (TypeError, ValueError):
+            pass
+    cites = evidence.get("icite_citation_count") or evidence.get("citation_count")
     if cites in (None, ""):
         return 0.0
     m = re.search(r"\d+", str(cites))

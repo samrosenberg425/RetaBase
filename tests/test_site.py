@@ -649,6 +649,102 @@ def run():
         check("fetch mode tolerates 404 on side feeds", "if (!r.ok) return null" in fetch_html)
         check("fetch mode: still exactly 2 </script> tags", fetch_html.count("</script>") == 2)
 
+    # 17) PubChem "learn more" link on the Bioactives cards: a molecule that
+    #     resolved to a CID carries it through MOLECULE_FIELDS and renders a
+    #     pubchem.ncbi.nlm.nih.gov/compound link (built with the safe pattern);
+    #     a molecule without a CID keeps an empty string and renders nothing.
+    check("pubchem_cid is a molecule field", "pubchem_cid" in site.MOLECULE_FIELDS)
+    with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as out:
+        feed = {
+            "generated_utc": "2026-07-04T00:00:00Z",
+            "records": [
+                {"molecule_id": "retatrutide", "molecule_name": "Retatrutide", "title": "T1",
+                 "facet_all": "x"},
+                {"molecule_id": "kisspeptin", "molecule_name": "Kisspeptin", "title": "T2",
+                 "facet_all": "x"},
+            ],
+            "molecules": [
+                {"molecule_id": "retatrutide", "molecule_name": "Retatrutide",
+                 "auto_published": "1", "pubchem_cid": "2244"},
+                {"molecule_id": "kisspeptin", "molecule_name": "Kisspeptin",
+                 "auto_published": "1", "pubchem_cid": ""},
+            ],
+        }
+        with open(os.path.join(src, "site_data.json"), "w", encoding="utf-8") as fh:
+            json.dump(feed, fh)
+        # data-level: the CID threads through for the resolved molecule, and the
+        # unresolved molecule degrades to an empty string (never None / KeyError).
+        sd = site.load_site_data(src)
+        by_id = {m["molecule_id"]: m for m in sd.molecules}
+        check("resolved molecule carries its CID", by_id["retatrutide"]["pubchem_cid"] == "2244")
+        check("unresolved molecule has empty CID", by_id["kisspeptin"]["pubchem_cid"] == "")
+        site.build_site(src, out, mode="inline")
+        with open(os.path.join(out, "index.html"), encoding="utf-8") as fh:
+            pc_html = fh.read()
+        # The compound link base + safe href construction are present, and the
+        # render is guarded so an empty CID produces no link.
+        check("pubchem compound base present",
+              "https://pubchem.ncbi.nlm.nih.gov/compound/" in pc_html)
+        check("pubchem href uses encodeURIComponent(cid)",
+              "PUBCHEM + encodeURIComponent(m.pubchem_cid)" in pc_html)
+        check("pubchem link guarded on non-empty cid", "if (m.pubchem_cid) {" in pc_html)
+        check("View on PubChem label present", "View on PubChem" in pc_html)
+        # resolved CID is inlined for the molecule that has one; no javascript: href.
+        check("resolved CID inlined in data block", '"pubchem_cid":"2244"' in pc_html)
+        check("unresolved CID inlined as empty string", '"pubchem_cid":""' in pc_html)
+        check("pubchem link keeps security invariant (no javascript:)",
+              'href="javascript:' not in pc_html.lower())
+
+    # 18) NIH iCite-derived facets (impact tier + clinical article) are wired as
+    #     sidebar filters end-to-end: present in the field allowlist, offered as
+    #     filter facets, threaded through load_site_data, and rendered as filter
+    #     labels in the built page so a user can filter by impact tier / clinical
+    #     status. (Regression guard: these were previously dropped by the site
+    #     normalizer + filter allowlists.)
+    icite_facets = ["facet_evidence_impact", "facet_clinical_article"]
+    filter_fields2 = {f for f, _ in site.FILTER_FACETS}
+    for nf in icite_facets:
+        check(nf + " is a filter facet", nf in filter_fields2)
+        check(nf + " is a record field", nf in site.RECORD_FIELDS)
+    with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as out:
+        feed = {
+            "generated_utc": "2026-07-04T00:00:00Z",
+            "records": [
+                {"molecule_id": "retatrutide", "molecule_name": "Retatrutide", "title": "T1",
+                 "facet_evidence_impact": "top_decile", "facet_clinical_article": "yes",
+                 "facet_all": "x"},
+                {"molecule_id": "retatrutide", "molecule_name": "Retatrutide", "title": "T2",
+                 "facet_evidence_impact": "typical", "facet_clinical_article": "no",
+                 "facet_all": "x"},
+            ],
+            "molecules": [{"molecule_id": "retatrutide", "molecule_name": "Retatrutide",
+                           "auto_published": "2"}],
+        }
+        with open(os.path.join(src, "site_data.json"), "w", encoding="utf-8") as fh:
+            json.dump(feed, fh)
+        # data-level: the facet values survive the site normalizer (were dropped before).
+        sd = site.load_site_data(src)
+        vals_impact = {r.get("facet_evidence_impact") for r in sd.records}
+        vals_clin = {r.get("facet_clinical_article") for r in sd.records}
+        check("evidence_impact value survives normalizer", "top_decile" in vals_impact)
+        check("clinical_article value survives normalizer",
+              "yes" in vals_clin and "no" in vals_clin)
+        site.build_site(src, out, mode="inline")
+        with open(os.path.join(out, "index.html"), encoding="utf-8") as fh:
+            imp_html = fh.read()
+        # UI-level: both filters are offered by their configured labels, and the
+        # record values are inlined so cross-filter counting can bucket them.
+        check("Evidence impact filter label rendered", "Evidence impact" in imp_html)
+        check("Clinical article filter label rendered", "Clinical article" in imp_html)
+        check("evidence_impact filter field wired in payload",
+              '"field":"facet_evidence_impact"' in imp_html)
+        check("clinical_article filter field wired in payload",
+              '"field":"facet_clinical_article"' in imp_html)
+        check("impact tier value inlined for filtering", "top_decile" in imp_html)
+        # security invariant unaffected.
+        check("icite-facet build: exactly 2 </script> tags",
+              imp_html.count("</script>") == 2)
+
     print(f"\n{PASS} passed, {FAIL} failed")
     return 0 if FAIL == 0 else 1
 

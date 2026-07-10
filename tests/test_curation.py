@@ -15,7 +15,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from retarats_pipeline.curation.facets import derive_facets
-from retarats_pipeline.curation.reliability import assess_reliability, classify_evidence
+from retarats_pipeline.curation.reliability import assess_reliability, classify_evidence, CLASS_DIRECTNESS
 from retarats_pipeline.curation.publication_status import decide_publication, check_required_fields
 from retarats_pipeline.curation.appraisal import appraise_evidence
 from retarats_pipeline.curation.journal import journal_reputation
@@ -215,6 +215,67 @@ def run():
     check("formulation oral_peptide facet", "oral_peptide" in fr_inc.wide.get("facet_formulation", ""))
     check("evidence_direction positive facet", "positive" in fr_inc.wide.get("facet_evidence_direction", ""))
     check("sex both facet", "both_sexes" in fr_inc.wide.get("facet_sex", "") or "female" in fr_inc.wide.get("facet_sex", ""))
+
+    # --- iCite APT directness nudge (guarded, class-bounded) ---
+    pre = nhp_preclinical()
+    base_pre = assess_reliability(dict(pre), None)
+    apt_hi = dict(pre); apt_hi["icite_apt"] = "1.0"
+    boosted = assess_reliability(apt_hi, None)
+    check("APT boosts preclinical directness", boosted.evidence_directness > base_pre.evidence_directness)
+    check("APT boost is small/bounded (<= +8)", boosted.evidence_directness - base_pre.evidence_directness <= 8)
+    check("APT-boosted preclinical still below human directness",
+          boosted.evidence_directness < CLASS_DIRECTNESS["human_observational"])
+    apt_lo = dict(pre); apt_lo["icite_apt"] = "0.0"
+    lowered = assess_reliability(apt_lo, None)
+    check("low APT reduces preclinical directness", lowered.evidence_directness < base_pre.evidence_directness)
+    check("low APT penalty small/bounded (<= 4)", base_pre.evidence_directness - lowered.evidence_directness <= 4)
+    # human RCT directness is authoritative -> APT must NOT touch it
+    rct_apt = human_rct(); rct_apt["icite_apt"] = "1.0"
+    check("APT does not touch human RCT directness",
+          assess_reliability(rct_apt, paper).evidence_directness == rel.evidence_directness)
+
+    # --- iCite is_clinical rescue for otherwise-"other" records ---
+    bare = {"role_category": "", "primary_study_type": "", "model_type": "", "model_primary": ""}
+    check("bare record classifies as other", classify_evidence(dict(bare)) == "other")
+    check("is_clinical=Yes rescues to human_clinical",
+          classify_evidence(dict(bare, icite_is_clinical="Yes")) == "human_clinical")
+    check("is_clinical=1 rescues to human_clinical",
+          classify_evidence(dict(bare, icite_is_clinical=1)) == "human_clinical")
+    check("is_clinical=No stays other",
+          classify_evidence(dict(bare, icite_is_clinical="No")) == "other")
+    # must NOT override an already-resolved non-human class
+    check("is_clinical does not override in_vitro",
+          classify_evidence({"model_primary": "in vitro", "icite_is_clinical": "Yes"}) == "in_vitro")
+    # rescued record is scored as human interventional, not zeroed
+    rescued = dict(bare, icite_is_clinical="Yes")
+    check("rescued clinical record scored > 0", assess_reliability(rescued, None).reliability_score > 0)
+
+    # --- iCite impact + clinical-status facets ---
+    fev = human_rct(); fev["icite_nih_percentile"] = "95"; fev["icite_is_clinical"] = "Yes"
+    ff = derive_facets(fev, paper)
+    check("evidence_impact top_decile bucket", "top_decile" in ff.wide.get("facet_evidence_impact", ""))
+    check("clinical_article yes", "yes" in ff.wide.get("facet_clinical_article", ""))
+    fev_hi = human_rct(); fev_hi["icite_nih_percentile"] = "80"
+    check("evidence_impact high bucket", derive_facets(fev_hi, paper).wide.get("facet_evidence_impact", "") == "high")
+    fev_ty = human_rct(); fev_ty["icite_nih_percentile"] = "40"; fev_ty["icite_is_clinical"] = "No"
+    ff_ty = derive_facets(fev_ty, paper)
+    check("evidence_impact typical bucket", ff_ty.wide.get("facet_evidence_impact", "") == "typical")
+    check("clinical_article no", ff_ty.wide.get("facet_clinical_article", "") == "no")
+    fev_lo = human_rct(); fev_lo["icite_nih_percentile"] = "10"
+    check("evidence_impact low bucket", derive_facets(fev_lo, paper).wide.get("facet_evidence_impact", "") == "low")
+
+    # --- regression: a record with NO iCite fields behaves exactly as before ---
+    r_base = assess_reliability(human_rct(), paper)
+    check("no-iCite RCT class unchanged", r_base.evidence_class == "human_clinical_controlled")
+    check("no-iCite RCT directness == class base",
+          r_base.evidence_directness == CLASS_DIRECTNESS["human_clinical_controlled"])
+    check("no-iCite preclinical directness == class base",
+          assess_reliability(nhp_preclinical(), None).evidence_directness == CLASS_DIRECTNESS["preclinical_invivo"])
+    check("no-iCite preclinical classify unchanged",
+          classify_evidence(nhp_preclinical()) == "preclinical_invivo")
+    f_base = derive_facets(human_rct(), paper)
+    check("no-iCite -> empty evidence_impact facet", f_base.wide.get("facet_evidence_impact", "") == "")
+    check("no-iCite -> empty clinical_article facet", f_base.wide.get("facet_clinical_article", "") == "")
 
     # --- Semantic Scholar extractors ---
     s2 = {

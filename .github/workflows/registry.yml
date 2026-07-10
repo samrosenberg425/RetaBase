@@ -10,7 +10,7 @@ name: Registry sources (trials + preprints)
 
 on:
   schedule:
-    - cron: "0 7 * * 1"     # weekly, Mondays 07:00 UTC (after the main update)
+    - cron: "0 7 * * 1,4"   # twice weekly (Mon + Thu) 07:00 UTC, after the main update
   workflow_dispatch:
 
 permissions:

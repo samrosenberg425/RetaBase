@@ -57,7 +57,15 @@ RECORD_FIELDS = [
     "facet_species", "facet_indication", "facet_endpoint", "facet_study_type",
     "facet_model_system", "facet_route",
     "facet_drug_class", "facet_population", "facet_sex", "facet_formulation",
-    "facet_evidence_direction", "facet_all",
+    "facet_evidence_direction",
+    # NIH iCite-derived facets: impact tier (from nih_percentile) + clinical-article
+    # flag. Carried through so they can be offered as sidebar filters. "" when absent.
+    "facet_evidence_impact", "facet_clinical_article",
+    "facet_all",
+    # NIH iCite metrics (merged per-record upstream by build_curated_database.py).
+    # Carried through so the UI can sort by impact percentile / translational
+    # potential (APT) and offer a clinical-only toggle. Absent -> empty string.
+    "icite_nih_percentile", "icite_apt", "icite_is_clinical",
 ]
 
 # Facet dropdown filters shown in the sidebar: (record field, human label).
@@ -75,6 +83,8 @@ FILTER_FACETS = [
     ("facet_sex", "Sex"),
     ("facet_formulation", "Formulation"),
     ("facet_evidence_direction", "Evidence direction"),
+    ("facet_evidence_impact", "Evidence impact"),
+    ("facet_clinical_article", "Clinical article"),
     ("reliability_tier", "Reliability tier"),
     ("directness_tier", "Directness tier"),
     ("website_section", "Website section"),
@@ -108,6 +118,9 @@ MOLECULE_FIELDS = [
     "molecule_id", "molecule_name", "total_records", "auto_published",
     "human_evidence", "preclinical_evidence", "reviews", "max_reliability",
     "top_conditions", "sections_present",
+    # Optional PubChem CID (from scripts/enrich_pubchem.py via molecule_index).
+    # Drives the "View on PubChem" link on the Bioactives card; "" when unknown.
+    "pubchem_cid",
 ]
 
 # Candidate ("experimental") molecules proposed for future fetching. These carry
@@ -140,6 +153,10 @@ PREPRINT_FIELDS = [
 CORPUS_STATS_FIELDS = [
     "generated_utc", "total_papers", "total_evidence", "molecules_with_data",
     "year_min", "year_max", "pct_citations_filled", "featured", "listed",
+    # Per-molecule feed-cap disclosure ({focus_cap, other_cap, total_public_records,
+    # published_records, capped_molecule_count, capped_molecules}); nested dict is
+    # preserved verbatim and JSON-serialized for the "top N of M" UI note.
+    "feed",
 ]
 
 
@@ -370,7 +387,7 @@ def _domain_passes(rec, field, sel, multi):
 def _year_passes(rec, year_filter):
     """Does ``rec`` pass the pub_year filter?
 
-    ``year_filter`` = {"mode": "before"|"after"|"range", "a": int|None, "b": int|None}.
+    ``year_filter`` = {"mode": "before"|"after"|"range"|"exact", "a": int|None, "b": int|None}.
     Records with a blank/unparseable pub_year pass only when no bound applies.
     An unset bound (None) is treated as no constraint.
     """
@@ -387,6 +404,8 @@ def _year_passes(rec, year_filter):
         return a is None or y <= a
     if mode == "after":
         return a is None or y >= a
+    if mode == "exact":
+        return a is None or y == a
     if mode == "range":
         if a is not None and y < a:
             return False
@@ -854,6 +873,7 @@ _TEMPLATE = """<!DOCTYPE html>
           <option value="">Any</option>
           <option value="after">After</option>
           <option value="before">Before</option>
+          <option value="exact">Exact</option>
           <option value="range">Range</option>
         </select>
         <input id="year-a" type="number" placeholder="year" oninput="applyFilters()">
@@ -885,9 +905,15 @@ _TEMPLATE = """<!DOCTYPE html>
             <option value="directness">Directness</option>
             <option value="citations">Times cited (most)</option>
             <option value="year">Year (newest)</option>
+            <option value="percentile">Impact percentile</option>
+            <option value="apt">Translational potential (APT)</option>
           </select>
         </label>
+        <label style="text-transform:none;display:inline-flex;gap:6px;align-items:center;color:var(--muted)">
+          <input id="clinical-only" type="checkbox" onchange="applyFilters()" style="width:auto"> Clinical articles only
+        </label>
       </div>
+      <div class="tab-desc" id="cap-note" style="display:none"></div>
       <div id="records-list"></div>
       <div id="load-more-wrap" style="text-align:center;margin:8px 0 24px;display:none">
         <button id="load-more" class="reset" style="width:auto;padding:8px 20px" onclick="loadMore()">Load more</button>
@@ -960,6 +986,7 @@ _TEMPLATE = """<!DOCTYPE html>
   var MULTI = new Set(DATA.multi || []);
   var ASPECTS = DATA.aspects || [];
   var PUBMED = "https://pubmed.ncbi.nlm.nih.gov/";
+  var PUBCHEM = "https://pubchem.ncbi.nlm.nih.gov/compound/";
   var INTERNAL = !!DATA.internal;  // curator approval UI only in the internal build
   var DECISIONS = {{}};  // rid -> {{status, note}} (in-memory only, never persisted)
   // Which top-level view is active: "evidence" (all) or "clinical" (human only).
@@ -1031,12 +1058,21 @@ _TEMPLATE = """<!DOCTYPE html>
     if (isNaN(y)) return !(yf.a != null || yf.b != null);
     if (yf.mode === "before") return yf.a == null || y <= yf.a;
     if (yf.mode === "after") return yf.a == null || y >= yf.a;
+    if (yf.mode === "exact") return yf.a == null || y === yf.a;
     if (yf.mode === "range") {{
       if (yf.a != null && y < yf.a) return false;
       if (yf.b != null && y > yf.b) return false;
       return true;
     }}
     return true;
+  }}
+  // iCite "clinical article" flag can arrive as the string "Yes", the number 1,
+  // or a boolean true (depending on how the feed serialized it) -> normalize all.
+  function isClinical(rec) {{
+    var v = rec.icite_is_clinical;
+    if (v === true || v === 1) return true;
+    var s = String(v == null ? "" : v).trim().toLowerCase();
+    return s === "yes" || s === "y" || s === "true" || s === "1";
   }}
   // Passes every active NON-search filter; skipField lets a facet ignore itself
   // during cross-filter counting.
@@ -1053,6 +1089,7 @@ _TEMPLATE = """<!DOCTYPE html>
       var c = parseInt(String(rec.citation_count || "").trim() || "0", 10);
       if (isNaN(c) || c < extra.minCit) return false;
     }}
+    if (extra.clinicalOnly && !isClinical(rec)) return false;
     return true;
   }}
 
@@ -1497,7 +1534,8 @@ _TEMPLATE = """<!DOCTYPE html>
     return {{
       year: ym ? {{mode: ym, a: isNaN(ya) ? null : ya, b: isNaN(yb) ? null : yb}} : null,
       journalSub: (document.getElementById("journal-sub").value || "").trim().toLowerCase(),
-      minCit: isNaN(mc) ? 0 : mc
+      minCit: isNaN(mc) ? 0 : mc,
+      clinicalOnly: !!(document.getElementById("clinical-only") && document.getElementById("clinical-only").checked)
     }};
   }}
 
@@ -1560,11 +1598,21 @@ _TEMPLATE = """<!DOCTYPE html>
 
   function sortRecords(list, mode) {{
     var key = {{rank: "rank_score", reliability: "reliability_score", directness: "evidence_directness",
-                citations: "citation_count", year: "pub_year"}}[mode] || "rank_score";
+                citations: "citation_count", year: "pub_year",
+                percentile: "icite_nih_percentile", apt: "icite_apt"}}[mode] || "rank_score";
+    // iCite sorts treat a missing/blank value as -1 so unscored papers sink below
+    // scored ones; the other sorts keep the existing num() (missing -> 0) behavior.
+    var missNeg = (mode === "percentile" || mode === "apt");
+    function sortVal(r) {{
+      var raw = r[key];
+      if (raw == null || String(raw).trim() === "") return missNeg ? -1 : 0;
+      var n = parseFloat(raw);
+      return isNaN(n) ? (missNeg ? -1 : 0) : n;
+    }}
     // stable sort descending by numeric key; RECORDS already rank-sorted so
     // "rank" preserves feed order via the index tiebreak.
     return list.map(function(r, i) {{ return [r, i]; }}).sort(function(a, b) {{
-      var d = num(b[0][key]) - num(a[0][key]);
+      var d = sortVal(b[0]) - sortVal(a[0]);
       return d !== 0 ? d : a[1] - b[1];
     }}).map(function(x) {{ return x[0]; }});
   }}
@@ -1576,6 +1624,23 @@ _TEMPLATE = """<!DOCTYPE html>
   // are recomputed over the complete filtered set, independent of the render cap)
   // are unaffected. Idempotent: rebuilds the list DOM from scratch each call.
   var lastBaseTotal = 0;  // records in the active view (Evidence or Clinical) before filters
+  // When the browser is filtered down to a single molecule that was capped in the
+  // published feed, return its {{total, published, ...}} stats so the UI can show a
+  // "top N of M papers" note. Detection: every filtered record shares one
+  // molecule_id AND that id is listed in CORPUS.feed.capped_molecules. Else null.
+  function singleCappedMolecule() {{
+    var feed = CORPUS && CORPUS.feed;
+    if (!feed || !feed.capped_molecules) return null;
+    var id = null;
+    for (var i = 0; i < lastVisible.length; i++) {{
+      var m = lastVisible[i].molecule_id || "";
+      if (id === null) id = m;
+      else if (m !== id) return null;  // more than one molecule in view
+    }}
+    if (!id) return null;
+    var cm = feed.capped_molecules[id];
+    return (cm && cm.total && cm.published) ? cm : null;
+  }}
   function renderVisible() {{
     var total = lastVisible.length;
     var shown = Math.min(visibleCount, total);
@@ -1596,6 +1661,19 @@ _TEMPLATE = """<!DOCTYPE html>
     showing.textContent = msg;
     // Show "Load more" only while some filtered records remain hidden.
     document.getElementById("load-more-wrap").style.display = (total > shown) ? "" : "none";
+
+    // Feed-cap disclosure: when viewing a single capped molecule, show how many of
+    // its papers are published here vs. exist in the full dataset. textContent only.
+    var capNote = document.getElementById("cap-note");
+    var cm = singleCappedMolecule();
+    if (cm && cm.published < cm.total) {{
+      capNote.textContent = "Showing top " + fmtInt(cm.published) + " of " + fmtInt(cm.total) +
+        " papers for this molecule (older low-impact papers are in the full dataset).";
+      capNote.style.display = "";
+    }} else {{
+      capNote.textContent = "";
+      capNote.style.display = "none";
+    }}
   }}
 
   function loadMore() {{
@@ -1634,6 +1712,7 @@ _TEMPLATE = """<!DOCTYPE html>
     document.getElementById("year-b").value = "";
     document.getElementById("journal-sub").value = "";
     document.getElementById("min-cit").value = "";
+    var co = document.getElementById("clinical-only"); if (co) co.checked = false;
     applyFilters();
   }}
   window.resetFilters = resetFilters;
@@ -1654,6 +1733,17 @@ _TEMPLATE = """<!DOCTYPE html>
       stat("max reliability", m.max_reliability);
       card.appendChild(stats);
       if (m.top_conditions) card.appendChild(el("div", "sl", m.top_conditions));
+      // Optional "learn more" link to PubChem. Only rendered when the molecule
+      // resolved to a CID (from scripts/enrich_pubchem.py); href built with the
+      // same safe pattern as other external links (textContent label via el(),
+      // encodeURIComponent on the value, no innerHTML / no javascript: scheme).
+      if (m.pubchem_cid) {{
+        var pc = el("a", "mol-pubchem", "View on PubChem \\u2197");
+        pc.href = PUBCHEM + encodeURIComponent(m.pubchem_cid);
+        pc.target = "_blank"; pc.rel = "noopener noreferrer";
+        pc.addEventListener("click", function(e) {{ e.stopPropagation(); }});
+        card.appendChild(pc);
+      }}
       card.addEventListener("click", function() {{
         var name = m.molecule_name || "";
         showTab("evidence");

@@ -126,6 +126,84 @@ def _sample_n(evidence: dict) -> Optional[int]:
     return None
 
 
+def _icite_float(evidence: dict, key: str) -> Optional[float]:
+    """Parse a numeric iCite field, returning None when absent/blank/unparseable."""
+    v = evidence.get(key)
+    if v in (None, ""):
+        return None
+    try:
+        return float(str(v).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _truthy(value) -> bool:
+    """Loose truthiness for iCite flag fields that arrive as "Yes"/"No", 1/0,
+    "1"/"0", or booleans. Blank / None / unparseable -> False.
+    """
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    s = str(value).strip().lower()
+    if s in {"yes", "y", "true", "t"}:
+        return True
+    if s in {"no", "n", "false", "f", ""}:
+        return False
+    try:
+        return float(s) != 0.0
+    except ValueError:
+        return False
+
+
+# Classes whose directness may receive a small iCite-APT nudge. All are
+# non-human, non-synthesis; their base directness is low enough that the capped
+# +8 can never lift a preclinical/in-vitro record above genuine human evidence.
+_APT_ADJUSTABLE = {"preclinical_invivo", "in_vitro", "methods_tool", "other"}
+
+
+def _apt_adjust(directness: int, cls: str, evidence: dict) -> int:
+    """Tiny, bounded nudge to translational directness from NIH iCite's
+    Approximate Potential to Translate (APT, 0-1). Applied ONLY to the
+    ``_APT_ADJUSTABLE`` classes so it re-orders records *within* a class without
+    ever leapfrogging one above human/synthesis evidence. Absent APT -> unchanged.
+    """
+    if cls not in _APT_ADJUSTABLE:
+        return directness
+    apt = _icite_float(evidence, "icite_apt")
+    if apt is None:
+        return directness
+    adj = 0
+    if apt >= 0.5:
+        adj = round(8 * min(1.0, (apt - 0.5) / 0.5))
+    elif apt <= 0.2:
+        adj = -round(4 * min(1.0, (0.2 - apt) / 0.2))
+    return max(0, min(100, directness + adj))
+
+
+def _icite_model(evidence: dict) -> str:
+    """Dominant translational compartment from NIH iCite's triangle fractions
+    (human / animal / molecular_cellular), or "" if unknown/ambiguous. Only used
+    to break ties when our keyword model is silent, never to override a clear
+    keyword-derived study design.
+    """
+    def _f(key: str):
+        v = evidence.get(key)
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    vals = {"human": _f("icite_human"), "animal": _f("icite_animal"), "in_vitro": _f("icite_molecular")}
+    known = {k: v for k, v in vals.items() if v is not None}
+    if not known:
+        return ""
+    top = max(known, key=lambda k: known[k])
+    return top if known[top] is not None and known[top] >= 0.5 else ""
+
+
 def classify_evidence(evidence: dict) -> str:
     role = str(evidence.get("role_category", "") or "")
     model = str(evidence.get("model_type", "") or "").lower()
@@ -146,6 +224,8 @@ def classify_evidence(evidence: dict) -> str:
     if role in {"assay_or_detection", "synthesis_or_production", "clinical_tool_or_diagnostic"}:
         return "methods_tool"
     resolved = model_primary or model
+    if not resolved:
+        resolved = _icite_model(evidence)  # iCite triangle fallback when keywords are silent
     if resolved == "human":
         return "human_observational"  # human context without a clearer clinical design
     if resolved == "animal":
@@ -154,6 +234,19 @@ def classify_evidence(evidence: dict) -> str:
         return "in_vitro"
     if resolved == "review" or "Review" in primary:
         return "narrative_review"
+    # Last resort before "other": use iCite's dominant compartment if confident.
+    icm = _icite_model(evidence)
+    if icm == "human":
+        return "human_observational"
+    if icm == "animal":
+        return "preclinical_invivo"
+    if icm == "in_vitro":
+        return "in_vitro"
+    # iCite rescue (last resort only): an article iCite flags as clinical is human
+    # interventional evidence. Never reached once a non-human class has resolved,
+    # so it can only upgrade an otherwise-"other" record.
+    if _truthy(evidence.get("icite_is_clinical")):
+        return "human_clinical"
     return "other"
 
 
@@ -336,6 +429,7 @@ def assess_reliability(evidence: dict, paper: Optional[dict] = None) -> Reliabil
         score, comps = 30, {"design": 30}
 
     directness = CLASS_DIRECTNESS.get(cls, 20)
+    directness = _apt_adjust(directness, cls, evidence)  # no-op when APT absent
     rationale = _rationale(cls, comps, directness)
     return Reliability(
         evidence_class=cls,
