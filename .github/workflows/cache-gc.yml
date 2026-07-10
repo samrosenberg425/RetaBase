@@ -1,0 +1,49 @@
+name: Prune old corpus caches
+
+# The corpus workflows (backfill/update/citations/registry) each save the growing
+# SQLite corpus under a UNIQUE per-run cache key (required: Actions caches are
+# immutable, so a fixed key would hit and never save the grown corpus). That means
+# every run leaves a full ~copy behind and they add up past the 10 GB/repo limit.
+#
+# This job keeps only the newest CORPUS_KEEP caches (each is a complete snapshot,
+# so no data is lost) and deletes the rest. It never touches the corpus itself --
+# only cache metadata via the API -- so it needs no corpus lock and can't race a
+# running fetch (an in-flight cache is saved atomically at job end and is the
+# newest, so it's always kept).
+
+on:
+  schedule:
+    - cron: "50 */3 * * *"   # every 3 hours, offset from the other jobs
+  workflow_dispatch:
+
+permissions:
+  actions: write            # required to delete caches
+
+env:
+  CORPUS_PREFIX: retarats-corpus-
+  CORPUS_KEEP: "2"          # how many newest corpus caches to retain
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete all but the newest corpus caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "Before:"
+          gh cache list --repo "$REPO" --key "$CORPUS_PREFIX" --limit 100 \
+            --sort created_at --order desc --json key,sizeInBytes,createdAt \
+            --jq '.[] | "  \(.key)  \(.sizeInBytes) bytes  \(.createdAt)"' || true
+
+          # IDs of every corpus cache except the newest $CORPUS_KEEP.
+          ids=$(gh cache list --repo "$REPO" --key "$CORPUS_PREFIX" --limit 100 \
+                  --sort created_at --order desc --json id \
+                  --jq ".[${CORPUS_KEEP}:][].id")
+          n=0
+          for id in $ids; do
+            [ -n "$id" ] || continue
+            gh cache delete "$id" --repo "$REPO" && n=$((n+1)) || true
+          done
+          echo "Deleted $n old corpus cache(s); kept the newest $CORPUS_KEEP."
