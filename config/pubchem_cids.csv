@@ -1,0 +1,128 @@
+molecule_id,display_name,pubchem_cid,pubchem_name
+slu_pp_332,SLU-PP-332,5338394,SLU-PP-332
+retatrutide,Retatrutide,,
+selank,Selank,11765600,Selank
+semax,Semax,9811102,Semax
+bpc_157,BPC-157,9941957,137525-51-0
+thymosin_beta_4,Thymosin Beta-4,45382195,Thymosin Beta 4
+tb_500,TB-500,62707662,TB500
+thymosin_alpha_1,Thymosin Alpha-1,16130571,Thymalfasin
+sermorelin,Sermorelin,16132413,SERMORELIN
+cjc_1295,CJC-1295,91971820,CJC 1295
+ipamorelin,Ipamorelin,9831659,Ipamorelin
+tesamorelin,Tesamorelin,16137828,Tesamorelin
+hexarelin,Hexarelin,6918297,Hexarelin
+ghrp_2,GHRP-2,6918245,Pralmorelin
+ghrp_6,GHRP-6,4345065,Ghrp-6
+ghk_cu,GHK-Cu,139035031,Copper tripeptide
+dsip,DSIP,68816,Emideltide
+mots_c,MOTS-c,146675088,Mots-c
+humanin,Humanin,16131438,Humanin
+kisspeptin,Kisspeptin,71306396,Kisspeptin
+pt_141,PT-141 (Bremelanotide),9941379,Bremelanotide
+melanotan_ii,Melanotan II,92432,Melanotan II
+melanotan_i,Melanotan I,16197727,Afamelanotide
+dihexa,Dihexa,129010512,dihexa
+cerebrolysin,Cerebrolysin,,
+cagrilintide,Cagrilintide,171397054,Cagrilintide
+aod_9604,AOD-9604,71300630,AOD 9604
+follistatin_344,Follistatin-344,,
+igf_1_lr3,IGF-1 LR3,,
+igf_1_des,IGF-1 DES,,
+epitalon,Epitalon (Epithalon),,
+thymalin,Thymalin,3085284,Nonathymulin
+pinealon,Pinealon,10273502,Glu-Asp-Arg
+ll_37,LL-37,16198951,LL-37
+peg_mgf,PEG-MGF,,
+mgf_igf1ec,MGF (IGF-1Ec),,
+gdf_11,GDF-11,,
+kpv,KPV,13294447,2-oxo-5-phenylpentanoic acid
+foxo4_dri,FOXO4-DRI,167312269,FOXO4-DRI
+ara_290,ARA-290 (Cibinetide),,
+p21_peptide,P21 peptide,,
+ss_31,SS-31 (Elamipretide),,
+noopept,Noopept,180496,Noopept
+prl_8_53,PRL-8-53,70700868,51352-87-5
+nsi_189,NSI-189,50922681,NSI-189
+isrib,ISRIB,1011240,2-(4-chlorophenoxy)-N-{4-[2-(4-chlorophenoxy)acetamido]cyclohexyl}acetamide
+tak_653,TAK-653,56655833,TAK-653
+amino_1mq,5-Amino-1MQ,,
+gw501516,GW501516 (Cardarine),,
+sr9009,SR9009,57394020,SR9009
+sr9011,SR9011,57394021,SR9011
+urolithin_a,Urolithin A,5488186,urolithin A
+nmn,NMN (Nicotinamide mononucleotide),,
+nicotinamide_riboside,Nicotinamide Riboside (NR),,
+thymopentin,Thymopentin (TP5),,
+idr_1018,IDR-1018,155527735,IDR-1018
+setmelanotide,Setmelanotide,11993702,Setmelanotide
+tirzepatide,Tirzepatide,166567236,Tirzepatide
+mazdutide,Mazdutide,167312357,Mazdutide
+survodutide,Survodutide,171378821,Survodutide
+pemvidutide,Pemvidutide,,
+orforglipron,Orforglipron,137319706,Orforglipron
+vk2735,VK2735,,
+danuglipron,Danuglipron,134611040,Danuglipron
+rapamycin,Rapamycin (Sirolimus),5284616,rapamycin
+metformin,Metformin,4091,metformin
+dasatinib,Dasatinib,3062316,Dasatinib
+quercetin,Quercetin,5280343,quercetin
+fisetin,Fisetin,5281614,Fisetin
+akg,Alpha-Ketoglutarate (AKG),,
+vasculotide,Vasculotide,,
+angiotensin_1_7,Angiotensin-(1-7) analogs,,
+vilon,Vilon,7010502,lysylglutamic acid
+vip,VIP (Vasoactive Intestinal Peptide),,
+vesugen,Vesugen,,
+cartalax,Cartalax,87815447,alanyl-glutamyl-aspartic acid
+cardogen,Cardogen / Cartagen,,
+corgen,CORGEN,,
+vesilute,VESILUTE,,
+prostamax,PROSTAMAX,9848296,Prostamax
+ldn,Low-Dose Naltrexone (LDN),,
+methylene_blue,Methylene Blue,6099,methylene blue
+alcar,ALCAR (Acetyl-L-Carnitine),,
+nadh,NADH,439153,NADH
+glutathione,Glutathione,124886,glutathione
+p22_2,P-22–2,,
+semaglutide,Semaglutide,56843331,Semaglutide
+liraglutide,Liraglutide,16134956,Liraglutide
+dulaglutide,Dulaglutide,,
+exenatide,Exenatide,45588096,Exenatide
+lixisenatide,Lixisenatide,90472060,Lixisenatide
+cagrisema,CagriSema,,
+amycretin,Amycretin,,
+petrelintide,Petrelintide,172915807,Petrelintide
+maridebart_cafraglutide,Maridebart cafraglutide (MariTide),,
+efinopegdutide,Efinopegdutide,,
+ecnoglutide,Ecnoglutide,162625103,Ecnoglutide
+tesofensine,Tesofensine,11370864,Tesofensine
+bimagrumab,Bimagrumab,,
+efruxifermin,Efruxifermin,,
+pegozafermin,Pegozafermin,,
+teriparatide,Teriparatide,16133850,TERIPARATIDE
+abaloparatide,Abaloparatide,76943386,Abaloparatide
+navitoclax,Navitoclax,24978538,Navitoclax
+trofinetide,Trofinetide,11318905,Trofinetide
+mk_677,MK-677 (Ibutamoren),,
+apelin,Apelin,56841713,Apelin
+elabela,Elabela (Toddler/Apela),,
+serelaxin,Serelaxin,71300755,SERELAXIN
+gdf15,GDF15,,
+klotho,Klotho,,
+fgf21,FGF21,,
+myostatin,Myostatin (GDF-8),,
+follistatin,Follistatin,,
+ace_031,ACE-031 (Ramatercept),,
+sotatercept,Sotatercept,,
+nnc0165_1875,Amylin agonist NNC0165-1875,,
+enavogliflozin,Enavogliflozin,71076840,Enavogliflozin
+empagliflozin,Empagliflozin,11949646,Empagliflozin
+dapagliflozin,Dapagliflozin,9887712,Dapagliflozin
+canagliflozin,Canagliflozin,24812758,Canagliflozin
+17_alpha_estradiol,17-alpha-Estradiol,68570,17alpha-Estradiol
+spermidine,Spermidine,1102,spermidine
+ergothioneine,Ergothioneine,5351619,ERGOTHIONEINE
+taurine,Taurine,1123,taurine
+cotadutide,Cotadutide,134694273,Cotadutide
+insulin_icodec,Insulin icodec,,

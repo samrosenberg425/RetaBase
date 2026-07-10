@@ -1,0 +1,1178 @@
+molecule_id,pubchem_cid,synonym
+slu_pp_332,5338394,SLU-PP-332
+slu_pp_332,5338394,4-Hydroxy-N'-(naphthalen-2-ylmethylene)benzohydrazide
+slu_pp_332,5338394,(E)-4-Hydroxy-N'-(naphthalen-2-ylmethylene)benzohydrazide
+slu_pp_332,5338394,ERR pan-Agonist 332
+slu_pp_332,5338394,4-hydroxy-N-[(E)-naphthalen-2-ylmethylideneamino]benzamide
+slu_pp_332,5338394,SR9861
+slu_pp_332,5338394,4-Hydroxybenzoic acid 2-(2-naphthalenylmethylene)hydrazide
+slu_pp_332,5338394,4-hydroxy-N'-[(E)-naphthalen-2-ylmethylidene]benzohydrazide
+selank,11765600,Selank
+selank,11765600,Selanc
+selank,11765600,Thr-Lys-Pro-Arg-Pro-Gly-Pro
+selank,11765600,TS9JR8EP1G
+selank,11765600,Threonyl-lysyl-prolyl-arginyl-prolyl-glycyl-proline
+selank,11765600,TP-7
+selank,11765600,TP 7
+selank,11765600,TP-7 (diacetate)
+selank,11765600,Threonyl-lysyl-prolyl-arginyl-prolyl-glycyl-proline [WHO-DD]
+semax,9811102,Semax
+semax,9811102,"ACTH (4-7), Pro-Gly-Pro-"
+semax,9811102,"ACTH (4-7), prolyl-glycyl-proline-"
+semax,9811102,Pro-gly-pro-acth (4-7)
+semax,9811102,MEHFPGP
+semax,9811102,Met-Glu-His-Phe-Pro-Gly-Pro
+semax,9811102,Semax?
+semax,9811102,H-Met-Glu-His-Phe-Pro-Gly-Pro-OH
+semax,9811102,HY-P1146
+semax,9811102,Met-Glu-His-Phe-Pro-Gly-Pro [WHO-DD]
+bpc_157,9941957,Bpc 157
+bpc_157,9941957,Bpc-157
+bpc_157,9941957,Bepecin
+bpc_157,9941957,Bpc 15
+bpc_157,9941957,pl-10
+bpc_157,9941957,8ED8NXK95P
+bpc_157,9941957,PLD-116
+bpc_157,9941957,Bpc157
+bpc_157,9941957,Gly-Glu-Pro-Pro-Pro-Gly-Lys-Pro-Ala-Asp-Asp-Ala-Gly-Leu-Val
+bpc_157,9941957,Booly protection compound 15
+bpc_157,9941957,BPC-157 free base
+bpc_157,9941957,BPC 157 trifluoroacetate
+bpc_157,9941957,H-GEPPPGKPADDAGLV-OH
+bpc_157,9941957,Gastric Juice Peptide Fragment
+bpc_157,9941957,EX-A4283
+thymosin_beta_4,45382195,Thymosin Beta 4
+thymosin_beta_4,45382195,THYMOSIN BETA 4 ACETATE
+thymosin_beta_4,45382195,Thymosin beta4 Acetate
+thymosin_beta_4,45382195,Thymosin beta 4?
+thymosin_beta_4,45382195,Thymosin b4 (cattle)
+tb_500,62707662,TB500
+tb_500,62707662,TB-500
+tb_500,62707662,QHK6Z47GTG
+tb_500,62707662,TB 500
+tb_500,62707662,Ac-Leu-Lys-Lys-Thr-Glu-Thr-Gln-OH
+tb_500,62707662,TB 500 acetate
+tb_500,62707662,HY-P0170
+tb_500,62707662,WZG0210
+tb_500,62707662,EX-A7411
+tb_500,62707662,TB500?
+tb_500,62707662,TP1328
+tb_500,62707662,CS-6213
+thymosin_alpha_1,16130571,Thymalfasin
+thymosin_alpha_1,16130571,Thymosin alpha 1
+thymosin_alpha_1,16130571,Thymosin alpha1
+thymosin_alpha_1,16130571,Zadaxin
+thymosin_alpha_1,16130571,alpha1-Thymosin
+thymosin_alpha_1,16130571,Thymosin alpha1 (human)
+thymosin_alpha_1,16130571,thymalfasine
+thymosin_alpha_1,16130571,timalfasina
+thymosin_alpha_1,16130571,Thymosins thymalfasin
+thymosin_alpha_1,16130571,W0B22ISQ1C
+thymosin_alpha_1,16130571,alpha1 Thymosin
+thymosin_alpha_1,16130571,thymalfasinum
+thymosin_alpha_1,16130571,Thymosin-alpha-1
+thymosin_alpha_1,16130571,Thymosin alpha(1)
+thymosin_alpha_1,16130571,Thymosin a1 (cattle)
+thymosin_alpha_1,16130571,alpha1-ThymosinThymalfasin
+thymosin_alpha_1,16130571,CCRIS 7707
+thymosin_alpha_1,16130571,Thymosin alpha1 (ox)
+thymosin_alpha_1,16130571,Thymalfasin [USAN:INN]
+thymosin_alpha_1,16130571,Thymosin alpha-1
+thymosin_alpha_1,16130571,Thymosin alpha-1 Acetate
+thymosin_alpha_1,16130571,Thymosin alpha1 (cattle)
+thymosin_alpha_1,16130571,Thymlfasin
+thymosin_alpha_1,16130571,Thymalfasin?
+thymosin_alpha_1,16130571,Thymosin alpha?
+sermorelin,16132413,SERMORELIN
+sermorelin,16132413,Sermorelina
+sermorelin,16132413,Sermoreline
+sermorelin,16132413,Sermorelinum
+sermorelin,16132413,CHEBI:9118
+sermorelin,16132413,Groliberin
+sermorelin,16132413,hGHRH(1-29)NH2
+sermorelin,16132413,GHRH(1-29)NH2
+sermorelin,16132413,H01AC04
+sermorelin,16132413,V04CD03
+sermorelin,16132413,GRF(1-29)NH2
+sermorelin,16132413,Somatotropin-Releasing-Hormone(1-29)Amide
+sermorelin,16132413,Growth Hormone-Releasing Factor(1-29)Amide
+sermorelin,16132413,Sermoreline [French]
+sermorelin,16132413,Sermorelinum [Latin]
+sermorelin,16132413,Sermorelina [Spanish]
+sermorelin,16132413,Sermorelin [INN:BAN]
+sermorelin,16132413,EX-A5534
+sermorelin,16132413,AC-8930
+cjc_1295,91971820,CJC 1295
+cjc_1295,91971820,CJC1295
+cjc_1295,91971820,CJC-1295
+ipamorelin,9831659,Ipamorelin
+ipamorelin,9831659,Aib-His-D-2-Nal-D-Phe-Lys-NH2
+ipamorelin,9831659,Aib-His-2Nal-Phe-Lys-NH2
+ipamorelin,9831659,Ipamorelin [INN]
+ipamorelin,9831659,IPAMORELIN ACETATE
+ipamorelin,9831659,Ipamorelina
+ipamorelin,9831659,Ipamoreline
+ipamorelin,9831659,IPAMORELIN [WHO-DD]
+ipamorelin,9831659,T7809
+tesamorelin,16137828,Tesamorelin
+tesamorelin,16137828,TH9507
+tesamorelin,16137828,MQG94M5EEO
+tesamorelin,16137828,TH 9507
+tesamorelin,16137828,tesamorelina
+tesamorelin,16137828,tesamoreline
+tesamorelin,16137828,tesamorelinum
+tesamorelin,16137828,TH-9507
+tesamorelin,16137828,GHRH(1-44)
+tesamorelin,16137828,H01AC06
+tesamorelin,16137828,Egrifta
+tesamorelin,16137828,Tesamorelin [USAN:INN]
+tesamorelin,16137828,(3E)-hex-3-enoylsomatoliberin
+tesamorelin,16137828,GTPL6959
+hexarelin,6918297,Hexarelin
+hexarelin,6918297,Examorelin
+hexarelin,6918297,examorelina
+hexarelin,6918297,examoreline
+hexarelin,6918297,MF-6003
+hexarelin,6918297,examorelinum
+hexarelin,6918297,His-D-2-methyl-Trp-Ala-Trp-D-Phe-Lys-NH2
+hexarelin,6918297,Examorelin [INN]
+hexarelin,6918297,EXAMORELIN [MART.]
+hexarelin,6918297,EXAMORELIN (HEXARELIN)
+hexarelin,6918297,"Hexarelin, >=90% (HPLC)"
+hexarelin,6918297,H1893
+ghrp_2,6918245,Pralmorelin
+ghrp_2,6918245,GHRP-2
+ghrp_2,6918245,KP-102
+ghrp_2,6918245,pralmorelina
+ghrp_2,6918245,pralmoreline
+ghrp_2,6918245,KP 102
+ghrp_2,6918245,Ala-beta-Nal-Ala-Trp-Phe-Lys-NH2
+ghrp_2,6918245,D-ALA-3-(2-NAPHTHYL)-D-ALA-ALA-TRP-D-PHE-LYS-NH2
+ghrp_2,6918245,pralmorelinum
+ghrp_2,6918245,Pralmorelin (free base)
+ghrp_2,6918245,Pralmorelin [INN]
+ghrp_2,6918245,Pralmorelin Diacetate Salt
+ghrp_2,6918245,KP-102D
+ghrp_2,6918245,GHRP Kaken 100
+ghrp_2,6918245,PRALMORELIN [MI]
+ghrp_2,6918245,GHRP 2
+ghrp_2,6918245,PRALMORELIN [WHO-DD]
+ghrp_2,6918245,GTPL1092
+ghrp_2,6918245,KP-102LN
+ghrp_2,6918245,GPA-748
+ghrp_2,6918245,KP-102T
+ghrp_2,6918245,HRNLPPBUBKMZMT-RDRUQFPZSA-N
+ghrp_2,6918245,EX-A5533
+ghrp_2,6918245,AC-8925
+ghrp_2,6918245,d-ala-d-2-nal-ala-trp-d-phe-lys-nh2
+ghrp_6,4345065,Ghrp-6
+ghrp_6,4345065,GHRP-2 Acetate
+ghrp_6,4345065,h-his-d-trp-ala-trp-d-phe-lys-nh2
+ghrp_6,4345065,GTPL1093
+ghrp_6,4345065,PGH-3694-PI
+ghk_cu,139035031,Copper tripeptide
+ghk_cu,139035031,GHK-Cu
+ghk_cu,139035031,HY-P0063
+ghk_cu,139035031,"Gly-His-Lys-Cu(II), Copper Peptide(GHK-Cu)"
+dsip,68816,Emideltide
+dsip,68816,DSIP nonapeptide
+dsip,68816,Emideltide [INN]
+dsip,68816,DELTA SLEEP-INDUCING PEPTIDE
+dsip,68816,emideltida
+dsip,68816,Delta sleep-inducing peptide (rabbit)
+dsip,68816,Delta Sleep Peptide
+dsip,68816,Delta-Sleep Peptide
+dsip,68816,"Peptide, Delta-Sleep"
+dsip,68816,emideltidum
+dsip,68816,Delta-Sleep-Inducing Peptide
+dsip,68816,Delta-Sleep-Inducing-Peptide
+dsip,68816,"Peptide, Delta Sleep-Inducing"
+dsip,68816,"Peptide, Delta-Sleep-Inducing"
+dsip,68816,"Sleep-Inducing Peptide, Delta"
+dsip,68816,Trp Ala Gly Gly Asp Ala Ser Gly Glu
+dsip,68816,DSIP
+dsip,68816,DELTA SLEEP INDUCING PEPTIDE
+dsip,68816,TRP-ALA-GLY-GLY-ASP-ALA-SER-GLY-GLU
+dsip,68816,Delta-Sleep Inducing Peptide
+dsip,68816,Delta Sleep-Inducing Peptide (DSIP)
+dsip,68816,Delta Sleep-Inducing Peptide [DSIP]
+dsip,68816,H-WAGGDASGE-OH
+dsip,68816,DSIP?
+dsip,68816,H-Trp-Ala-Gly-Gly-Asp-Ala-Ser-Gly-Glu-OH
+mots_c,146675088,Mots-c
+mots_c,146675088,MOTS-c (human) (trifluoroacetate salt)
+mots_c,146675088,A5CV6JFB78
+mots_c,146675088,H-MRWQEMGYIFYPRKLR-OH
+mots_c,146675088,Mitochondria-derived peptide mots-c
+mots_c,146675088,EX-A6267
+mots_c,146675088,HY-P2048
+humanin,16131438,Humanin
+humanin,16131438,HUMANIN TRIFLUOROACETATE
+humanin,16131438,formyl humanin
+humanin,16131438,Protein Humanin (human)
+humanin,16131438,"Humanin, human"
+humanin,16131438,1-24-Protein humanin (human)
+humanin,16131438,Protein (human clone 1 humanin sequence homolog)
+humanin,16131438,1-24-Protein humanin
+humanin,16131438,GTPL1047
+humanin,16131438,PHN-4384-V
+humanin,16131438,Humanin (human) trifluoroacetate salt
+humanin,16131438,H2980
+kisspeptin,71306396,Kisspeptin
+kisspeptin,71306396,Kisspeptins
+kisspeptin,71306396,KISS-1
+kisspeptin,71306396,KISS-1 metastasis suppressor
+kisspeptin,71306396,Metastin
+kisspeptin,71306396,Metastins
+kisspeptin,71306396,Kisspeptin 1
+kisspeptin,71306396,KiSS 1 Metastasis Suppressor
+kisspeptin,71306396,Metastasis Suppressor KiSS 1
+kisspeptin,71306396,Metastasis Suppressor KiSS-1
+kisspeptin,71306396,"KiSS-1, Metastasis Suppressor"
+kisspeptin,71306396,"Metastasis Suppressor, KiSS-1"
+kisspeptin,71306396,Protein KISS-1
+kisspeptin,71306396,Gene KISS1 protein
+kisspeptin,71306396,"Malignant melanoma metastasis-suppressor protein, human"
+pt_141,9941379,Bremelanotide
+pt_141,9941379,Bremelanotida
+pt_141,9941379,PT-141 FREE BASE
+pt_141,9941379,PT 141
+pt_141,9941379,Bremelanotidum
+pt_141,9941379,PT-141
+pt_141,9941379,Bremelanotide [USAN:INN]
+pt_141,9941379,PT141
+pt_141,9941379,Vyleesi (TN)
+pt_141,9941379,Bremelanotide?
+pt_141,9941379,Bremelanotide PT 141
+pt_141,9941379,"Bremelanotide, PT-141"
+pt_141,9941379,BREMELANOTIDE [MI]
+pt_141,9941379,BREMELANOTIDE [INN]
+pt_141,9941379,PT-141 (Bremelanotide)
+pt_141,9941379,Bremelanotide (USAN/INN)
+pt_141,9941379,BREMELANOTIDE [USAN]
+pt_141,9941379,BREMELANOTIDE [WHO-DD]
+pt_141,9941379,HS-2024
+melanotan_ii,92432,Melanotan II
+melanotan_ii,92432,Melanotan-II
+melanotan_ii,92432,UPF5CJ93X7
+melanotan_ii,92432,MT-II
+melanotan_ii,92432,Melanotan (MT)-II
+melanotan_ii,92432,Melatonan
+melanotan_ii,92432,Melanotan II acetate salt
+melanotan_ii,92432,MTII
+melanotan_ii,92432,MelanotanII
+melanotan_ii,92432,Melanotan II?
+melanotan_ii,92432,Ac-Nle-Cyclo[Asp-His-D-Phe-Arg-Trp-Lys]-NH2
+melanotan_ii,92432,MELANOTAN II [WHO-DD]
+melanotan_ii,92432,GTPL1323
+melanotan_ii,92432,EX-A7394
+melanotan_ii,92432,HY-P0267
+melanotan_ii,92432,HS-2017
+melanotan_ii,92432,M1650
+melanotan_i,16197727,Afamelanotide
+melanotan_i,16197727,Melanotan
+melanotan_i,16197727,4-Norleucyl-7-phenylalanine-alpha-msh
+melanotan_i,16197727,NDPMSH
+melanotan_i,16197727,"(Nle(4),D-Phe(7))alpha-MSH"
+melanotan_i,16197727,D02BB02
+melanotan_i,16197727,4-Nle-7-Phe-alpha-MSH
+melanotan_i,16197727,Ac-Ser-Tyr-Ser-Nle-Glu-His-D-Phe-Arg-Trp-Gly-Lys-Pro-Val-NH2
+melanotan_i,16197727,afamelanotida
+melanotan_i,16197727,afamelanotidum
+melanotan_i,16197727,"alpha-MSH, Nle(4)-Phe(7)-"
+melanotan_i,16197727,"alpha-MSH, norleucyl(4)-D-phenylalanyl(7)-"
+melanotan_i,16197727,CUV 1647
+melanotan_i,16197727,CUV-1647
+melanotan_i,16197727,CUV1647
+melanotan_i,16197727,Melanotan I
+melanotan_i,16197727,Melanotan-1
+melanotan_i,16197727,"MSH, 4-Nle-7-Phe-alpha-"
+melanotan_i,16197727,"Msh, 4-norleucyl-7-phenylalanine-alpha-"
+melanotan_i,16197727,MT-1 (NleFMSH)
+melanotan_i,16197727,NDP-alpha-MSH
+melanotan_i,16197727,Ndp-msh
+melanotan_i,16197727,alpha-NDP-MSH
+melanotan_i,16197727,"[Nle4,dPhe7]alpha-MSH"
+melanotan_i,16197727,Afamelanotide?
+dihexa,129010512,dihexa
+dihexa,129010512,PNB-0408
+dihexa,129010512,ATH-1001
+dihexa,129010512,N-hexanoic-Tyr-Ile-(6) aminohexanoic amide
+dihexa,129010512,Hexanoyl-Tyr-Ile-Ahx-NH2
+dihexa,129010512,Dihexa (PNB-0408)?
+dihexa,129010512,CS-6864
+dihexa,129010512,T7376
+cagrilintide,171397054,Cagrilintide
+cagrilintide,171397054,Cagrilintide [INN]
+cagrilintide,171397054,AO43BIF1U8
+cagrilintide,171397054,LDERDVMBIYGIOI-IZVMHKDJSA-N
+aod_9604,71300630,AOD 9604
+aod_9604,71300630,AOD9604
+aod_9604,71300630,AOD-9604
+aod_9604,71300630,AOD9604 acetate
+aod_9604,71300630,EX-A4625
+aod_9604,71300630,AOD-9604?
+thymalin,3085284,Nonathymulin
+thymalin,3085284,Nonathymulin [INN]
+thymalin,3085284,Thymic factor
+thymalin,3085284,Thymalin
+thymalin,3085284,nonathymuline
+thymalin,3085284,nonatimulina
+thymalin,3085284,Thymulin (pig peptide moiety)
+thymalin,3085284,Thymulin Acetate?
+thymalin,3085284,"Thymulin, lyophilized powder"
+thymalin,3085284,EX-A9091
+thymalin,3085284,HY-P3206
+thymalin,3085284,s1970
+thymalin,3085284,pGlu-Ala-Lys-Ser-Gln-Gly-Gly-Ser-Asn-OH
+thymalin,3085284,pyroGlu-Ala-Lys-Ser-Gln-Gly-Gly-Ser-AsnOH
+pinealon,10273502,Glu-Asp-Arg
+pinealon,10273502,glutamyl-aspartyl-arginine
+pinealon,10273502,L-Glutamyl-L-aspartyl-L-arginine
+pinealon,10273502,pinealon
+pinealon,10273502,Pinealon acetate salt form
+pinealon,10273502,H-Glu-Asp-Arg-OH
+pinealon,10273502,L-Glu-L-Asp-L-Arg
+pinealon,10273502,E-D-R
+pinealon,10273502,HY-P4052
+pinealon,10273502,L-alpha-glutamyl-L-alpha-aspartyl-L-arginine
+ll_37,16198951,LL-37
+ll_37,16198951,ropocamptide
+ll_37,16198951,Cap-18
+ll_37,16198951,cathelicidin LL-37
+ll_37,16198951,CAP18
+ll_37,16198951,Antibacterial peptide LL-37
+ll_37,16198951,antimicrobial peptide LL-37
+ll_37,16198951,LL-37 antibacterial peptide
+ll_37,16198951,FA-LL-37
+ll_37,16198951,LL-37 antiviral peptide
+ll_37,16198951,ROPOCAMPTIDE [INN]
+ll_37,16198951,CAS001
+ll_37,16198951,antibacterial protein LL-37
+ll_37,16198951,Cathelicidin
+ll_37,16198951,LL 37
+ll_37,16198951,Cathelicidin LL 37
+ll_37,16198951,Bac4
+ll_37,16198951,hCAP 18
+ll_37,16198951,All38 peptide
+ll_37,16198951,LL-37(human)
+ll_37,16198951,LL-37 (Human)
+ll_37,16198951,LL-37/hCAP18
+ll_37,16198951,"CAP18,"
+ll_37,16198951,EX-A7429A
+ll_37,16198951,Cathelicidin antimicrobial peptide 18
+kpv,13294447,2-oxo-5-phenylpentanoic acid
+kpv,13294447,5-Phenyl-2-Keto-Valeric Acid
+kpv,13294447,2-oxo-5-phenylvaleric acid
+kpv,13294447,2-keto-5-phenyl-valeric acid
+kpv,13294447,KPV
+foxo4_dri,167312269,FOXO4-DRI
+foxo4_dri,167312269,FOXO4-DRI TFA salt form
+noopept,180496,Noopept
+noopept,180496,Omberacetam
+noopept,180496,GVS-111
+noopept,180496,omberacetamum
+noopept,180496,1-(2-Phenylacetyl)-L-prolylglycine ethy ester
+noopept,180496,n-phenylacetyl-l-prolylglycine ethyl ester
+noopept,180496,"Glycine, 1-(phenylacetyl)-L-prolyl-, ethyl ester"
+noopept,180496,N-(1-(Phenylacetyl)-L-prolyl)glycine ethyl ester
+noopept,180496,"Glycine, 1-(2-phenylacetyl)-L-prolyl-, ethyl ester"
+noopept,180496,ethyl 1-(phenylacetyl)-L-prolylglycinate
+noopept,180496,SGS-111
+noopept,180496,1-(2-phenylacetyl)-l-prolylglycine ethyl ester
+noopept,180496,GVS 111
+noopept,180496,N-[1-(Phenylacetyl)-L-prolyl]glycine Ethyl Ester
+noopept,180496,ethyl phenylacetyl-Pro-Gly
+noopept,180496,"Glycine, N-(1-(phenylacetyl)-L-prolyl)-, ethyl ester"
+noopept,180496,Omberacetam (Standard)
+noopept,180496,ethyl (2-phenylacetyl)-L-prolylglycinate
+noopept,180496,Omberacetam [WHO-DD]
+noopept,180496,OMBERACETAM [INN]
+noopept,180496,Noopept - Bio-X trade mark
+noopept,180496,"Noopept, >=98% (HPLC)"
+noopept,180496,DVD-111
+noopept,180496,SGS 111
+noopept,180496,CS-1575
+prl_8_53,70700868,Prl-8-53
+prl_8_53,70700868,PRL-8-53 (hydrochloride)
+prl_8_53,70700868,Methyl3-(2-(benzyl(methyl)amino)ethyl)benzoatehydrochloride
+prl_8_53,70700868,METHYL 3-(2-(BENZYL(METHYL)AMINO)ETHYL)BENZOATE HCL
+prl_8_53,70700868,PRL 8-53
+prl_8_53,70700868,METHYL M-(2-(BENZYLMETHYLAMINO)ETHYL)BENZOATE HYDROCHLORIDE
+nsi_189,50922681,NSI-189
+nsi_189,50922681,YVE9U408ZL
+nsi_189,50922681,Amdiglurax
+nsi_189,50922681,amdiglurax [INN]
+nsi_189,50922681,EX-A277
+nsi_189,50922681,NSI-189?
+nsi_189,50922681,s5620
+nsi_189,50922681,CS-2029
+nsi_189,50922681,N7332
+isrib,1011240,ISRIB compound
+isrib,1011240,ISRIB
+isrib,1011240,trans-ISRIB
+isrib,1011240,ISRIB (trans-isomer)
+isrib,1011240,ISRIB trans-isomer
+isrib,1011240,Integrated Stress Response inhibitor
+isrib,1011240,"N,N'-(Cyclohexane-1,4-diyl)bis(2-(4-chlorophenoxy)acetamide)"
+isrib,1011240,cis-ISRIB
+isrib,1011240,C7B
+isrib,1011240,ISRIB?
+isrib,1011240,S6SZR97SBZ
+isrib,1011240,EX-A298
+isrib,1011240,"ISRIB, >=98% (HPLC)"
+isrib,1011240,HB4567
+isrib,1011240,s7400
+isrib,1011240,I7469
+isrib,1011240,S0706
+isrib,1011240,T6183
+isrib,1011240,"N,N'-cyclohexane-1,4-diylbis[2-(4-chlorophenoxy)acetamide]"
+tak_653,56655833,TAK-653
+tak_653,56655833,9E3TOE5RIZ
+tak_653,56655833,Osavampator
+tak_653,56655833,osavampator [INN]
+tak_653,56655833,Osavampator (USAN/INN)
+tak_653,56655833,OSAVAMPATOR [USAN]
+tak_653,56655833,PXJBHEHFVQVDDS-UHFFFAOYSA-N
+tak_653,56655833,EX-A6607
+tak_653,56655833,TAK-653?
+sr9009,57394020,SR9009
+sr9009,57394020,SR-9009
+sr9009,57394020,SR 9009
+sr9009,57394020,Stenabolic (SR9009)
+sr9009,57394020,REV-ERB Agonist II
+sr9009,57394020,Stenabolic (SR9009)?
+sr9009,57394020,GTPL8901
+sr9009,57394020,EX-A726
+sr9009,57394020,SR 9009 [WHO-DD]
+sr9009,57394020,s8692
+sr9009,57394020,CS-4669
+sr9011,57394021,SR9011
+sr9011,57394021,SR-9011
+sr9011,57394021,SR 9011
+sr9011,57394021,VYI79FLZ6W
+sr9011,57394021,GTPL8900
+sr9011,57394021,CS-4668
+urolithin_a,5488186,urolithin A
+urolithin_a,5488186,"3,8-dihydroxy-6H-benzo[c]chromen-6-one"
+urolithin_a,5488186,"3,8-Dihydroxyurolithin"
+urolithin_a,5488186,"6H-Dibenzo[b,d]pyran-6-one, 3,8-dihydroxy-"
+urolithin_a,5488186,"3,8-dihydroxybenzo[c]chromen-6-one"
+urolithin_a,5488186,"3,8-Hydroxydibenzo-alpha-pyrone"
+urolithin_a,5488186,Mitopure
+urolithin_a,5488186,ILJ8NEF6DT
+urolithin_a,5488186,"6H-Dibenzo(b,d)pyran-6-one, 3,8-dihydroxy-"
+urolithin_a,5488186,"3,8-DIHYDROXYBENZO(C)CHROMEN-6-ONE"
+urolithin_a,5488186,"3,8-dihydroxy-6H-benzo(c)chromen-6-one"
+urolithin_a,5488186,"3,8-dihydroxy-6h-dibenzo[b,d]pyran-6-one"
+urolithin_a,5488186,"3,8-Dihydroxy-6H-dibenzo(b,d)pyran-6-one"
+urolithin_a,5488186,urolithin-A
+urolithin_a,5488186,Urolithin A?
+urolithin_a,5488186,RIUPLDUFZCXCHM-UHFFFAOYSA-N
+urolithin_a,5488186,Uro-A
+urolithin_a,5488186,"3,8-dihydroxy-urolithin"
+urolithin_a,5488186,Urolithin A [WHO-DD]
+urolithin_a,5488186,"Urolithin A, >=97% (HPLC)"
+urolithin_a,5488186,EX-A4345
+urolithin_a,5488186,s5312
+urolithin_a,5488186,"3,8-Dihydroxybenzo[c]chromen-6-oneEE"
+urolithin_a,5488186,CS-6305
+urolithin_a,5488186,T7174
+idr_1018,155527735,IDR-1018
+idr_1018,155527735,Innate defense regulator 1018
+idr_1018,155527735,Val-Arg-Leu-Ile-Val-Ala-Val-Arg-Ile-Trp-Arg-Arg-NH2
+idr_1018,155527735,Peptide 1018
+idr_1018,155527735,HY-P3361
+setmelanotide,11993702,Setmelanotide
+setmelanotide,11993702,RM-493
+setmelanotide,11993702,Setmelanotida
+setmelanotide,11993702,N7T15V1FUY
+setmelanotide,11993702,Setmelanotidum
+setmelanotide,11993702,Setmelanotide (RM-493)
+setmelanotide,11993702,Setmelanotide [USAN:INN]
+setmelanotide,11993702,Setmelanotide [USAN]
+setmelanotide,11993702,SETMELANOTIDE [INN]
+setmelanotide,11993702,SETMELANOTIDE [WHO-DD]
+setmelanotide,11993702,GTPL9272
+setmelanotide,11993702,EX-A5542
+setmelanotide,11993702,CS-6399
+tirzepatide,166567236,Tirzepatide
+tirzepatide,166567236,Mounjaro (TN)
+tirzepatide,166567236,Zepbound (TN)
+tirzepatide,166567236,Tirzepatide free base?
+tirzepatide,166567236,Tirzepatide (JAN/USAN)
+tirzepatide,166567236,WLZ4518
+mazdutide,167312357,Mazdutide
+mazdutide,167312357,IBI362
+mazdutide,167312357,IBI-362
+survodutide,171378821,Survodutide
+orforglipron,137319706,Orforglipron
+orforglipron,137319706,GLP-1 receptor agonist 1
+orforglipron,137319706,Orforglipron (USAN)
+orforglipron,137319706,ORFORGLIPRON [USAN]
+orforglipron,137319706,Foundayo
+orforglipron,137319706,OWL833
+orforglipron,137319706,V6G
+orforglipron,137319706,orforglipron [INN]
+orforglipron,137319706,Orforglipron [WHO-DD]
+orforglipron,137319706,GLP-1 receptor agonist 1?
+orforglipron,137319706,YQF2774
+orforglipron,137319706,EX-A7751
+orforglipron,137319706,GLP-1 receptor agonist 1;Orforglipron
+danuglipron,134611040,Danuglipron
+danuglipron,134611040,DN9IUI24GP
+danuglipron,134611040,Danuglipron [USAN]
+danuglipron,134611040,Danuglipron (USAN)
+danuglipron,134611040,danuglipronum
+danuglipron,134611040,UK4
+danuglipron,134611040,Danuglipron free base
+danuglipron,134611040,Danuglipron [WHO-DD]
+danuglipron,134611040,DANUGLIPRON [INN]
+danuglipron,134611040,EX-A3607
+danuglipron,134611040,s9851
+danuglipron,134611040,AS-0827
+rapamycin,5284616,rapamycin
+rapamycin,5284616,Sirolimus
+rapamycin,5284616,(-)-Rapamycin
+rapamycin,5284616,Rapamune
+rapamycin,5284616,rapalimus
+rapamycin,5284616,FYARRO
+rapamycin,5284616,HYFTOR
+rapamycin,5284616,sirolimusum
+rapamycin,5284616,Npc-12g
+rapamycin,5284616,RAPA
+rapamycin,5284616,Rapammune
+rapamycin,5284616,SILA 9268A
+rapamycin,5284616,L04AA10
+rapamycin,5284616,CHEBI:9168
+rapamycin,5284616,SM-88 COMPONENT SIROLIMUS
+rapamycin,5284616,RefChem:6226
+rapamycin,5284616,S01XA23
+rapamycin,5284616,I2190A
+rapamycin,5284616,I 2190A
+rapamycin,5284616,I-2190A
+rapamycin,5284616,SIIA 9268A
+rapamycin,5284616,Rapamycin (Sirolimus)
+rapamycin,5284616,Rapamycin (GMP)
+rapamycin,5284616,Rapamycin (GMP Like)
+rapamycin,5284616,DE-109
+metformin,4091,metformin
+metformin,4091,"1,1-Dimethylbiguanide"
+metformin,4091,"N,N-dimethylimidodicarbonimidic diamide"
+metformin,4091,Metiguanide
+metformin,4091,Dimethylbiguanide
+metformin,4091,Metformine
+metformin,4091,"N,N-Dimethylbiguanide"
+metformin,4091,Metformina
+metformin,4091,"N1,N1-Dimethylbiguanide"
+metformin,4091,"N,N-Dimethyldiguanide"
+metformin,4091,"3-(diaminomethylidene)-1,1-dimethylguanidine"
+metformin,4091,Diaformin
+metformin,4091,Dimethylbiguanid
+metformin,4091,Metformin extended release
+metformin,4091,"BIGUANIDE, 1,1-DIMETHYL-"
+metformin,4091,Meguan
+metformin,4091,Novo-Metformin
+metformin,4091,CHEBI:6801
+metformin,4091,LA-6023
+metformin,4091,Dimethylguanylguanidine
+metformin,4091,LA 6023
+metformin,4091,RefChem:6463
+metformin,4091,A10BA02
+metformin,4091,"2-carbamimidoyl-1,1-dimethylguanidine"
+metformin,4091,"1-((diaminomethylidene)amino)-N,N-dimethylmethanimidamide"
+dasatinib,3062316,Dasatinib
+dasatinib,3062316,Sprycel
+dasatinib,3062316,Dasatinib anhydrous
+dasatinib,3062316,Dasatinib (anhydrous)
+dasatinib,3062316,dasatinibum
+dasatinib,3062316,anh. dasatinib
+dasatinib,3062316,anhydrous dasatinib
+dasatinib,3062316,dasatinib (anh.)
+dasatinib,3062316,BMS Dasatinib
+dasatinib,3062316,X78UG0A0RN
+dasatinib,3062316,JLTN compound
+dasatinib,3062316,PHYRAGO
+dasatinib,3062316,RefChem:5732
+dasatinib,3062316,L01XE06
+dasatinib,3062316,s1021
+dasatinib,3062316,Dasatinib [USAN:INN]
+dasatinib,3062316,Dasatanib
+dasatinib,3062316,1N1
+dasatinib,3062316,Dasatinib (Standard)
+dasatinib,3062316,Kinome_3650
+dasatinib,3062316,Dasatinib (JAN/INN)
+dasatinib,3062316,DASATINIB [INN]
+dasatinib,3062316,DASATINIB [MI]
+dasatinib,3062316,Sprycel (Bristol Meyers)
+dasatinib,3062316,DASATINIB [WHO-DD]
+quercetin,5280343,quercetin
+quercetin,5280343,Meletin
+quercetin,5280343,Sophoretin
+quercetin,5280343,Xanthaurine
+quercetin,5280343,Quercetine
+quercetin,5280343,Quercetol
+quercetin,5280343,Quertine
+quercetin,5280343,Quercitin
+quercetin,5280343,Quertin
+quercetin,5280343,Cyanidelonon 1522
+quercetin,5280343,Flavin meletin
+quercetin,5280343,T-Gelb bzw. grun 1
+quercetin,5280343,C.I. Natural Yellow 10
+quercetin,5280343,Cyanidenolon 1522
+quercetin,5280343,C.I. Natural red 1
+quercetin,5280343,Corvitin
+quercetin,5280343,Korvitin
+quercetin,5280343,Lipoflavon
+quercetin,5280343,NSC 9219
+quercetin,5280343,3'-hydroxykaempferol
+quercetin,5280343,NSC9219
+quercetin,5280343,NSC-9219
+quercetin,5280343,9IKM0I5T1E
+quercetin,5280343,Quercetin (constituent of ginkgo)
+quercetin,5280343,Dikvertin
+fisetin,5281614,Fisetin
+fisetin,5281614,5-Desoxyquercetin
+fisetin,5281614,"3,3',4',7-Tetrahydroxyflavone"
+fisetin,5281614,"3,7,3',4'-Tetrahydroxyflavone"
+fisetin,5281614,Fustel
+fisetin,5281614,Viset
+fisetin,5281614,Fisetholz
+fisetin,5281614,Superfustel
+fisetin,5281614,Cotinin
+fisetin,5281614,Fietin
+fisetin,5281614,Fustet
+fisetin,5281614,Junger fustik
+fisetin,5281614,C.I. Natural Brown 1
+fisetin,5281614,Fisidenolon 1521
+fisetin,5281614,"7,3',4'-Trihydroxyflavonol"
+fisetin,5281614,5-Desoxy-quercetin
+fisetin,5281614,"7,3',4'-Flavon-3-ol"
+fisetin,5281614,"3,3',4',7-Tetrahydroxy-flavone"
+fisetin,5281614,Ventin sumach
+fisetin,5281614,Young fustic
+fisetin,5281614,Zante fustic
+fisetin,5281614,Superfustel K
+fisetin,5281614,Ungarisches gelbholz
+fisetin,5281614,Young fustic crystals
+fisetin,5281614,Bois bleu de Honqrie
+vilon,7010502,lysylglutamic acid
+vilon,7010502,Lys-Glu
+vilon,7010502,Peptide vilon
+vilon,7010502,Vilon
+vilon,7010502,L-LYSYL-L-GLUTAMIC ACID
+vilon,7010502,AB-0 peptide
+vilon,7010502,H34V7IM5ML
+vilon,7010502,H-Lys(H-Glu-OH)-OH
+vilon,7010502,H-LYS-GLU-OH
+vilon,7010502,N-L-Lysyl-L-glutamic acid
+vilon,7010502,Normophthal
+vilon,7010502,CCRIS 8868
+vilon,7010502,"L-Glutamic acid, L-lysyl-"
+vilon,7010502,Lysylglutamate
+vilon,7010502,Lysyl-Glutamate
+vilon,7010502,KE dipeptide
+vilon,7010502,K-E Dipeptide
+vilon,7010502,Lysyl-glutaminsaure
+vilon,7010502,Lysyl-glutamic acid
+vilon,7010502,Lys-Glu-OH
+vilon,7010502,L-Lys-L-Glu
+vilon,7010502,L-Lysyl-L-Glutamate
+vilon,7010502,"glutamic acid, lysyl-"
+vilon,7010502,Lysine Glutamate dipeptide
+vilon,7010502,Lysine-Glutamate dipeptide
+cartalax,87815447,alanyl-glutamyl-aspartic acid
+cartalax,87815447,H-Asp-Glu-Asp-OH
+cartalax,87815447,Ala-Glu-Asp
+cartalax,87815447,Cartalax
+cartalax,87815447,T-31 peptide
+cartalax,87815447,H-Ala-Glu-Asp-OH
+cartalax,87815447,L-Alanyl-L-glutamyl-L-aspartic acid
+prostamax,9848296,Prostamax
+methylene_blue,6099,methylene blue
+methylene_blue,6099,Basic blue 9
+methylene_blue,6099,Methylthioninium chloride
+methylene_blue,6099,Solvent blue 8
+methylene_blue,6099,Swiss Blue
+methylene_blue,6099,C.I. Basic Blue 9
+methylene_blue,6099,Methylene Blue anhydrous
+methylene_blue,6099,Chromosmon
+methylene_blue,6099,Methylene Blue N
+methylene_blue,6099,Methylthionine chloride
+methylene_blue,6099,Methylene Blue BB
+methylene_blue,6099,Methylene Blue chloride
+methylene_blue,6099,Methylenium ceruleum
+methylene_blue,6099,Urolene blue
+methylene_blue,6099,Bleu de methylene
+methylene_blue,6099,Methylene Blue A
+methylene_blue,6099,Methylene Blue B
+methylene_blue,6099,Methylene Blue D
+methylene_blue,6099,Methylene Blue G
+methylene_blue,6099,External Blue 1
+methylene_blue,6099,Tetramethylene Blue
+methylene_blue,6099,Calcozine Blue ZF
+methylene_blue,6099,Methylene Blue BD
+methylene_blue,6099,Methylene Blue BP
+methylene_blue,6099,Methylene Blue BX
+nadh,439153,NADH
+nadh,439153,DPNH
+nadh,439153,beta-NADH
+nadh,439153,"1,4-Dihydronicotinamide adenine dinucleotide"
+nadh,439153,NADH2
+nadh,439153,dihydronicotinamide adenine dinucleotide
+nadh,439153,Reduced nicotinamide adenine diphosphate
+nadh,439153,Reduced nicotinamide-adenine dinucleotide
+nadh,439153,Reduced Nicotinamide Adenine Dinucleotide
+nadh,439153,"Nicotinamide-adenine dinucleotide, reduced"
+nadh,439153,nicotinamide adenine dinucleotide (reduced)
+nadh,439153,NAD reduced
+nadh,439153,beta-DPNH
+nadh,439153,Dihydrocozymase
+nadh,439153,"Coenzyme I, reduced"
+nadh,439153,"Cozymase I, reduced"
+nadh,439153,Dihydrocodehydrogenase I
+nadh,439153,Reduced codehydrogenase I
+nadh,439153,Dihydronicotinamide mononucleotide
+nadh,439153,Reduced diphosphopyridine nucleotide
+nadh,439153,"Codehydrase I, reduced"
+nadh,439153,"Codehydrogenase I, reduced"
+nadh,439153,NAD reduced form
+nadh,439153,Dihydronicotinamide-adenine dinucleotide
+nadh,439153,nadh hydride
+glutathione,124886,glutathione
+glutathione,124886,L-Glutathione reduced
+glutathione,124886,L-Glutathione
+glutathione,124886,Glutathion
+glutathione,124886,Isethion
+glutathione,124886,reduced glutathione
+glutathione,124886,Tathion
+glutathione,124886,Glutinal
+glutathione,124886,Glutathione-SH
+glutathione,124886,Deltathione
+glutathione,124886,Copren
+glutathione,124886,Neuthion
+glutathione,124886,Tathione
+glutathione,124886,Glutide
+glutathione,124886,Triptide
+glutathione,124886,Glutatione
+glutathione,124886,Ledac
+glutathione,124886,Glutatiol
+glutathione,124886,Panaron
+glutathione,124886,Agifutol S
+glutathione,124886,Glutathione (reduced)
+glutathione,124886,L-gamma-glutamyl-L-cysteinylglycine
+glutathione,124886,Glutathione SH
+glutathione,124886,gamma-L-Glutamyl-L-cysteinylglycine
+glutathione,124886,5-L-Glutamyl-L-cysteinylglycine
+semaglutide,56843331,Semaglutide
+semaglutide,56843331,Rybelsus
+semaglutide,56843331,Ozempic
+semaglutide,56843331,Wegovy
+semaglutide,56843331,NN9535
+semaglutide,56843331,NN 9535
+semaglutide,56843331,53AXN4NNHX
+semaglutide,56843331,NN-9535
+semaglutide,56843331,semaglutida
+semaglutide,56843331,semaglutidum
+semaglutide,56843331,Oral Semaglutide
+semaglutide,56843331,RefChem:6213
+semaglutide,56843331,A10BJ06
+semaglutide,56843331,Semaglutide [USAN:INN]
+semaglutide,56843331,Kayshild
+semaglutide,56843331,Semaglutide impurity
+semaglutide,56843331,Semaglutide free base
+semaglutide,56843331,Semaglutide(sodium salt)?
+semaglutide,56843331,Rybelsus (oral semaglutide)
+semaglutide,56843331,GTPL9724
+semaglutide,56843331,Ozempic (injectable semaglutide)
+semaglutide,56843331,EX-A2424
+liraglutide,16134956,Liraglutide
+liraglutide,16134956,NN2211
+liraglutide,16134956,Liraglutida
+liraglutide,16134956,Liraglutidum
+liraglutide,16134956,Saxenda
+liraglutide,16134956,victoza
+liraglutide,16134956,NN-2211
+liraglutide,16134956,Liraglutide recombinant
+liraglutide,16134956,Liraglutide (rDNA origin)
+liraglutide,16134956,NN9924
+liraglutide,16134956,NN-9924
+liraglutide,16134956,RefChem:5950
+liraglutide,16134956,A10BJ02
+liraglutide,16134956,Liraglutide (genetical recombination)
+liraglutide,16134956,NN 2211
+liraglutide,16134956,Liraglutidum [INN-Latin]
+liraglutide,16134956,Liraglutida [INN-Spanish]
+liraglutide,16134956,Liraglutide?
+liraglutide,16134956,HSDB 8205
+liraglutide,16134956,Liraglutide [USAN:INN:BAN:JAN]
+liraglutide,16134956,GTPL1133
+liraglutide,16134956,EX-A2418
+liraglutide,16134956,T6876
+exenatide,45588096,Exenatide
+exenatide,45588096,Bydureon Pen
+exenatide,45588096,Byetta
+exenatide,45588096,Bydureon
+exenatide,45588096,Exendin 4
+exenatide,45588096,PT302
+exenatide,45588096,exenatidum
+exenatide,45588096,Exendin 4 (Heloderma suspectum)
+exenatide,45588096,AC2993A
+exenatide,45588096,Ex4 peptide
+exenatide,45588096,"Peptide, Ex4"
+exenatide,45588096,BYDUREON BCISE
+exenatide,45588096,A10BJ01
+exenatide,45588096,AC-2993
+exenatide,45588096,AC-2993A
+exenatide,45588096,AC-2993LAR
+exenatide,45588096,AC2993
+exenatide,45588096,DA-3091
+exenatide,45588096,exenatida
+exenatide,45588096,ITCA-650
+exenatide,45588096,Exenatide Synthetic
+exenatide,45588096,AC 2993
+exenatide,45588096,ITCA 650
+exenatide,45588096,HSDB 7789
+exenatide,45588096,Exenatide [USAN:INN:BAN:JAN]
+lixisenatide,90472060,Lixisenatide
+lixisenatide,90472060,Adlyxin
+lixisenatide,90472060,Lyxumia
+lixisenatide,90472060,ZP10A peptide
+lixisenatide,90472060,ZP 10
+lixisenatide,90472060,AVE0010
+lixisenatide,90472060,AVE 0010
+lixisenatide,90472060,lixisenatida
+lixisenatide,90472060,lixisenatidum
+lixisenatide,90472060,AVE 010
+lixisenatide,90472060,AVE-010
+lixisenatide,90472060,ZP-10
+lixisenatide,90472060,AVE-0010
+lixisenatide,90472060,RefChem:391
+lixisenatide,90472060,A10BJ03
+lixisenatide,90472060,Lixisenatide [USAN:INN]
+lixisenatide,90472060,Lixisenatide?
+lixisenatide,90472060,H-HGEGTFTSDLSKQMEEEAVRLFIEWLKNGGPSSGAPPSKKKKKK-NH2
+petrelintide,172915807,Petrelintide
+petrelintide,172915807,ZP8396
+petrelintide,172915807,ZP-8396
+ecnoglutide,162625103,Ecnoglutide
+ecnoglutide,162625103,Ecnoglutide [INN]
+ecnoglutide,162625103,KM6YM7L8LH
+ecnoglutide,162625103,XW003
+ecnoglutide,162625103,XW-003
+tesofensine,11370864,Tesofensine
+tesofensine,11370864,NS-2330
+tesofensine,11370864,tesofensina
+tesofensine,11370864,BLH9UKX9V1
+tesofensine,11370864,NS2330
+tesofensine,11370864,NS 2330
+tesofensine,11370864,TESOFENSINUM
+tesofensine,11370864,Tesofensine [INN]
+tesofensine,11370864,TESOFENSINE [MI]
+tesofensine,11370864,A1EA1
+tesofensine,11370864,TESOFENSINE [MART.]
+tesofensine,11370864,TESOFENSINE [WHO-DD]
+tesofensine,11370864,VCVWXKKWDOJNIT-ZOMKSWQUSA-N
+teriparatide,16133850,TERIPARATIDE
+teriparatide,16133850,Teriparatida
+teriparatide,16133850,Teriparatidum
+teriparatide,16133850,1-34-Human PTH
+teriparatide,16133850,Human PTH (1-34)
+teriparatide,16133850,ZT-034
+teriparatide,16133850,TERIPARATIDE RECOMBINANT HUMAN
+teriparatide,16133850,hPTH (1-34)
+teriparatide,16133850,BONSITY
+teriparatide,16133850,H05AA02
+teriparatide,16133850,Teriparatide (genetical recombination)
+teriparatide,16133850,Forsteo
+teriparatide,16133850,Pth (1-34)
+teriparatide,16133850,Teriparatide rdna
+teriparatide,16133850,Parathar
+teriparatide,16133850,Parathyroid Hormone Fragment (1-34)
+teriparatide,16133850,Teriparatidum [Latin]
+teriparatide,16133850,Teriparatida [Spanish]
+teriparatide,16133850,MN 10T
+teriparatide,16133850,HSDB 7367
+teriparatide,16133850,Teriparatide CRS
+teriparatide,16133850,MN 10-T
+teriparatide,16133850,Teriparatide [USAN:INN:BAN:JAN]
+teriparatide,16133850,HPTH- (1-34)
+teriparatide,16133850,ZT 034
+abaloparatide,76943386,Abaloparatide
+abaloparatide,76943386,Tymlos
+abaloparatide,76943386,BA058
+abaloparatide,76943386,AVK0I6HY2U
+abaloparatide,76943386,abaloparatida
+abaloparatide,76943386,abaloparatidum
+abaloparatide,76943386,BA-058
+abaloparatide,76943386,Abaloparatide [USAN:INN]
+abaloparatide,76943386,Abaloparatide-SC
+navitoclax,24978538,Navitoclax
+navitoclax,24978538,ABT-263
+navitoclax,24978538,ABT 263
+navitoclax,24978538,ABT263
+navitoclax,24978538,navitoclaxum
+navitoclax,24978538,XKJ5VVK2WD
+navitoclax,24978538,BcI-2 Family Protein Inhibitor ABT-263
+navitoclax,24978538,ABT-263 (Navitoclax)
+navitoclax,24978538,Navitoclax (ABT-263)
+navitoclax,24978538,Navitoclax [USAN]
+navitoclax,24978538,Navitoclax [USAN:INN]
+navitoclax,24978538,"ABT-263,Navitoclax"
+navitoclax,24978538,NAVITOCLAX [MI]
+navitoclax,24978538,ABT-263 In Bulk
+navitoclax,24978538,Navitoclax; ABT-263
+navitoclax,24978538,NAVITOCLAX [INN]
+navitoclax,24978538,NAVITOCLAX [JAN]
+navitoclax,24978538,ABT-263 (Navitoclax)?
+navitoclax,24978538,NAVITOCLAX [WHO-DD]
+navitoclax,24978538,Navitoclax (JAN/USAN/INN)
+navitoclax,24978538,GTPL8319
+navitoclax,24978538,EX-A055
+navitoclax,24978538,JLYAXFNOILIKPP-KXQOOQHDSA-N
+navitoclax,24978538,s1001
+navitoclax,24978538,RG-7433
+trofinetide,11318905,Trofinetide
+trofinetide,11318905,NNZ-2566
+trofinetide,11318905,DAYBUE
+trofinetide,11318905,ACP-2566
+trofinetide,11318905,trofinetida
+trofinetide,11318905,"L-Glutamic acid, glycyl-2-methyl-L-prolyl-"
+trofinetide,11318905,Z2ME8F52QL
+trofinetide,11318905,trofinetidum
+trofinetide,11318905,Trofinetide [INN]
+trofinetide,11318905,Glycyl-2-methyl-L-prolyl-L-glutamic acid
+trofinetide,11318905,Trofinetide [USAN]
+trofinetide,11318905,Trofinetide(NNZ2566)
+trofinetide,11318905,glycyl-L-2-methylprolyl-L-glutamic acid
+trofinetide,11318905,Trofinetide (>90%)
+trofinetide,11318905,NNZ 2566
+trofinetide,11318905,Daybue (TN)
+trofinetide,11318905,DAYBUE STIX
+trofinetide,11318905,Trofinetide (USAN/INN)
+trofinetide,11318905,Trofinetide [USAN:INN]
+trofinetide,11318905,TROFINETIDE [WHO-DD]
+trofinetide,11318905,NNZ2566
+trofinetide,11318905,EX-A7815
+trofinetide,11318905,CS-8154
+trofinetide,11318905,glycyl-alpha-methyl-L-prolyl-L-glutamic acid
+apelin,56841713,Apelin
+serelaxin,71300755,SERELAXIN
+serelaxin,71300755,Human relaxin 2
+serelaxin,71300755,Human relaxin II
+serelaxin,71300755,Relexan 2
+serelaxin,71300755,Relaxin II (human)
+serelaxin,71300755,Serelaxin [USAN:INN]
+serelaxin,71300755,RLX030
+serelaxin,71300755,Human relaxin 2 (relaxin H2)
+serelaxin,71300755,RLX 030
+serelaxin,71300755,serelaxina
+serelaxin,71300755,serelaxine
+serelaxin,71300755,serelaxinum
+serelaxin,71300755,Serelaxin [INN]
+serelaxin,71300755,SERELAXIN [JAN]
+serelaxin,71300755,Human relaxin recombinant
+serelaxin,71300755,Recombinant human relaxin
+serelaxin,71300755,SERELAXIN [USAN]
+serelaxin,71300755,SERELAXIN [WHO-DD]
+serelaxin,71300755,C01DX21
+serelaxin,71300755,RLX-030
+serelaxin,71300755,Relaxin H2 (human) trifluoroacetate salt
+serelaxin,71300755,"H2 relaxin, human"
+serelaxin,71300755,"Relaxin H2, human"
+serelaxin,71300755,"Relaxin-2 protein, human"
+enavogliflozin,71076840,Enavogliflozin
+enavogliflozin,71076840,Z5MR2Y1IJJ
+enavogliflozin,71076840,ODP9401
+enavogliflozin,71076840,ODP-9401
+enavogliflozin,71076840,Enavogliflozin [INN]
+enavogliflozin,71076840,GCC5694A
+enavogliflozin,71076840,Enavogliflozin (INN)
+enavogliflozin,71076840,Enavogliflozin?
+enavogliflozin,71076840,Envlo
+enavogliflozin,71076840,Enavogliflozin [WHO-DD]
+enavogliflozin,71076840,GCC-5694A
+enavogliflozin,71076840,EX-A5732
+empagliflozin,11949646,Empagliflozin
+empagliflozin,11949646,JARDIANCE
+empagliflozin,11949646,Empagliflozina
+empagliflozin,11949646,Empagliflozine
+empagliflozin,11949646,HDC1R2M35U
+empagliflozin,11949646,GLYXAMBI COMPONENT EMPAGLIFLOZIN
+empagliflozin,11949646,TRIJARDY XR COMPONENT EMPAGLIFLOZIN
+empagliflozin,11949646,Empagliflozinum
+empagliflozin,11949646,RefChem:5790
+empagliflozin,11949646,A10BK03
+empagliflozin,11949646,Empagliflozin [INN]
+empagliflozin,11949646,Empagliflozin [USAN:INN]
+empagliflozin,11949646,Jardiance (TN)
+empagliflozin,11949646,7R3
+empagliflozin,11949646,Empagliflozin (Standard)
+empagliflozin,11949646,EMPAGLIFLOZIN [MI]
+empagliflozin,11949646,EMPAGLIFLOZIN [JAN]
+empagliflozin,11949646,EMPAGLIFLOZIN [USAN]
+empagliflozin,11949646,EMPAGLIFLOZIN [VANDF]
+empagliflozin,11949646,EMPAGLIFLOZIN [WHO-DD]
+empagliflozin,11949646,GTPL4754
+empagliflozin,11949646,Empagliflozin (JAN/USAN/INN)
+empagliflozin,11949646,EX-A414
+empagliflozin,11949646,EMPAGLIFLOZIN [ORANGE BOOK]
+empagliflozin,11949646,HB4638
+dapagliflozin,9887712,Dapagliflozin
+dapagliflozin,9887712,Forxiga
+dapagliflozin,9887712,dapagliflozine
+dapagliflozin,9887712,Dapagliflozina
+dapagliflozin,9887712,1ULL0QJ8UC
+dapagliflozin,9887712,LYN-045
+dapagliflozin,9887712,DAPAGLIFLOZIN COMPONENT QTERNMET
+dapagliflozin,9887712,QTERNMET XR COMPONENT DAPAGLIFLOZIN
+dapagliflozin,9887712,dapagliflozinum
+dapagliflozin,9887712,A10BK01
+dapagliflozin,9887712,Dagagflozin
+dapagliflozin,9887712,Dapagliflozin [USAN:INN]
+dapagliflozin,9887712,Forxiga (TN)
+dapagliflozin,9887712,Dapagliflozin [USAN]
+dapagliflozin,9887712,DAPAGLIFLOZIN?
+dapagliflozin,9887712,"C-aryl glucoside, 6"
+dapagliflozin,9887712,Dapagliflozin (Standard)
+dapagliflozin,9887712,DAPAGLIFLOZIN [MI]
+dapagliflozin,9887712,DAPAGLIFLOZIN [INN]
+dapagliflozin,9887712,DAPAGLIFLOZIN [VANDF]
+dapagliflozin,9887712,DAPAGLIFLOZIN [WHO-DD]
+dapagliflozin,9887712,GTPL4594
+dapagliflozin,9887712,BR1019 component Dapagliflozin
+dapagliflozin,9887712,Dapagliflozin (JAN/USAN/INN)
+dapagliflozin,9887712,EX-A005
+canagliflozin,24812758,Canagliflozin
+canagliflozin,24812758,Invokana
+canagliflozin,24812758,Canagliflozin anhydrous
+canagliflozin,24812758,TA-7284
+canagliflozin,24812758,Canagliflozina
+canagliflozin,24812758,Canagliflozine
+canagliflozin,24812758,"Canagliflozin, Anhydrous"
+canagliflozin,24812758,INVOKAMET COMPONENT CANAGLIFLOZIN
+canagliflozin,24812758,canagliflozinum
+canagliflozin,24812758,A10BK02
+canagliflozin,24812758,Canagliflozin Hemihydrate
+canagliflozin,24812758,Canagliflozin [INN]
+canagliflozin,24812758,TA 7284
+canagliflozin,24812758,Canagliflozin (Standard)
+canagliflozin,24812758,CANAGLIFLOZIN [MI]
+canagliflozin,24812758,CANAGLIFLOZIN [WHO-DD]
+canagliflozin,24812758,GTPL4582
+canagliflozin,24812758,HSDB 8284
+canagliflozin,24812758,s2760
+canagliflozin,24812758,CS-0522
+canagliflozin,24812758,KS-1443
+17_alpha_estradiol,68570,17alpha-Estradiol
+17_alpha_estradiol,68570,alpha-Estradiol
+17_alpha_estradiol,68570,Alfatradiol
+17_alpha_estradiol,68570,17a-estradiol
+17_alpha_estradiol,68570,17-alpha-Estradiol
+17_alpha_estradiol,68570,Estradiol-17alpha
+17_alpha_estradiol,68570,"3,17-Dihydroxyestratriene"
+17_alpha_estradiol,68570,Epiestrol
+17_alpha_estradiol,68570,17-Epiestradiol
+17_alpha_estradiol,68570,"ESTRADIOL, ALPHA-"
+17_alpha_estradiol,68570,alfatradiolum
+17_alpha_estradiol,68570,ESTRADIOL 17-ALPHA
+17_alpha_estradiol,68570,Epiestradiol
+17_alpha_estradiol,68570,17.alpha.-Estradiol
+17_alpha_estradiol,68570,Alfatradiol [INN]
+17_alpha_estradiol,68570,17|A-estradiol
+17_alpha_estradiol,68570,17alpha estradiol
+17_alpha_estradiol,68570,17?-Estradiol
+17_alpha_estradiol,68570,"Estradiol, .alpha.-"
+17_alpha_estradiol,68570,17.alpha.-Oestradiol
+17_alpha_estradiol,68570,Oestradiol-17.alpha.
+17_alpha_estradiol,68570,.alpha.-Estradiol
+17_alpha_estradiol,68570,Estradiol 17-.alpha.
+17_alpha_estradiol,68570,"Estradiol, 17.alpha.-"
+17_alpha_estradiol,68570,Alpha-Estradiol (Standard)
+spermidine,1102,spermidine
+spermidine,1102,"1,5,10-Triazadecane"
+spermidine,1102,4-Azaoctamethylenediamine
+spermidine,1102,"4-Azaoctane-1,8-diamine"
+spermidine,1102,Spermidin
+spermidine,1102,"N-(3-aminopropyl)butane-1,4-diamine"
+spermidine,1102,"N-(3-Aminopropyl)-1,4-butanediamine"
+spermidine,1102,"1,8-Diamino-4-azaoctane"
+spermidine,1102,"1,4-Butanediamine, N1-(3-aminopropyl)-"
+spermidine,1102,"N'-(3-aminopropyl)butane-1,4-diamine"
+spermidine,1102,"1,4-Butanediamine, N-(3-aminopropyl)-"
+spermidine,1102,(4-aminobutyl)(3-aminopropyl)amine
+spermidine,1102,"N-(3-Aminopropyl)-1,4-butane-diamine"
+spermidine,1102,"1,4-Diaminobutane, N-(3-aminopropyl)-"
+spermidine,1102,"N-(4-Aminobutyl)-1,3-diaminopropane"
+spermidine,1102,"N1-(3-Aminopropyl)butane-1,4-diamine"
+spermidine,1102,"N1-(3-Aminopropyl)-1,4-butanediamine"
+spermidine,1102,N-(3-Aminopropyl)-4-aminobutylamine
+spermidine,1102,"N-(3-Aminopropyl)-1,4-diamino-butane"
+spermidine,1102,SPD
+spermidine,1102,Vmp7 antigen
+spermidine,1102,Spermidine phosphate (salt) hexahydrate
+spermidine,1102,gp130 Signal transducer
+spermidine,1102,"N-(3-Aminopropyl)-1,4-diaminobutane"
+spermidine,1102,"N~1~-(3-azaniumylpropyl)butane-1,4-diaminium"
+ergothioneine,5351619,ERGOTHIONEINE
+ergothioneine,5351619,L-Ergothioneine
+ergothioneine,5351619,Sympectothion
+ergothioneine,5351619,Ergothionine
+ergothioneine,5351619,Thioneine
+ergothioneine,5351619,l-Thioneine
+ergothioneine,5351619,Thiasine
+ergothioneine,5351619,L(+)-Ergothioneine
+ergothioneine,5351619,Thiolhistidine-betaine
+ergothioneine,5351619,BDZ3DQM98W
+ergothioneine,5351619,CHEBI:4828
+ergothioneine,5351619,2 Thiol L histidine betaine
+ergothioneine,5351619,NSC-7175
+ergothioneine,5351619,2-Thiol-L-histidine-betaine
+ergothioneine,5351619,L-(+)-Ergothioneine
+ergothioneine,5351619,NSC 7175
+ergothioneine,5351619,ergothioneine (thione form)
+ergothioneine,5351619,Thioeine
+ergothioneine,5351619,NSC7175
+ergothioneine,5351619,2-Mercaptohistidine Betaine
+ergothioneine,5351619,erythrothioneine
+ergothioneine,5351619,thiolhistidinebetaine
+ergothioneine,5351619,ERGOLD
+ergothioneine,5351619,Ergothioneine L-(+)
+ergothioneine,5351619,ergothioneine thione form
+taurine,1123,taurine
+taurine,1123,2-aminoethanesulfonic acid
+taurine,1123,L-Taurine
+taurine,1123,"Ethanesulfonic acid, 2-amino-"
+taurine,1123,tauphon
+taurine,1123,2-Aminoethylsulfonic acid
+taurine,1123,2-Sulfoethylamine
+taurine,1123,aminoethylsulfonic acid
+taurine,1123,Aminoethanesulfonic acid
+taurine,1123,O-Due
+taurine,1123,2-aminoethane-1-sulfonic acid
+taurine,1123,taufon
+taurine,1123,beta-Aminoethylsulfonic acid
+taurine,1123,Taurina
+taurine,1123,FEMA No. 3813
+taurine,1123,Taurinum
+taurine,1123,Taukard
+taurine,1123,1EQV5MLY3D
+taurine,1123,2-azaniumylethanesulfonate
+taurine,1123,L-Taurine High
+taurine,1123,L-Taurine 7421
+taurine,1123,RefChem:6284
+taurine,1123,L-Taurine High 7422
+taurine,1123,Taurine (2-Aminoethane-1-sulfonic acid)
+taurine,1123,Taurinum [Latin]
+cotadutide,134694273,Cotadutide
+cotadutide,134694273,cotadutida
+cotadutide,134694273,MEDI0382
+cotadutide,134694273,MEDI-0382
+cotadutide,134694273,Medi 0382
+cotadutide,134694273,QL6A9B13HW
+cotadutide,134694273,cotadutidum
+cotadutide,134694273,Cotadutide [INN]
+cotadutide,134694273,Cotadutide [USAN]
+cotadutide,134694273,MEDI 0382 [WHO-DD]
+cotadutide,134694273,Cotadutide acetate
+cotadutide,134694273,Cotadutide [USAN:INN]
