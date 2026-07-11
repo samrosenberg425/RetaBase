@@ -223,9 +223,13 @@ def classify_evidence(evidence: dict) -> str:
         return "human_observational"
     if role in {"assay_or_detection", "synthesis_or_production", "clinical_tool_or_diagnostic"}:
         return "methods_tool"
-    resolved = model_primary or model
-    if not resolved:
-        resolved = _icite_model(evidence)  # iCite triangle fallback when keywords are silent
+    # Coarse translational compartment (human / animal / in-vitro). PREFER iCite's
+    # NLM/MeSH-curated triangle when it's present and confident -- it's more reliable
+    # than our title/abstract keyword model. Fall back to the keyword-derived model
+    # for the recent / not-yet-indexed papers iCite can't see (its fields are blank
+    # until PubMed assigns MeSH). The precise study designs above (RCT, synthesis,
+    # human observational) already returned, so this never downgrades a known design.
+    resolved = _icite_model(evidence) or model_primary or model
     if resolved == "human":
         return "human_observational"  # human context without a clearer clinical design
     if resolved == "animal":
@@ -234,17 +238,9 @@ def classify_evidence(evidence: dict) -> str:
         return "in_vitro"
     if resolved == "review" or "Review" in primary:
         return "narrative_review"
-    # Last resort before "other": use iCite's dominant compartment if confident.
-    icm = _icite_model(evidence)
-    if icm == "human":
-        return "human_observational"
-    if icm == "animal":
-        return "preclinical_invivo"
-    if icm == "in_vitro":
-        return "in_vitro"
-    # iCite rescue (last resort only): an article iCite flags as clinical is human
-    # interventional evidence. Never reached once a non-human class has resolved,
-    # so it can only upgrade an otherwise-"other" record.
+    # iCite rescue: an article iCite flags as clinical is human interventional
+    # evidence -- only reached when nothing else resolved, so it just upgrades an
+    # otherwise-"other" record.
     if _truthy(evidence.get("icite_is_clinical")):
         return "human_clinical"
     return "other"

@@ -40,9 +40,13 @@ handful of times to walk 2026 → 2000 (or just let the 6-hourly schedule do it)
 ## 4. PubChem enrichment (local, needs network)
 
 ```bash
+source .venv/bin/activate                     # REQUIRED: needs the venv (requests). Prompt shows (.venv).
 python3 scripts/enrich_pubchem.py             # writes config/pubchem_cids.csv + pubchem_synonyms_suggested.csv
-git add config/pubchem_cids.csv && git commit -m "PubChem CIDs for Bioactives links" && git push
+git add config/pubchem_cids.csv config/pubchem_synonyms_suggested.csv \
+  && git commit -m "PubChem CIDs for Bioactives links" && git push
 ```
+> If `ModuleNotFoundError: No module named 'requests'`: the venv isn't active (or missing).
+> Run `source .venv/bin/activate`, or rebuild it with `bash setup.sh`, then re-run.
 - `pubchem_cids.csv` powers the **"View on PubChem" link** on the Bioactives page.
 - `pubchem_synonyms_suggested.csv` is a **review list** — do not bulk-merge into
   `SEARCH_RULES.csv` (the rules were deliberately tightened). Add only vetted

@@ -46,7 +46,8 @@ FIELD_MAP = {
     "x_coord": "icite_x_coord",
     "y_coord": "icite_y_coord",
     "is_clinical": "icite_is_clinical",
-    "cited_by_clin": "icite_cited_by_clin",
+    # cited_by_clin -> derived into an integer count (icite_clinical_influence) in
+    # the loop below, rather than stored raw, to avoid corpus bloat.
 }
 
 
@@ -98,6 +99,11 @@ def main() -> None:
             v = rec.get(ik)
             if v is not None and v != "":
                 p[field] = v
+        # Clinical influence: how many clinical articles cite this paper (count of
+        # PMIDs in iCite's space-separated cited_by_clin), a strong translational signal.
+        cbc = rec.get("cited_by_clin")
+        if cbc not in (None, ""):
+            p["icite_clinical_influence"] = len(str(cbc).split())
         p["icite_updated_utc"] = utc_now_iso()
         updated.append(p)
 

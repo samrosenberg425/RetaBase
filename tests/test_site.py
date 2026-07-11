@@ -745,6 +745,25 @@ def run():
         check("icite-facet build: exactly 2 </script> tags",
               imp_html.count("</script>") == 2)
 
+    # Translational triangle view: the toggle control, SVG host, render helpers,
+    # and the three labeled corners must all be emitted by the template. Corner
+    # labels are set via textContent in JS, so they appear as JS string literals.
+    tri_html = site._render_html(
+        site._safe_json_block({"records": []}),
+        0, 0, "2026-01-01T00:00:00Z", 0, 0, "inline",
+    )
+    check("triangle toggle button rendered", 'id="triangle-toggle"' in tri_html)
+    check("triangle toggle wired to handler", "toggleTriangle()" in tri_html)
+    check("triangle SVG host rendered", 'id="triangle-svg"' in tri_html)
+    check("triangle render function defined", "function renderTriangle()" in tri_html)
+    check("triangle corner label Human", '"Human"' in tri_html)
+    check("triangle corner label Animal", '"Animal"' in tri_html)
+    check("triangle corner label Molecular/Cellular", '"Molecular/Cellular"' in tri_html)
+    check("triangle plots from icite coords",
+          "icite_x_coord" in tri_html and "icite_y_coord" in tri_html)
+    # Injection-safe invariant still holds for the triangle-bearing page.
+    check("triangle build: exactly 2 </script> tags", tri_html.count("</script>") == 2)
+
     print(f"\n{PASS} passed, {FAIL} failed")
     return 0 if FAIL == 0 else 1
 

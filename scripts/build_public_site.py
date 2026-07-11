@@ -66,6 +66,11 @@ RECORD_FIELDS = [
     # Carried through so the UI can sort by impact percentile / translational
     # potential (APT) and offer a clinical-only toggle. Absent -> empty string.
     "icite_nih_percentile", "icite_apt", "icite_is_clinical",
+    # More NIH iCite signals: clinical_influence = how many CLINICAL articles cite
+    # this paper (sortable + shown as a badge); x/y_coord = the paper's position on
+    # iCite's "triangle of biomedicine" (Human / Animal / Molecular-Cellular corners),
+    # used by the translational-triangle view. Absent -> empty string.
+    "icite_clinical_influence", "icite_x_coord", "icite_y_coord",
 ]
 
 # Facet dropdown filters shown in the sidebar: (record field, human label).
@@ -907,13 +912,18 @@ _TEMPLATE = """<!DOCTYPE html>
             <option value="year">Year (newest)</option>
             <option value="percentile">Impact percentile</option>
             <option value="apt">Translational potential (APT)</option>
+            <option value="clinical_influence">Clinical influence</option>
           </select>
         </label>
         <label style="text-transform:none;display:inline-flex;gap:6px;align-items:center;color:var(--muted)">
           <input id="clinical-only" type="checkbox" onchange="applyFilters()" style="width:auto"> Clinical articles only
         </label>
+        <button id="triangle-toggle" class="reset" style="width:auto;padding:4px 10px" onclick="toggleTriangle()">Triangle view</button>
       </div>
       <div class="tab-desc" id="cap-note" style="display:none"></div>
+      <div id="triangle-wrap" style="display:none;margin:8px 0;text-align:center">
+        <svg id="triangle-svg" viewBox="0 0 300 260" width="300" height="260" role="img" aria-label="Translational triangle"></svg>
+      </div>
       <div id="records-list"></div>
       <div id="load-more-wrap" style="text-align:center;margin:8px 0 24px;display:none">
         <button id="load-more" class="reset" style="width:auto;padding:8px 20px" onclick="loadMore()">Load more</button>
@@ -1033,6 +1043,13 @@ _TEMPLATE = """<!DOCTYPE html>
   function citationText(rec) {{
     var c = parseInt(String(rec.citation_count || "").trim() || "0", 10);
     return (isNaN(c) || c <= 0) ? "\\u2014" : String(c);
+  }}
+
+  // NIH iCite clinical influence: how many CLINICAL articles cite this paper.
+  // Blank / unparseable / <= 0 -> 0 (nothing rendered).
+  function clinicalInfluence(rec) {{
+    var c = parseInt(String(rec.icite_clinical_influence || "").trim() || "0", 10);
+    return (isNaN(c) || c <= 0) ? 0 : c;
   }}
 
   function tierClass(t) {{ return (t || "").replace(/[^a-z_]/gi, "") || "not_applicable"; }}
@@ -1279,6 +1296,10 @@ _TEMPLATE = """<!DOCTYPE html>
     meta.appendChild(reliabilityMeter(r));
     meta.appendChild(directnessBadge(r));
     meta.appendChild(el("span", "pill", "Cited by " + citationText(r)));
+    var ci = clinicalInfluence(r);
+    if (ci > 0) {{
+      meta.appendChild(el("span", "pill", "Cited by " + ci + " clinical article" + (ci === 1 ? "" : "s")));
+    }}
     card.appendChild(meta);
 
     var au = authorsLine(r);
@@ -1424,6 +1445,8 @@ _TEMPLATE = """<!DOCTYPE html>
     }}
     if (r.author_count && r.author_count !== "0") kv(grid, "Authors", r.author_count + " total");
     kv(grid, "Cited by", citationText(r));
+    var mci = clinicalInfluence(r);
+    if (mci > 0) kv(grid, "Clinical influence", mci + " clinical article" + (mci === 1 ? "" : "s") + " citing");
     kv(grid, "Year", r.pub_year);
     kv(grid, "Evidence class", r.evidence_class_label);
     kv(grid, "Website section", r.website_section);
@@ -1599,10 +1622,11 @@ _TEMPLATE = """<!DOCTYPE html>
   function sortRecords(list, mode) {{
     var key = {{rank: "rank_score", reliability: "reliability_score", directness: "evidence_directness",
                 citations: "citation_count", year: "pub_year",
-                percentile: "icite_nih_percentile", apt: "icite_apt"}}[mode] || "rank_score";
+                percentile: "icite_nih_percentile", apt: "icite_apt",
+                clinical_influence: "icite_clinical_influence"}}[mode] || "rank_score";
     // iCite sorts treat a missing/blank value as -1 so unscored papers sink below
     // scored ones; the other sorts keep the existing num() (missing -> 0) behavior.
-    var missNeg = (mode === "percentile" || mode === "apt");
+    var missNeg = (mode === "percentile" || mode === "apt" || mode === "clinical_influence");
     function sortVal(r) {{
       var raw = r[key];
       if (raw == null || String(raw).trim() === "") return missNeg ? -1 : 0;
@@ -1674,7 +1698,90 @@ _TEMPLATE = """<!DOCTYPE html>
       capNote.textContent = "";
       capNote.style.display = "none";
     }}
+
+    // Keep the translational triangle in sync with the filtered set when shown.
+    if (triangleOn) renderTriangle();
   }}
+
+  // Translational triangle view. Toggling shows/hides an inline SVG that plots
+  // the currently filtered records (lastVisible) on the iCite "triangle of
+  // translation": Human (top), Animal (bottom-left), Molecular/Cellular
+  // (bottom-right). Each dot comes from a record's icite_x_coord / icite_y_coord,
+  // linearly scaled into the plotting area by the shown points' own min/max.
+  // Records missing either coord are skipped. Built with createElementNS +
+  // textContent only (no innerHTML) to preserve the injection-safe invariant.
+  var triangleOn = false;
+  var SVGNS = "http://www.w3.org/2000/svg";
+  function svgEl(tag, attrs) {{
+    var e = document.createElementNS(SVGNS, tag);
+    if (attrs) for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }}
+  function toggleTriangle() {{
+    triangleOn = !triangleOn;
+    document.getElementById("triangle-wrap").style.display = triangleOn ? "" : "none";
+    var btn = document.getElementById("triangle-toggle");
+    if (btn) btn.textContent = triangleOn ? "Hide triangle" : "Triangle view";
+    if (triangleOn) renderTriangle();
+  }}
+  window.toggleTriangle = toggleTriangle;
+  function renderTriangle() {{
+    var svg = document.getElementById("triangle-svg");
+    if (!svg) return;
+    svg.textContent = "";  // clear previous frame
+    var W = 300, H = 260, pad = 34;
+    var top = [W / 2, pad], bl = [pad, H - pad], br = [W - pad, H - pad];
+    svg.appendChild(svgEl("polygon", {{
+      points: top[0] + "," + top[1] + " " + bl[0] + "," + bl[1] + " " + br[0] + "," + br[1],
+      fill: "none", stroke: "var(--border)", "stroke-width": "1.5"
+    }}));
+    var corners = [
+      [top[0], top[1] - 8, "middle", "Human"],
+      [bl[0] - 6, bl[1] + 16, "start", "Animal"],
+      [br[0] + 6, br[1] + 16, "end", "Molecular/Cellular"]
+    ];
+    for (var i = 0; i < corners.length; i++) {{
+      var t = svgEl("text", {{
+        x: corners[i][0], y: corners[i][1], "text-anchor": corners[i][2],
+        fill: "var(--muted)", "font-size": "11"
+      }});
+      t.textContent = corners[i][3];
+      svg.appendChild(t);
+    }}
+    var pts = [];
+    for (var j = 0; j < lastVisible.length; j++) {{
+      var r = lastVisible[j];
+      var xs = String(r.icite_x_coord == null ? "" : r.icite_x_coord).trim();
+      var ys = String(r.icite_y_coord == null ? "" : r.icite_y_coord).trim();
+      if (xs === "" || ys === "") continue;  // skip records lacking coords
+      var xv = parseFloat(xs), yv = parseFloat(ys);
+      if (isNaN(xv) || isNaN(yv)) continue;
+      pts.push([xv, yv]);
+    }}
+    var note = svgEl("text", {{
+      x: W / 2, y: H - 6, "text-anchor": "middle", fill: "var(--muted)", "font-size": "10"
+    }});
+    note.textContent = pts.length + " of " + lastVisible.length + " papers have translational coordinates";
+    svg.appendChild(note);
+    if (!pts.length) return;
+    var minX = pts[0][0], maxX = pts[0][0], minY = pts[0][1], maxY = pts[0][1];
+    for (var k = 1; k < pts.length; k++) {{
+      if (pts[k][0] < minX) minX = pts[k][0];
+      if (pts[k][0] > maxX) maxX = pts[k][0];
+      if (pts[k][1] < minY) minY = pts[k][1];
+      if (pts[k][1] > maxY) maxY = pts[k][1];
+    }}
+    var x0 = pad + 14, x1 = W - pad - 14, y0 = pad + 14, y1 = H - pad - 14;
+    function sx(v) {{ return maxX === minX ? (x0 + x1) / 2 : x0 + (v - minX) / (maxX - minX) * (x1 - x0); }}
+    function sy(v) {{ return maxY === minY ? (y0 + y1) / 2 : y1 - (v - minY) / (maxY - minY) * (y1 - y0); }}
+    for (var m = 0; m < pts.length; m++) {{
+      svg.appendChild(svgEl("circle", {{
+        cx: sx(pts[m][0]), cy: sy(pts[m][1]), r: "3",
+        fill: "var(--accent)", "fill-opacity": "0.75"
+      }}));
+    }}
+  }}
+  window.renderTriangle = renderTriangle;
 
   function loadMore() {{
     visibleCount += RENDER_LIMIT;

@@ -54,7 +54,7 @@ PAPER_MERGE_FIELDS = [
     "icite_rcr", "icite_nih_percentile", "icite_apt",
     "icite_human", "icite_animal", "icite_molecular",
     "icite_x_coord", "icite_y_coord", "icite_is_clinical",
-    "icite_citation_count", "icite_field_citation_rate",
+    "icite_citation_count", "icite_field_citation_rate", "icite_clinical_influence",
 ]
 
 IDENTITY_FIELDS = [
@@ -326,7 +326,7 @@ SITE_JSON_FIELDS = [
     "authors_short", "first_author", "author_count", "citation_count",
     "icite_rcr", "icite_nih_percentile", "icite_apt",
     "icite_human", "icite_animal", "icite_molecular",
-    "icite_x_coord", "icite_y_coord", "icite_is_clinical",
+    "icite_x_coord", "icite_y_coord", "icite_is_clinical", "icite_clinical_influence",
     "website_section", "evidence_class", "evidence_class_label", "publication_status",
     "reliability_score", "reliability_tier", "evidence_directness", "directness_tier",
     "reliability_components", "rank_components",
