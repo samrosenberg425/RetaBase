@@ -61,6 +61,7 @@ RECORD_FIELDS = [
     # NIH iCite-derived facets: impact tier (from nih_percentile) + clinical-article
     # flag. Carried through so they can be offered as sidebar filters. "" when absent.
     "facet_evidence_impact", "facet_clinical_article",
+    "facet_research_article", "facet_translational_compartment",
     "facet_all",
     # NIH iCite metrics (merged per-record upstream by build_curated_database.py).
     # Carried through so the UI can sort by impact percentile / translational
@@ -71,6 +72,9 @@ RECORD_FIELDS = [
     # iCite's "triangle of biomedicine" (Human / Animal / Molecular-Cellular corners),
     # used by the translational-triangle view. Absent -> empty string.
     "icite_clinical_influence", "icite_x_coord", "icite_y_coord",
+    # Remaining iCite values surfaced in the paper detail view. Absent -> "".
+    "icite_rcr", "icite_human", "icite_animal", "icite_molecular",
+    "icite_field_citation_rate", "icite_citation_count",
 ]
 
 # Facet dropdown filters shown in the sidebar: (record field, human label).
@@ -90,6 +94,8 @@ FILTER_FACETS = [
     ("facet_evidence_direction", "Evidence direction"),
     ("facet_evidence_impact", "Evidence impact"),
     ("facet_clinical_article", "Clinical article"),
+    ("facet_research_article", "Research article"),
+    ("facet_translational_compartment", "Translational compartment"),
     ("reliability_tier", "Reliability tier"),
     ("directness_tier", "Directness tier"),
     ("website_section", "Website section"),
@@ -949,7 +955,9 @@ _TEMPLATE = """<!DOCTYPE html>
         <select id="trials-sort" onchange="renderTrials()">
           <option value="ongoing">Ongoing first</option>
           <option value="start">Start date (newest)</option>
+          <option value="start-asc">Start date (oldest)</option>
         </select>
+        <input id="trials-year" type="number" placeholder="year" min="1990" max="2035" style="width:5.5em" oninput="renderTrials()">
         <label><input id="trials-ongoing" type="checkbox" onchange="renderTrials()"> Ongoing only</label>
       </div>
       <div class="count" id="trials-count"></div>
@@ -965,6 +973,7 @@ _TEMPLATE = """<!DOCTYPE html>
           <option value="date">Date (newest)</option>
           <option value="date-asc">Date (oldest)</option>
         </select>
+        <input id="pp-year" type="number" placeholder="year" min="1990" max="2035" style="width:5.5em" oninput="renderPreprints()">
       </div>
       <div class="count" id="preprints-count"></div>
       <div id="preprints-list"></div>
@@ -1287,6 +1296,14 @@ _TEMPLATE = """<!DOCTYPE html>
     if (r.molecule_name) meta.appendChild(el("span", "pill", r.molecule_name));
     if (r.pub_year) meta.appendChild(el("span", "pill", r.pub_year));
     if (r.evidence_class_label) meta.appendChild(el("span", "pill", r.evidence_class_label));
+    // iCite preview pills (present once the corpus is iCite-enriched).
+    if (r.icite_rcr !== undefined && String(r.icite_rcr).trim() !== "" && !isNaN(parseFloat(r.icite_rcr)))
+      meta.appendChild(el("span", "pill", "RCR " + parseFloat(r.icite_rcr).toFixed(1)));
+    if (r.icite_nih_percentile !== undefined && String(r.icite_nih_percentile).trim() !== "" && !isNaN(parseFloat(r.icite_nih_percentile)))
+      meta.appendChild(el("span", "pill", Math.round(parseFloat(r.icite_nih_percentile)) + "th pct"));
+    var iclp = String(r.icite_is_clinical || "").trim().toLowerCase();
+    if (iclp === "yes" || iclp === "y" || iclp === "1" || iclp === "true")
+      meta.appendChild(el("span", "pill", "clinical"));
     if (r.journal) {{
       var jp = el("span", "pill", r.journal);
       var jt = journalTierBadge(r);
@@ -1456,6 +1473,26 @@ _TEMPLATE = """<!DOCTYPE html>
     kv(grid, "Duration", r.refined_duration);
     kv(grid, "Sample size", r.refined_sample_size);
     kv(grid, "Outcome", humanize(r.refined_outcome_direction));
+    // NIH iCite metrics (fill in once the corpus is iCite-enriched; each row is
+    // shown only when its value is present).
+    if (r.icite_rcr !== undefined && String(r.icite_rcr).trim() !== "" && !isNaN(parseFloat(r.icite_rcr)))
+      kv(grid, "Relative Citation Ratio (RCR)", parseFloat(r.icite_rcr).toFixed(2) + " (1.0 = field median)");
+    if (r.icite_nih_percentile !== undefined && String(r.icite_nih_percentile).trim() !== "" && !isNaN(parseFloat(r.icite_nih_percentile)))
+      kv(grid, "NIH percentile", Math.round(parseFloat(r.icite_nih_percentile)) + "");
+    if (r.icite_apt !== undefined && String(r.icite_apt).trim() !== "" && !isNaN(parseFloat(r.icite_apt)))
+      kv(grid, "Translational potential (APT)", parseFloat(r.icite_apt).toFixed(2) + " / 1.0");
+    if (r.icite_field_citation_rate !== undefined && String(r.icite_field_citation_rate).trim() !== "" && !isNaN(parseFloat(r.icite_field_citation_rate)))
+      kv(grid, "Field citation rate", parseFloat(r.icite_field_citation_rate).toFixed(2));
+    if (r.icite_citation_count !== undefined && String(r.icite_citation_count).trim() !== "")
+      kv(grid, "iCite citations", String(r.icite_citation_count));
+    var icl = String(r.icite_is_clinical || "").trim().toLowerCase();
+    if (icl !== "")
+      kv(grid, "Clinical article", (icl === "yes" || icl === "y" || icl === "1" || icl === "true") ? "yes" : "no");
+    var th = parseFloat(r.icite_human), ta = parseFloat(r.icite_animal), tm = parseFloat(r.icite_molecular);
+    if (!isNaN(th) || !isNaN(ta) || !isNaN(tm))
+      kv(grid, "Biomedicine triangle",
+         "Human " + Math.round((th || 0) * 100) + "% / Animal " + Math.round((ta || 0) * 100)
+         + "% / Molecular " + Math.round((tm || 0) * 100) + "%");
     m.appendChild(grid);
 
     var links = el("div", "links"); links.style.marginTop = "12px";
@@ -1958,9 +1995,11 @@ _TEMPLATE = """<!DOCTYPE html>
     var mol = document.getElementById("trials-mol").value;
     var ongoingOnly = document.getElementById("trials-ongoing").checked;
     var sortBy = document.getElementById("trials-sort").value;
+    var yr = (document.getElementById("trials-year").value || "").trim();
     var rows = TRIALS.filter(function(t) {{
       if (ongoingOnly && !t.ongoing) return false;
       if (mol && (t.molecule_name || "") !== mol) return false;
+      if (yr && String(t.start_date || "").slice(0, 4) !== yr) return false;
       if (q) {{
         var hay = ((t.brief_title || "") + " " + (t.conditions || "") + " " +
                    (t.interventions || "")).toLowerCase();
@@ -1972,6 +2011,10 @@ _TEMPLATE = """<!DOCTYPE html>
       if (sortBy === "start") {{
         var d = String(b[0].start_date || "").localeCompare(String(a[0].start_date || ""));
         return d !== 0 ? d : a[1] - b[1];
+      }}
+      if (sortBy === "start-asc") {{
+        var da = String(a[0].start_date || "").localeCompare(String(b[0].start_date || ""));
+        return da !== 0 ? da : a[1] - b[1];
       }}
       // ongoing-first (default), then feed order (already ongoing-first by start).
       var oa = a[0].ongoing ? 0 : 1, ob = b[0].ongoing ? 0 : 1;
@@ -2046,8 +2089,10 @@ _TEMPLATE = """<!DOCTYPE html>
     var q = (document.getElementById("pp-q").value || "").trim().toLowerCase();
     var mol = document.getElementById("pp-mol").value;
     var sortBy = document.getElementById("pp-sort").value;
+    var yr = (document.getElementById("pp-year").value || "").trim();
     var rows = PREPRINTS.filter(function(p) {{
       if (mol && (p.molecule_name || "") !== mol) return false;
+      if (yr && String(p.date || "").slice(0, 4) !== yr) return false;
       if (q) {{
         var hay = ((p.title || "") + " " + (p.authors_short || "")).toLowerCase();
         if (hay.indexOf(q) === -1) return false;

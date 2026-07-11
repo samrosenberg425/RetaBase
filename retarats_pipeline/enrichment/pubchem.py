@@ -33,15 +33,32 @@ def _get(url: str, *, timeout: int = 30, retries: int = 4) -> Optional[dict]:
     return None
 
 
-def pubchem_cid(name: str) -> Optional[int]:
-    """First matching CID for a compound name, or None."""
+def pubchem_cids(name: str, limit: int = 10) -> List[int]:
+    """Candidate CIDs for a compound name (best-match order), up to ``limit``.
+
+    Returning several lets the caller pick the CID that actually corresponds to the
+    intended drug (via synonym/MeSH/PubMed validation) instead of blindly taking the
+    first, which for biologics/ambiguous names can be a wrong record.
+    """
     name = (name or "").strip()
     if not name:
-        return None
+        return []
     url = f"{PUG}/compound/name/{urllib.parse.quote(name)}/cids/JSON"
     data = _get(url)
     cids = ((data or {}).get("IdentifierList") or {}).get("CID") or []
-    return int(cids[0]) if cids else None
+    out: List[int] = []
+    for c in cids[:limit]:
+        try:
+            out.append(int(c))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def pubchem_cid(name: str) -> Optional[int]:
+    """First matching CID for a compound name, or None (back-compat)."""
+    cids = pubchem_cids(name, limit=1)
+    return cids[0] if cids else None
 
 
 def pubchem_synonyms(cid: int) -> List[str]:

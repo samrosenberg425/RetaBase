@@ -46,6 +46,7 @@ FIELD_MAP = {
     "x_coord": "icite_x_coord",
     "y_coord": "icite_y_coord",
     "is_clinical": "icite_is_clinical",
+    "is_research_article": "icite_is_research_article",
     # cited_by_clin -> derived into an integer count (icite_clinical_influence) in
     # the loop below, rather than stored raw, to avoid corpus bloat.
 }

@@ -53,7 +53,7 @@ PAPER_MERGE_FIELDS = [
     # curation/ranking can use them. All optional; everything falls back if absent.
     "icite_rcr", "icite_nih_percentile", "icite_apt",
     "icite_human", "icite_animal", "icite_molecular",
-    "icite_x_coord", "icite_y_coord", "icite_is_clinical",
+    "icite_x_coord", "icite_y_coord", "icite_is_clinical", "icite_is_research_article",
     "icite_citation_count", "icite_field_citation_rate", "icite_clinical_influence",
 ]
 
@@ -339,6 +339,7 @@ SITE_JSON_FIELDS = [
     # NIH iCite-derived facets (impact tier + clinical-article flag) so the site can
     # offer them as filters. Absent on un-enriched papers -> empty string.
     "facet_evidence_impact", "facet_clinical_article",
+    "facet_research_article", "facet_translational_compartment",
     "facet_all",
 ]
 

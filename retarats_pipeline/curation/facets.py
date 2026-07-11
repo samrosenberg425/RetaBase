@@ -53,6 +53,8 @@ FACET_GROUPS = (
     "year_bucket",
     "evidence_impact",
     "clinical_article",
+    "research_article",
+    "translational_compartment",
 )
 
 _DEFAULT_FACETS_CSV = os.path.join("config", "FACETS.csv")
@@ -295,6 +297,10 @@ def derive_facets(evidence: dict, paper: dict, facet_defs: Sequence[FacetDef] | 
         add("evidence_impact", v, l, src)
     for v, l, src in _clinical_article_facet(evidence):
         add("clinical_article", v, l, src)
+    for v, l, src in _research_article_facet(evidence):
+        add("research_article", v, l, src)
+    for v, l, src in _translational_compartment_facet(evidence):
+        add("translational_compartment", v, l, src)
 
     # 6) year bucket (structured)
     yb = _year_bucket(evidence.get("pub_year"))
@@ -456,6 +462,44 @@ def _clinical_article_facet(evidence: dict) -> List[Tuple[str, str, str]]:
     if _truthy_flag(raw):
         return [("yes", "Clinical article (iCite)", "structured:icite_is_clinical")]
     return [("no", "Non-clinical article (iCite)", "structured:icite_is_clinical")]
+
+
+def _research_article_facet(evidence: dict) -> List[Tuple[str, str, str]]:
+    """"yes"/"no" research-article facet from iCite's is_research_article flag.
+    Blank/None -> no facet, so un-enriched papers are unaffected (mirrors the
+    is_clinical handling above).
+    """
+    raw = evidence.get("icite_is_research_article")
+    if raw in (None, ""):
+        return []
+    if _truthy_flag(raw):
+        return [("yes", "Research article (iCite)", "structured:icite_is_research_article")]
+    return [("no", "Non-research article (iCite)", "structured:icite_is_research_article")]
+
+
+def _translational_compartment_facet(evidence: dict) -> List[Tuple[str, str, str]]:
+    """Emit iCite's dominant MeSH-curated compartment from the triangle fractions
+    (human / animal / molecular_cellular). We tag the single compartment whose
+    fraction is >= 0.5; if all fractions are blank/unparseable or none reaches the
+    0.5 threshold (ambiguous), emit nothing so un-enriched/mixed papers are
+    unaffected (matches the codebase convention for missing structured data).
+    """
+    compartments = (
+        ("icite_human", "human", "Human (iCite triangle)"),
+        ("icite_animal", "animal", "Animal (iCite triangle)"),
+        ("icite_molecular", "molecular_cellular", "Molecular / cellular (iCite triangle)"),
+    )
+    for field_name, value, label in compartments:
+        raw = evidence.get(field_name)
+        if raw in (None, ""):
+            continue
+        try:
+            frac = float(str(raw).strip())
+        except (TypeError, ValueError):
+            continue
+        if frac >= 0.5:
+            return [(value, label, f"structured:{field_name}")]
+    return []
 
 
 def _year_bucket(year) -> str:

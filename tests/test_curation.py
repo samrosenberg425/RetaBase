@@ -264,6 +264,33 @@ def run():
     fev_lo = human_rct(); fev_lo["icite_nih_percentile"] = "10"
     check("evidence_impact low bucket", derive_facets(fev_lo, paper).wide.get("facet_evidence_impact", "") == "low")
 
+    # --- iCite research-article facet ---
+    fra_yes = human_rct(); fra_yes["icite_is_research_article"] = "Yes"
+    check("research_article yes", derive_facets(fra_yes, paper).wide.get("facet_research_article", "") == "yes")
+    fra_yes1 = human_rct(); fra_yes1["icite_is_research_article"] = 1
+    check("research_article truthy 1", derive_facets(fra_yes1, paper).wide.get("facet_research_article", "") == "yes")
+    fra_no = human_rct(); fra_no["icite_is_research_article"] = "No"
+    check("research_article no", derive_facets(fra_no, paper).wide.get("facet_research_article", "") == "no")
+    fra_blank = human_rct(); fra_blank["icite_is_research_article"] = ""
+    check("research_article blank -> empty", derive_facets(fra_blank, paper).wide.get("facet_research_article", "") == "")
+
+    # --- iCite translational-compartment facet (triangle fractions) ---
+    ftc_h = human_rct(); ftc_h["icite_human"] = "0.8"; ftc_h["icite_animal"] = "0.1"; ftc_h["icite_molecular"] = "0.1"
+    check("translational_compartment human dominant",
+          derive_facets(ftc_h, paper).wide.get("facet_translational_compartment", "") == "human")
+    ftc_a = human_rct(); ftc_a["icite_human"] = "0.2"; ftc_a["icite_animal"] = "0.7"; ftc_a["icite_molecular"] = "0.1"
+    check("translational_compartment animal dominant",
+          derive_facets(ftc_a, paper).wide.get("facet_translational_compartment", "") == "animal")
+    ftc_m = human_rct(); ftc_m["icite_human"] = "0.1"; ftc_m["icite_animal"] = "0.4"; ftc_m["icite_molecular"] = "0.5"
+    check("translational_compartment molecular dominant",
+          derive_facets(ftc_m, paper).wide.get("facet_translational_compartment", "") == "molecular_cellular")
+    ftc_amb = human_rct(); ftc_amb["icite_human"] = "0.4"; ftc_amb["icite_animal"] = "0.3"; ftc_amb["icite_molecular"] = "0.3"
+    check("translational_compartment ambiguous (<0.5) -> empty",
+          derive_facets(ftc_amb, paper).wide.get("facet_translational_compartment", "") == "")
+    ftc_blank = human_rct()
+    check("translational_compartment blank -> empty",
+          derive_facets(ftc_blank, paper).wide.get("facet_translational_compartment", "") == "")
+
     # --- regression: a record with NO iCite fields behaves exactly as before ---
     r_base = assess_reliability(human_rct(), paper)
     check("no-iCite RCT class unchanged", r_base.evidence_class == "human_clinical_controlled")
@@ -276,6 +303,19 @@ def run():
     f_base = derive_facets(human_rct(), paper)
     check("no-iCite -> empty evidence_impact facet", f_base.wide.get("facet_evidence_impact", "") == "")
     check("no-iCite -> empty clinical_article facet", f_base.wide.get("facet_clinical_article", "") == "")
+    check("no-iCite -> empty research_article facet", f_base.wide.get("facet_research_article", "") == "")
+    check("no-iCite -> empty translational_compartment facet",
+          f_base.wide.get("facet_translational_compartment", "") == "")
+    # A record with NO iCite fields emits no long rows for the new facets and keeps
+    # its facet_count identical to before these facets existed.
+    _base_count = int(f_base.wide.get("facet_count", "0"))
+    _new_groups = {"research_article", "translational_compartment"}
+    check("no-iCite -> no new-facet long rows",
+          not any(g in _new_groups for (g, _v, _l, _s) in f_base.long))
+    f_ra = derive_facets(dict(human_rct(), icite_is_research_article="Yes"), paper)
+    check("research_article adds exactly one long row + bumps facet_count",
+          int(f_ra.wide.get("facet_count", "0")) == _base_count + 1
+          and sum(1 for (g, *_r) in f_ra.long if g == "research_article") == 1)
 
     # --- Semantic Scholar extractors ---
     s2 = {
