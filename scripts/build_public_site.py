@@ -2206,6 +2206,31 @@ _TEMPLATE = """<!DOCTYPE html>
       + "in-vitro / molecular studies lowest. It is derived from the evidence class and "
       + "study model, independent of study quality.");
 
+    h3("NIH iCite signals \\u2014 impact, translation, clinical uptake");
+    p("Several metrics come from NIH iCite (the Open Citation Collection), which "
+      + "provides field- and time-normalized values for essentially every PubMed "
+      + "article. Where iCite covers a paper, we prefer its curated values over our "
+      + "own heuristics; papers iCite has not yet scored (very recent or not-yet-"
+      + "indexed) fall back to the keyword-based signals.");
+    list([
+      "Impact \\u2014 instead of a raw citation count, ranking prefers iCite\\u2019s NIH "
+        + "percentile and Relative Citation Ratio (RCR; 1.0 = the field median), so a "
+        + "well-cited older paper and a fast-rising new one are compared fairly.",
+      "Human / animal / in-vitro \\u2014 iCite\\u2019s MeSH-curated human/animal/molecular "
+        + "fractions decide a paper\\u2019s translational compartment when our text "
+        + "heuristics are unsure (precise designs like RCTs are still set by study type).",
+      "APT (Approximate Potential to Translate, 0\\u20131) \\u2014 a model estimate of "
+        + "translational potential that slightly nudges the directness of preclinical / "
+        + "in-vitro work.",
+      "Clinical influence \\u2014 how many clinical articles cite the paper (shown in its "
+        + "detail view), a direct read on clinical uptake.",
+    ]);
+    p("The \\u201cTriangle view\\u201d toggle on the Evidence tab plots the currently-"
+      + "filtered papers on the biomedicine triangle (Human, Animal, Molecular/Cellular "
+      + "corners) from iCite coordinates, so you can see the translational spread of a "
+      + "result set at a glance. You can also sort by impact percentile, translational "
+      + "potential (APT), or clinical influence, and restrict to clinical articles only.");
+
     h3("Rank \\u2014 combined best-first ordering");
     p("The rank score combines six normalized (0\\u20131) components into a single "
       + "weighted sum used to order results:");

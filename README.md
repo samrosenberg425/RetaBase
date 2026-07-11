@@ -59,7 +59,7 @@ Full method write-up is in the dashboard's **About / Methods** tab and `docs/cur
 
 ## The dashboard
 
-- **Evidence** — all records, rank-sorted, with include/exclude multi-select filters (with select-all per domain), year (before/after/range), journal-name, and min-citations filters, plus cross-filter counts.
+- **Evidence** — all records, rank-sorted, with include/exclude multi-select filters (with select-all per domain), year (before/after/range/exact), journal-name, and min-citations filters, plus cross-filter counts. Sort by rank, reliability, directness, **impact percentile**, **translational potential (APT)**, or **clinical influence**; toggle **clinical articles only**; and open a **Triangle view** that plots the filtered papers on the NIH iCite biomedicine triangle (Human / Animal / Molecular).
 - **Clinical evidence** — human data only (no animal/in-vitro/methods).
 - **Trials registry** — ongoing & completed ClinicalTrials.gov studies (registrations, not results).
 - **Preprints** — bioRxiv/medRxiv (not peer-reviewed).
