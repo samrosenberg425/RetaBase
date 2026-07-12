@@ -764,6 +764,101 @@ def run():
     # Injection-safe invariant still holds for the triangle-bearing page.
     check("triangle build: exactly 2 </script> tags", tri_html.count("</script>") == 2)
 
+    # Honest rigor labeling + ranking presets. The user-facing "Reliability"
+    # label is relabeled to "Automated rigor" (the underlying data fields such as
+    # reliability_score are unchanged), the detail view carries an explicit
+    # "Formal risk of bias: not assessed" row, and the Evidence browser exposes a
+    # rank-preset ("View") control with the documented preset options.
+    rig_html = site._render_html(
+        site._safe_json_block({"records": []}),
+        0, 0, "2026-01-01T00:00:00Z", 0, 0, "inline",
+    )
+    check("Automated rigor label rendered", "Automated rigor" in rig_html)
+    # The standalone "Reliability" meter/sort label is gone (capitalized, as a
+    # user-facing label; lowercase field names in JS are unaffected).
+    check("no standalone <b>Reliability</b> meter label", "<b>Reliability</b>" not in rig_html)
+    check("no Reliability sort-option label", ">Reliability<" not in rig_html)
+    check("no capitalized Reliability label anywhere", "Reliability" not in rig_html)
+    # Data field names must stay intact (display-only change).
+    check("reliability_score field preserved", "reliability_score" in rig_html)
+    # Detail-view formal risk-of-bias disclosure row.
+    check("Formal risk of bias detail row present", "Formal risk of bias" in rig_html)
+    check("risk of bias marked not assessed",
+          "not assessed (automated rigor signals only)" in rig_html)
+    # About / Methods honesty text: rule-based signals, explicitly NOT RoB 2 /
+    # ROBINS-I / GRADE.
+    check("about clarifies not a formal risk-of-bias assessment",
+          "not a formal risk-of-bias assessment" in rig_html.lower())
+    check("about names RoB 2 / ROBINS-I", "RoB 2" in rig_html and "ROBINS-I" in rig_html)
+    check("about names GRADE certainty", "GRADE" in rig_html)
+    # Ranking presets: the control and all option labels.
+    check("rank-preset control present", 'id="rank-preset"' in rig_html)
+    check("preset Default (blended rank)", "Default (blended rank)" in rig_html)
+    check("preset Clinical answer", "Clinical answer" in rig_html)
+    check("preset Best synthesis", "Best synthesis" in rig_html)
+    check("preset Landmark", ">Landmark<" in rig_html)
+    check("preset Latest", ">Latest<" in rig_html)
+    check("preset Mechanism", ">Mechanism<" in rig_html)
+    check("presetSort comparator defined", "function presetSort" in rig_html)
+    # Preset override wiring in applyFilters (predictable: preset overrides Sort).
+    check("preset overrides sort when not default",
+          'presetSort(visible, preset)' in rig_html)
+    # Injection-safe invariant survives the new markup.
+    check("rigor build: exactly 2 </script> tags", rig_html.count("</script>") == 2)
+
+    # Single-molecule Evidence map: a use-case x evidence-class COUNT matrix (a
+    # map, NOT an efficacy verdict). facet_indication + evidence_class must reach
+    # the browser (be in RECORD_FIELDS + survive the normalizer), and the built
+    # page must expose the render function, its caption, and the single-molecule
+    # detection helper it reuses. Injection-safe invariant preserved.
+    check("facet_indication in RECORD_FIELDS", "facet_indication" in site.RECORD_FIELDS)
+    check("evidence_class in RECORD_FIELDS", "evidence_class" in site.RECORD_FIELDS)
+    with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as out:
+        feed = {
+            "generated_utc": "2026-07-04T00:00:00Z",
+            "records": [
+                {"molecule_id": "retatrutide", "molecule_name": "Retatrutide", "title": "T1",
+                 "facet_indication": "obesity; NAFLD",
+                 "evidence_class": "human_clinical_controlled", "facet_all": "x"},
+                {"molecule_id": "retatrutide", "molecule_name": "Retatrutide", "title": "T2",
+                 "facet_indication": "obesity",
+                 "evidence_class": "preclinical_invivo", "facet_all": "x"},
+            ],
+            "molecules": [{"molecule_id": "retatrutide", "molecule_name": "Retatrutide",
+                           "auto_published": "2"}],
+        }
+        with open(os.path.join(src, "site_data.json"), "w", encoding="utf-8") as fh:
+            json.dump(feed, fh)
+        # data-level: both fields survive the site normalizer into the browser payload.
+        sd = site.load_site_data(src)
+        inds = {r.get("facet_indication") for r in sd.records}
+        classes = {r.get("evidence_class") for r in sd.records}
+        check("facet_indication value survives normalizer", "obesity; NAFLD" in inds)
+        check("evidence_class values survive normalizer",
+              "human_clinical_controlled" in classes and "preclinical_invivo" in classes)
+        site.build_site(src, out, mode="inline")
+        with open(os.path.join(out, "index.html"), encoding="utf-8") as fh:
+            evmap_html = fh.read()
+        # UI-level: render function, caption, single-molecule detection, host div.
+        check("evidence-map host div rendered", 'id="evidence-map"' in evmap_html)
+        check("renderEvidenceMap function defined",
+              "function renderEvidenceMap" in evmap_html)
+        check("single-molecule detection helper defined",
+              "function singleMoleculeId" in evmap_html)
+        check("evidence-map caption present",
+              "Counts of retrieved papers by use case and evidence class "
+              "(not an efficacy assessment)." in evmap_html)
+        check("evidence-map column group Human controlled", '"Human controlled"' in evmap_html)
+        check("evidence-map column group Reviews", '"Reviews"' in evmap_html)
+        # Record values reach the browser so the matrix can be built client-side.
+        check("facet_indication value inlined for the map", "obesity; NAFLD" in evmap_html)
+        check("evidence_class value inlined for the map",
+              "human_clinical_controlled" in evmap_html)
+        # Injection-safe invariant unaffected by the evidence-map markup.
+        check("evmap build: exactly 2 </script> tags",
+              evmap_html.count("</script>") == 2)
+        check("evmap build: no </script> breakout", "</script><" not in evmap_html)
+
     print(f"\n{PASS} passed, {FAIL} failed")
     return 0 if FAIL == 0 else 1
 

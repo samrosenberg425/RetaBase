@@ -750,6 +750,20 @@ _TEMPLATE = """<!DOCTYPE html>
   .sl b {{ color: var(--accent2); }} .sl.lim b {{ color: var(--tier-limited); }}
   /* one-line descriptor under each tab/section */
   .tab-desc {{ font-size: 12px; color: var(--muted); margin: 2px 0 12px; }}
+  /* single-molecule "Evidence map": use case x evidence-class count matrix */
+  .evmap {{
+    margin: 8px 0; padding: 10px 12px; background: var(--panel2);
+    border: 1px solid var(--border); border-radius: 8px;
+  }}
+  .evmap h4 {{ margin: 0 0 3px; font-size: 13px; color: var(--text); }}
+  .evmap .evcap {{ font-size: 11px; color: var(--muted); margin: 0 0 8px; font-style: italic; }}
+  .evmap-table {{ border-collapse: collapse; font-size: 12px; max-width: 100%; }}
+  .evmap-table th, .evmap-table td {{
+    border: 1px solid var(--border); padding: 3px 9px; text-align: right; color: var(--text);
+  }}
+  .evmap-table th {{ color: var(--muted); font-weight: 600; }}
+  .evmap-table .use {{ text-align: left; color: var(--text); overflow-wrap: anywhere; }}
+  .evmap-table td.zero {{ color: var(--muted); }}
   /* corpus-stats summary strip near the header */
   .corpus-strip {{
     display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
@@ -852,7 +866,7 @@ _TEMPLATE = """<!DOCTYPE html>
   <details class="explainer">
     <summary>How to read this</summary>
     <ul>
-      <li><b>Reliability</b> = how well-conducted the study is <i>for its type</i> (within-class study quality, 0-100).</li>
+      <li><b>Automated rigor</b> = rule-based signals of how well-conducted the study is <i>for its type</i> (within-class study quality, 0-100). Not a formal risk-of-bias assessment.</li>
       <li><b>Directness</b> = how directly the evidence applies to humans (human RCT high &rarr; in-vitro low).</li>
       <li><b>Rank</b> = the combined best-first ordering (directness + quality + relevance + recency + impact + venue).</li>
       <li>Open <b>About / Methods</b> for the exact formulas. Every metric is rule-based and auditable.</li>
@@ -912,7 +926,7 @@ _TEMPLATE = """<!DOCTYPE html>
         <label style="text-transform:none;display:inline-flex;gap:6px;align-items:center;color:var(--muted)">Sort
           <select id="sort" onchange="applyFilters()">
             <option value="rank">Rank (best first)</option>
-            <option value="reliability">Reliability</option>
+            <option value="reliability">Automated rigor</option>
             <option value="directness">Directness</option>
             <option value="citations">Times cited (most)</option>
             <option value="year">Year (newest)</option>
@@ -921,12 +935,23 @@ _TEMPLATE = """<!DOCTYPE html>
             <option value="clinical_influence">Clinical influence</option>
           </select>
         </label>
+        <label style="text-transform:none;display:inline-flex;gap:6px;align-items:center;color:var(--muted)">View
+          <select id="rank-preset" onchange="applyFilters()">
+            <option value="default">Default (blended rank)</option>
+            <option value="clinical">Clinical answer</option>
+            <option value="synthesis">Best synthesis</option>
+            <option value="landmark">Landmark</option>
+            <option value="latest">Latest</option>
+            <option value="mechanism">Mechanism</option>
+          </select>
+        </label>
         <label style="text-transform:none;display:inline-flex;gap:6px;align-items:center;color:var(--muted)">
           <input id="clinical-only" type="checkbox" onchange="applyFilters()" style="width:auto"> Clinical articles only
         </label>
         <button id="triangle-toggle" class="reset" style="width:auto;padding:4px 10px" onclick="toggleTriangle()">Triangle view</button>
       </div>
       <div class="tab-desc" id="cap-note" style="display:none"></div>
+      <div class="evmap" id="evidence-map" style="display:none"></div>
       <div id="triangle-wrap" style="display:none;margin:8px 0;text-align:center">
         <svg id="triangle-svg" viewBox="0 0 300 260" width="300" height="260" role="img" aria-label="Translational triangle"></svg>
       </div>
@@ -1473,6 +1498,7 @@ _TEMPLATE = """<!DOCTYPE html>
     kv(grid, "Duration", r.refined_duration);
     kv(grid, "Sample size", r.refined_sample_size);
     kv(grid, "Outcome", humanize(r.refined_outcome_direction));
+    kv(grid, "Formal risk of bias", "not assessed (automated rigor signals only)");
     // NIH iCite metrics (fill in once the corpus is iCite-enriched; each row is
     // shown only when its value is present).
     if (r.icite_rcr !== undefined && String(r.icite_rcr).trim() !== "" && !isNaN(parseFloat(r.icite_rcr)))
@@ -1502,7 +1528,7 @@ _TEMPLATE = """<!DOCTYPE html>
 
     var rc = parseComp(r.reliability_components);
     if (rc) {{
-      m.appendChild(el("h4", null, "Reliability breakdown"));
+      m.appendChild(el("h4", null, "Automated rigor breakdown"));
       var comp = el("div", "comp");
       Object.keys(rc).forEach(function(k) {{ comp.appendChild(el("span", null, humanize(k) + ": " + rc[k])); }});
       m.appendChild(comp);
@@ -1678,6 +1704,74 @@ _TEMPLATE = """<!DOCTYPE html>
     }}).map(function(x) {{ return x[0]; }});
   }}
 
+  // ---- ranking presets -------------------------------------------------------
+  // A non-default "View" preset OVERRIDES the Sort dropdown and re-orders the
+  // currently-filtered records by an explicit, auditable comparator built from
+  // existing record fields. Every comparator treats a missing field as sorting
+  // last (numeric fields fall back to -1), and the original feed index is used
+  // as a stable tiebreak so ties keep their best-first rank_score order.
+  var MECHANISM_CLASSES = new Set(["in_vitro", "preclinical_invivo", "methods_tool"]);
+  function pnum(v) {{
+    if (v == null || String(v).trim() === "") return -1;
+    var n = parseFloat(v);
+    return isNaN(n) ? -1 : n;
+  }}
+  // "Clinical answer" front-loads human evidence: any human evidence_class OR a
+  // record whose directness_tier is already "high".
+  function isClinicalAnswer(r) {{
+    return HUMAN_CLASSES.has(r.evidence_class || "") || r.directness_tier === "high";
+  }}
+  function presetSort(list, preset) {{
+    function byRel(a, b) {{ return pnum(b.reliability_score) - pnum(a.reliability_score); }}
+    function byYear(a, b) {{ return pnum(b.pub_year) - pnum(a.pub_year); }}
+    var cmp;
+    if (preset === "clinical") {{
+      cmp = function(a, b) {{
+        var d = (isClinicalAnswer(b) ? 1 : 0) - (isClinicalAnswer(a) ? 1 : 0);
+        if (d) return d;
+        d = byRel(a, b); if (d) return d;
+        return byYear(a, b);
+      }};
+    }} else if (preset === "synthesis") {{
+      cmp = function(a, b) {{
+        var d = ((b.evidence_class === "evidence_synthesis") ? 1 : 0)
+              - ((a.evidence_class === "evidence_synthesis") ? 1 : 0);
+        if (d) return d;
+        d = byRel(a, b); if (d) return d;
+        return byYear(a, b);
+      }};
+    }} else if (preset === "landmark") {{
+      // Impact-driven, NOT recency: NIH percentile, then RCR, then raw citations.
+      cmp = function(a, b) {{
+        var d = pnum(b.icite_nih_percentile) - pnum(a.icite_nih_percentile);
+        if (d) return d;
+        d = pnum(b.icite_rcr) - pnum(a.icite_rcr);
+        if (d) return d;
+        return pnum(b.citation_count) - pnum(a.citation_count);
+      }};
+    }} else if (preset === "latest") {{
+      cmp = function(a, b) {{
+        var d = byYear(a, b);
+        if (d) return d;
+        return ((b.directness_tier === "high") ? 1 : 0) - ((a.directness_tier === "high") ? 1 : 0);
+      }};
+    }} else if (preset === "mechanism") {{
+      cmp = function(a, b) {{
+        var d = (MECHANISM_CLASSES.has(b.evidence_class || "") ? 1 : 0)
+              - (MECHANISM_CLASSES.has(a.evidence_class || "") ? 1 : 0);
+        if (d) return d;
+        d = byRel(a, b); if (d) return d;
+        return byYear(a, b);
+      }};
+    }} else {{
+      return list;  // "default" (or unknown) -> caller uses the Sort dropdown
+    }}
+    return list.map(function(r, i) {{ return [r, i]; }}).sort(function(a, b) {{
+      var d = cmp(a[0], b[0]);
+      return d !== 0 ? d : a[1] - b[1];
+    }}).map(function(x) {{ return x[0]; }});
+  }}
+
   function fmtInt(n) {{ return String(n).replace(/\\B(?=(\\d{{3}})+(?!\\d))/g, ","); }}
 
   // Mount only the first ``visibleCount`` of the full filtered+sorted array in
@@ -1701,6 +1795,137 @@ _TEMPLATE = """<!DOCTYPE html>
     if (!id) return null;
     var cm = feed.capped_molecules[id];
     return (cm && cm.total && cm.published) ? cm : null;
+  }}
+  // Evidence-map: when the Evidence browser is filtered to exactly ONE molecule,
+  // show a use-case x evidence-class COUNT matrix (a map, NOT an efficacy verdict).
+  // Detection reuses the same "all filtered records share one molecule_id" logic
+  // the cap-note / triangle rely on. Returns the shared molecule_id, or null when
+  // the view is empty or spans more than one molecule.
+  function singleMoleculeId() {{
+    var id = null;
+    for (var i = 0; i < lastVisible.length; i++) {{
+      var m = lastVisible[i].molecule_id || "";
+      if (!m) return null;  // a record without a molecule id can't anchor a single-molecule view
+      if (id === null) id = m;
+      else if (m !== id) return null;  // more than one molecule in view
+    }}
+    return id;  // null when lastVisible is empty
+  }}
+  // Column groups: (display label, list of raw evidence_class values). Grouped for
+  // readability; a record contributes to exactly one column via its evidence_class.
+  var EVMAP_GROUPS = [
+    ["Human controlled", ["human_clinical_controlled"]],
+    ["Human other", ["human_clinical", "human_observational"]],
+    ["Animal", ["preclinical_invivo"]],
+    ["In vitro", ["in_vitro", "methods_tool"]],
+    ["Reviews", ["evidence_synthesis", "narrative_review"]]
+  ];
+  function evmapGroupIndex(cls) {{
+    cls = (cls || "").trim();
+    if (!cls) return -1;
+    for (var g = 0; g < EVMAP_GROUPS.length; g++) {{
+      var members = EVMAP_GROUPS[g][1];
+      for (var k = 0; k < members.length; k++) {{
+        if (members[k] === cls) return g;
+      }}
+    }}
+    return -1;  // class outside the shown groups -> not counted
+  }}
+  // Split facet_indication ("obesity; NAFLD") into discrete use cases, dropping
+  // blanks and the "unspecified" placeholder. A record may count in several rows.
+  function evmapIndications(v) {{
+    var parts = String(v == null ? "" : v).split(";");
+    var out = [];
+    for (var i = 0; i < parts.length; i++) {{
+      var s = parts[i].trim();
+      if (!s) continue;
+      if (s.toLowerCase() === "unspecified") continue;
+      out.push(s);
+    }}
+    return out;
+  }}
+  var EVMAP_CAP = 12;  // keep the matrix small: top-N indications, rest folded into "other"
+  function renderEvidenceMap() {{
+    var host = document.getElementById("evidence-map");
+    if (!host) return;
+    host.textContent = "";  // rebuild from scratch each call (injection-safe)
+    var molId = singleMoleculeId();
+    if (!molId || !lastVisible.length) {{ host.style.display = "none"; return; }}
+    // Tally counts[indication][groupIndex] over the visible records for this molecule.
+    var counts = {{}};   // indication -> array(EVMAP_GROUPS.length) of ints
+    var totals = {{}};   // indication -> total grouped count (for ranking + cap)
+    var seenAny = false;
+    for (var i = 0; i < lastVisible.length; i++) {{
+      var r = lastVisible[i];
+      var gi = evmapGroupIndex(r.evidence_class || "");
+      if (gi < 0) continue;  // evidence_class has no column -> skip
+      var inds = evmapIndications(r.facet_indication);
+      for (var j = 0; j < inds.length; j++) {{
+        var ind = inds[j];
+        if (!counts[ind]) {{
+          var row = [];
+          for (var z = 0; z < EVMAP_GROUPS.length; z++) row.push(0);
+          counts[ind] = row;
+          totals[ind] = 0;
+        }}
+        counts[ind][gi] += 1;
+        totals[ind] += 1;
+        seenAny = true;
+      }}
+    }}
+    if (!seenAny) {{ host.style.display = "none"; return; }}
+    // Rank indications by frequency (desc), then alphabetically for stable ties.
+    var ranked = Object.keys(counts).sort(function(a, b) {{
+      var d = totals[b] - totals[a];
+      return d !== 0 ? d : (a < b ? -1 : a > b ? 1 : 0);
+    }});
+    var top = ranked.slice(0, EVMAP_CAP);
+    var rest = ranked.slice(EVMAP_CAP);
+    var otherRow = null;
+    if (rest.length) {{
+      otherRow = [];
+      for (var z2 = 0; z2 < EVMAP_GROUPS.length; z2++) otherRow.push(0);
+      for (var q = 0; q < rest.length; q++) {{
+        var rc = counts[rest[q]];
+        for (var g2 = 0; g2 < EVMAP_GROUPS.length; g2++) otherRow[g2] += rc[g2];
+      }}
+    }}
+    host.style.display = "";
+    host.appendChild(el("h4", null, "Evidence map"));
+    host.appendChild(el("p", "evcap",
+      "Counts of retrieved papers by use case and evidence class (not an efficacy assessment)."));
+    var table = document.createElement("table");
+    table.className = "evmap-table";
+    // Header row.
+    var trh = document.createElement("tr");
+    var thUse = document.createElement("th");
+    thUse.className = "use";
+    thUse.textContent = "Use case";
+    trh.appendChild(thUse);
+    for (var h = 0; h < EVMAP_GROUPS.length; h++) {{
+      var th = document.createElement("th");
+      th.textContent = EVMAP_GROUPS[h][0];
+      trh.appendChild(th);
+    }}
+    table.appendChild(trh);
+    // Body rows: one per (capped) indication, plus optional trailing "other".
+    function addRow(label, arr) {{
+      var tr = document.createElement("tr");
+      var tdUse = document.createElement("td");
+      tdUse.className = "use";
+      tdUse.textContent = label;
+      tr.appendChild(tdUse);
+      for (var c = 0; c < arr.length; c++) {{
+        var td = document.createElement("td");
+        if (!arr[c]) td.className = "zero";
+        td.textContent = String(arr[c]);  // count via textContent only
+        tr.appendChild(td);
+      }}
+      table.appendChild(tr);
+    }}
+    for (var t = 0; t < top.length; t++) addRow(top[t], counts[top[t]]);
+    if (otherRow) addRow("other", otherRow);
+    host.appendChild(table);
   }}
   function renderVisible() {{
     var total = lastVisible.length;
@@ -1735,6 +1960,10 @@ _TEMPLATE = """<!DOCTYPE html>
       capNote.textContent = "";
       capNote.style.display = "none";
     }}
+
+    // Single-molecule evidence map: counts by use case x evidence class (a map,
+    // not an efficacy verdict). Shown only when the view is one molecule.
+    renderEvidenceMap();
 
     // Keep the translational triangle in sync with the filtered set when shown.
     if (triangleOn) renderTriangle();
@@ -1841,7 +2070,14 @@ _TEMPLATE = """<!DOCTYPE html>
     refreshGroups(crossFilterCounts(base, filters, extra, q));
     // 2) the full filtered+sorted list applies ALL filters + search over the base.
     var visible = base.filter(function(r) {{ return matches(r, filters, extra, q); }});
-    visible = sortRecords(visible, document.getElementById("sort").value);
+    // A non-default "View" preset overrides the Sort dropdown; otherwise sort as
+    // selected. This keeps ordering predictable: exactly one control is in effect.
+    var preset = (document.getElementById("rank-preset") || {{}}).value || "default";
+    if (preset !== "default") {{
+      visible = presetSort(visible, preset);
+    }} else {{
+      visible = sortRecords(visible, document.getElementById("sort").value);
+    }}
     lastVisible = visible;
     // Any filter/search/sort change resets the render window to the first page.
     visibleCount = RENDER_LIMIT;
@@ -1874,7 +2110,7 @@ _TEMPLATE = """<!DOCTYPE html>
       stat("featured", m.auto_published);
       stat("human", m.human_evidence);
       stat("preclinical", m.preclinical_evidence);
-      stat("max reliability", m.max_reliability);
+      stat("max rigor", m.max_reliability);
       card.appendChild(stats);
       if (m.top_conditions) card.appendChild(el("div", "sl", m.top_conditions));
       // Optional "learn more" link to PubChem. Only rendered when the molecule
@@ -2230,19 +2466,26 @@ _TEMPLATE = """<!DOCTYPE html>
       + "coverage depends on what the searches have fetched so far (the historical backfill is "
       + "still filling in older years).");
     p("Each paper carries two independent axes \\u2014 how well it was conducted "
-      + "(reliability) and how directly it applies to humans (directness) \\u2014 plus a "
+      + "(automated rigor) and how directly it applies to humans (directness) \\u2014 plus a "
       + "combined rank used for best-first ordering. The tabs let you browse the full indexed "
       + "set for the tracked bioactives, restrict to human/clinical data, list the bioactives, "
       + "or view candidate compounds.");
 
-    h3("Reliability \\u2014 within-class study quality (0\\u2013100)");
-    p("Reliability measures how well a study was conducted FOR ITS TYPE, using a "
-      + "rubric appropriate to its evidence class (a randomized human trial and an "
-      + "in-vitro assay are judged on different rubrics). It starts from a class base "
-      + "score and adds/subtracts rubric points for design features (randomization, "
-      + "controls, blinding, sample size, follow-up, reporting completeness), clamped to "
-      + "0\\u2013100. It is a within-class quality score, NOT a measure of how human-"
-      + "relevant the evidence is \\u2014 that is directness.");
+    h3("Automated rigor signals \\u2014 within-class study quality (0\\u2013100)");
+    p("The automated rigor score is a set of RULE-BASED signals extracted from the "
+      + "reported methods/abstract of each paper. Using a rubric appropriate to the "
+      + "evidence class (a randomized human trial and an in-vitro assay are judged on "
+      + "different rubrics), it starts from a class base score and adds/subtracts points "
+      + "for design features it can detect in the text \\u2014 randomization, blinding, "
+      + "controls, sample size, follow-up, reporting completeness \\u2014 clamped to "
+      + "0\\u2013100. It is a within-class quality signal, NOT a measure of how human-"
+      + "relevant the evidence is (that is directness).");
+    p("Important: this is NOT a formal risk-of-bias assessment (such as Cochrane RoB 2 "
+      + "or ROBINS-I) and NOT a GRADE certainty-of-evidence rating. No human reviewer "
+      + "appraises each study, and formal risk of bias is NOT assessed \\u2014 the paper "
+      + "detail view labels it \\u201cnot assessed (automated rigor signals only)\\u201d. "
+      + "Treat the score as an automated triage signal, not a substitute for reading the "
+      + "methods or a systematic critical appraisal.");
 
     h3("Directness \\u2014 translational level");
     p("Directness measures how directly the evidence bears on human outcomes: human "
@@ -2281,7 +2524,7 @@ _TEMPLATE = """<!DOCTYPE html>
       + "weighted sum used to order results:");
     list([
       "Directness \\u2014 translational level (human RCT high \\u2192 in-vitro low).",
-      "Quality \\u2014 the reliability score above (within-class study quality).",
+      "Quality \\u2014 the automated rigor score above (within-class study quality).",
       "Relevance \\u2014 topical fit to the bioactive and its core indications/endpoints.",
       "Recency \\u2014 how recent the publication year is.",
       "Impact \\u2014 log-scaled times-cited count, i.e. how often the paper has been cited by OTHER papers (so a few extra citations matter more at the low end than the high end). This is not about whether the paper has a reference list.",
