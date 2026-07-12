@@ -52,9 +52,24 @@ FIELD_MAP = {
 }
 
 
+# Bump this whenever FIELD_MAP / derived fields change, so a later run tops up
+# papers that were enriched under an older field set (audit-and-add, no full reset).
+ICITE_SCHEMA = 2
+
+
 def _needs(p: dict) -> bool:
-    # Consider a paper un-enriched until it has RCR or APT (either implies a hit).
-    return is_blankish(p.get("icite_rcr")) and is_blankish(p.get("icite_apt"))
+    """A paper needs (re-)enrichment if it has never been enriched, OR it was
+    enriched under an older field schema (so it's missing newer fields). Papers
+    iCite responded to but had NO record for are marked attempted and skipped, so
+    we don't re-query them every run."""
+    has_core = not (is_blankish(p.get("icite_rcr")) and is_blankish(p.get("icite_apt")))
+    if has_core:
+        try:
+            return int(p.get("icite_schema", 0) or 0) < ICITE_SCHEMA
+        except (TypeError, ValueError):
+            return True
+    # No iCite metrics: needs enrichment unless we already tried and iCite had none.
+    return is_blankish(p.get("icite_attempted_utc"))
 
 
 def _year(p: dict) -> int:
@@ -90,10 +105,18 @@ def main() -> None:
     print(f"Fetching iCite for {len(pmids)} papers (batch {args.batch_size})...", flush=True)
     icite = fetch_icite(pmids, batch_size=args.batch_size)
 
+    got_any = bool(icite)  # did the API actually respond? (guards against outages)
     updated = []
     for p in work:
         rec = icite.get(str(p.get("pmid", "")).strip())
         if not rec:
+            # Responded but no iCite record for this PMID -> stamp attempted so we
+            # don't re-query it forever. Total-failure batches (got_any False) are
+            # left untouched to retry next run.
+            if got_any:
+                p = dict(p)
+                p["icite_attempted_utc"] = utc_now_iso()
+                updated.append(p)
             continue
         p = dict(p)
         for ik, field in FIELD_MAP.items():
@@ -105,6 +128,7 @@ def main() -> None:
         cbc = rec.get("cited_by_clin")
         if cbc not in (None, ""):
             p["icite_clinical_influence"] = len(str(cbc).split())
+        p["icite_schema"] = ICITE_SCHEMA
         p["icite_updated_utc"] = utc_now_iso()
         updated.append(p)
 
