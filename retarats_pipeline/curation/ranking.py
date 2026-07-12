@@ -106,8 +106,15 @@ def _recency(evidence: dict) -> float:
     y = _int(str(evidence.get("pub_year", ""))[:4], 0)
     if not y:
         return 30.0  # unknown year -> middling, not penalized to zero
-    span = max(1, _CURRENT_YEAR - 2000)
-    return max(0.0, min(100.0, (y - 2000) / span * 100.0))
+    # Anchor the scale at 1990, not 2000, and give pre-1990 work a small non-zero
+    # floor (25) rather than 0 -- foundational older studies shouldn't be zeroed out
+    # on recency just for being old. Recency is only 10% of rank, so this nudges
+    # rather than dominates.
+    anchor = 1990
+    span = max(1, _CURRENT_YEAR - anchor)
+    if y <= anchor:
+        return 25.0
+    return max(0.0, min(100.0, 25.0 + (y - anchor) / span * 75.0))
 
 
 def _impact(evidence: dict) -> float:

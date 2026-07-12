@@ -72,7 +72,13 @@ jobs:
         run: |
           python3 scripts/build_curated_database.py --db data/retarats_pubmed.sqlite --out-dir exports/curated
           python3 scripts/build_public_site.py --curated-dir exports/curated --out-dir exports/site --mode fetch
-          python3 scripts/validate_curated.py --curated-dir exports/curated || true
+          # DEPLOYMENT GATE: no `|| true` -- if the curated build fails validation
+          # (bad/empty data, dup ids, out-of-range scores, human-evidence collapse),
+          # this step fails, the build job fails, and the deploy job (needs: build)
+          # is skipped -- so the last good site stays up instead of publishing a bad
+          # build. Fetch/enrichment steps keep `|| true` (a source hiccup shouldn't
+          # block a publish); only the final validation is a hard gate.
+          python3 scripts/validate_curated.py --curated-dir exports/curated
           cp exports/curated/site_data.json exports/site/site_data.json
           # Rebuild + publish the registry feeds straight from the trials/preprints
           # SQLite DBs that registry.yml populates in the SHARED cache (exports/ is

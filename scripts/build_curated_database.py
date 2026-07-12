@@ -399,8 +399,13 @@ FEED_KEEP_PERCENTILE = 90.0
 
 
 def _is_landmark(r: dict) -> bool:
-    """High-signal record that is always published regardless of the section cap."""
+    """High-signal record that is ALWAYS published regardless of the section cap."""
     if str(r.get("evidence_class", "")) == "evidence_synthesis":
+        return True
+    # Never drop human evidence. A well-conducted NULL or adverse human study is
+    # often the most clinically useful record in the database, so every human
+    # record is kept regardless of its findings or citation count.
+    if str(r.get("website_section", "")) == "Human evidence":
         return True
     try:
         return float(r.get("icite_nih_percentile")) >= FEED_KEEP_PERCENTILE
