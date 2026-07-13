@@ -1,0 +1,2 @@
+molecule_id,must_retrieve_pmids,must_not_retrieve_pmids,notes
+retatrutide,,,"Fill in: space- or ;-separated PMIDs the search MUST return (known-relevant) and MUST NOT return (off-topic / wrong entity). Empty rows are skipped."

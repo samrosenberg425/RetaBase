@@ -1,0 +1,59 @@
+name: Corpus snapshot (durable backup)
+
+# The corpus lives in the Actions cache, which is operational (LRU-evicted, pruned
+# by cache-gc) and not a durable archive. This job takes a periodic COMPRESSED
+# snapshot of the SQLite corpus + a checksum + the stats, and publishes them as a
+# GitHub Release asset (durable, versioned, 2 GB/file, off the cache budget). It
+# only READS the cache (restore-only), so it never disturbs the live corpus.
+
+on:
+  schedule:
+    - cron: "0 5 * * 0"    # weekly, Sunday 05:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write          # required to create the release + upload assets
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore corpus cache (read-only)
+        uses: actions/cache/restore@v4
+        with:
+          path: data
+          key: retarats-corpus-none
+          restore-keys: |
+            retarats-corpus-
+
+      - name: Package snapshot
+        id: pack
+        run: |
+          if [ ! -f data/retarats_pubmed.sqlite ]; then
+            echo "No corpus in the cache yet; nothing to snapshot."
+            exit 0
+          fi
+          d=$(date -u +%Y%m%d)
+          mkdir -p snap
+          # Compact the DB (reclaims deleted space) before compressing. Safe: this
+          # runner copy is never written back to the cache.
+          python3 -c "import sqlite3; c=sqlite3.connect('data/retarats_pubmed.sqlite'); c.execute('VACUUM'); c.close()"
+          tar -I 'gzip -9' -cf "snap/retarats_corpus_${d}.tar.gz" -C data retarats_pubmed.sqlite
+          sha256sum "snap/retarats_corpus_${d}.tar.gz" > "snap/retarats_corpus_${d}.sha256"
+          [ -f data/corpus_stats_baseline.json ] && cp data/corpus_stats_baseline.json "snap/corpus_stats_${d}.json" || true
+          ls -lh snap
+          echo "date=${d}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish snapshot release
+        if: ${{ hashFiles('snap/*.tar.gz') != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: snapshot-${{ steps.pack.outputs.date }}
+        run: |
+          gh release create "$TAG" snap/* --repo "$REPO" \
+            --title "Corpus snapshot ${{ steps.pack.outputs.date }}" \
+            --notes "Durable weekly snapshot of the SQLite corpus + sha256 checksum + stats. Restore: download, verify with the .sha256, gunzip/untar into data/." \
+          || gh release upload "$TAG" snap/* --repo "$REPO" --clobber

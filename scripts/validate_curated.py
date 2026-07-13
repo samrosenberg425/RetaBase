@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import os
 import re
 import sqlite3
@@ -55,6 +56,16 @@ KNOWN_SPECIES = {
 PRIMATE_TERMS = re.compile(
     r"\b(?:monkey|macaque|primate|cynomolgus|rhesus|marmoset|baboon)\b", re.IGNORECASE
 )
+
+# --- corpus-collapse anomaly gates ------------------------------------------
+# When a known-good baseline corpus_stats.json is supplied, FAIL the build if a
+# core corpus metric has collapsed to below this fraction of the baseline value
+# (a catastrophic data loss). GROWTH never fails -- only drops below the floor
+# do. If no valid baseline is available (first run / bootstrapping) the gates are
+# skipped and the build passes.
+COLLAPSE_RATIO = 0.5  # current must be >= 50% of baseline
+# Metrics read straight off corpus_stats.json for the drop check.
+COLLAPSE_METRICS = ("total_papers", "molecules_with_data")
 
 
 class Report:
@@ -127,7 +138,67 @@ def _split_species(value: str) -> List[str]:
     return [v.strip() for v in str(value or "").split(";") if v.strip()]
 
 
-def validate(curated_dir: str, db_path: Optional[str] = None) -> Tuple[Report, int]:
+def _to_num(value) -> Optional[float]:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _load_stats(path: Optional[str]) -> Optional[dict]:
+    """Load a corpus_stats.json file. Returns ``None`` if absent/blank/invalid."""
+    if not path or not str(path).strip() or not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _published_count(stats: dict) -> Optional[float]:
+    """Published/public record count from stats = featured + listed.
+
+    ``public_records.csv`` is exactly the ``featured`` + ``listed`` rows, and both
+    counts are recorded in corpus_stats.json, so this is comparable across runs.
+    Returns ``None`` if neither key is present/numeric.
+    """
+    featured = _to_num(stats.get("featured"))
+    listed = _to_num(stats.get("listed"))
+    if featured is None and listed is None:
+        return None
+    return (featured or 0.0) + (listed or 0.0)
+
+
+def _anomaly_check(rep: "Report", label: str, baseline_value, current_value) -> None:
+    """Add a collapse-detection check row: FAIL if current < COLLAPSE_RATIO*baseline.
+
+    Growth (current >= baseline) always PASSes. Skipped (as an INFO note, no
+    fail) when either value is missing/non-numeric or the baseline is <= 0.
+    """
+    b = _to_num(baseline_value)
+    c = _to_num(current_value)
+    if b is None or c is None or b <= 0:
+        rep.note(
+            f"[INFO] anomaly gate '{label}' skipped "
+            f"(baseline={baseline_value!r}, current={current_value!r})"
+        )
+        return
+    floor = COLLAPSE_RATIO * b
+    rep.check(
+        f"{label} not collapsed (>= {int(COLLAPSE_RATIO * 100)}% of baseline)",
+        c >= floor,
+        f"current={c:g} baseline={b:g} (floor={floor:g})",
+    )
+
+
+def validate(
+    curated_dir: str,
+    db_path: Optional[str] = None,
+    baseline_path: Optional[str] = None,
+    stats_path: Optional[str] = None,
+) -> Tuple[Report, int]:
     path = os.path.join(curated_dir, "curated_evidence.csv")
     rep = Report()
     if not os.path.exists(path):
@@ -225,6 +296,38 @@ def validate(curated_dir: str, db_path: Optional[str] = None) -> Tuple[Report, i
             changed += 1
     rep.note(f"[INFO] model_primary != model_type (disambiguation impact): {changed} of {total}")
 
+    # 6) corpus-collapse anomaly gates vs a known-good baseline corpus_stats.json.
+    # corpus_stats.json is written by build_curated_database.py into the curated
+    # out-dir, so the CURRENT run's stats live at <curated-dir>/corpus_stats.json
+    # (overridable via --stats). When a valid --baseline is provided, FAIL if any
+    # core metric has collapsed to < COLLAPSE_RATIO of the baseline. Missing/blank/
+    # invalid baseline -> skip (bootstrapping first run) and pass.
+    if baseline_path and str(baseline_path).strip():
+        baseline_stats = _load_stats(baseline_path)
+        current_path = stats_path or os.path.join(curated_dir, "corpus_stats.json")
+        current_stats = _load_stats(current_path)
+        if baseline_stats is None:
+            rep.note(
+                f"[INFO] corpus-collapse gates skipped: no valid baseline at "
+                f"{baseline_path} (bootstrapping / first run)."
+            )
+        elif current_stats is None:
+            rep.note(
+                f"[INFO] corpus-collapse gates skipped: current corpus_stats.json "
+                f"missing/invalid at {current_path}."
+            )
+        else:
+            for key in COLLAPSE_METRICS:
+                _anomaly_check(rep, key, baseline_stats.get(key), current_stats.get(key))
+            _anomaly_check(
+                rep,
+                "published_records",
+                _published_count(baseline_stats),
+                _published_count(current_stats),
+            )
+    else:
+        rep.note("[INFO] no --baseline provided; corpus-collapse anomaly gates skipped.")
+
     return rep, (0 if rep.all_pass else 1)
 
 
@@ -236,9 +339,32 @@ def main() -> None:
         default="",
         help="Optional SQLite DB to join papers for the NHP facet text check.",
     )
+    ap.add_argument(
+        "--baseline",
+        default="",
+        help=(
+            "Optional previous (known-good) corpus_stats.json. When present and "
+            "valid, gates the build against a catastrophic corpus collapse "
+            "(a core metric dropping below 50%% of this baseline). Absent/blank/"
+            "invalid -> gates skipped (bootstrapping)."
+        ),
+    )
+    ap.add_argument(
+        "--stats",
+        default="",
+        help=(
+            "Path to the CURRENT run's corpus_stats.json for the anomaly gates. "
+            "Defaults to <curated-dir>/corpus_stats.json."
+        ),
+    )
     args = ap.parse_args()
 
-    rep, code = validate(args.curated_dir, args.db or None)
+    rep, code = validate(
+        args.curated_dir,
+        args.db or None,
+        baseline_path=args.baseline or None,
+        stats_path=args.stats or None,
+    )
     text = rep.render()
     print(text)
 

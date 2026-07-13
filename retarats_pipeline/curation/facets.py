@@ -55,6 +55,7 @@ FACET_GROUPS = (
     "clinical_article",
     "research_article",
     "translational_compartment",
+    "publication_flag",
 )
 
 _DEFAULT_FACETS_CSV = os.path.join("config", "FACETS.csv")
@@ -301,6 +302,8 @@ def derive_facets(evidence: dict, paper: dict, facet_defs: Sequence[FacetDef] | 
         add("research_article", v, l, src)
     for v, l, src in _translational_compartment_facet(evidence):
         add("translational_compartment", v, l, src)
+    for v, l, src in _publication_flag_facet(evidence, paper):
+        add("publication_flag", v, l, src)
 
     # 6) year bucket (structured)
     yb = _year_bucket(evidence.get("pub_year"))
@@ -499,6 +502,40 @@ def _translational_compartment_facet(evidence: dict) -> List[Tuple[str, str, str
             continue
         if frac >= 0.5:
             return [(value, label, f"structured:{field_name}")]
+    return []
+
+
+# PubMed publication types marking a paper as retracted vs. corrected. Matched
+# case-insensitively against the paper's ``pubtypes`` list (parsed by pubmed.py).
+_RETRACTED_PUBTYPES = frozenset({"retracted publication", "retraction of publication"})
+_CORRECTED_PUBTYPES = frozenset({"published erratum", "corrected and republished article"})
+
+
+def _publication_flag_facet(evidence: dict, paper: dict) -> List[Tuple[str, str, str]]:
+    """Flag retracted / corrected papers from PubMed publication types.
+
+    Reads the ``pubtypes`` list PubMed attaches to each paper (falling back to a
+    pre-derived ``is_retracted`` / ``is_corrected`` boolean on the evidence row).
+    Retraction takes precedence over a correction. Emits nothing when neither
+    applies, so ordinary papers are unaffected (matches the codebase convention
+    for missing structured data). Lights up automatically once pubtypes flow.
+    """
+    raw = None
+    if paper:
+        raw = paper.get("pubtypes")
+    if raw in (None, ""):
+        raw = evidence.get("pubtypes", "")
+    if isinstance(raw, (list, tuple)):
+        types = {str(x).strip().lower() for x in raw}
+    else:
+        types = {t.strip().lower() for t in re.split(r"[;,]", str(raw or "")) if t.strip()}
+
+    is_retracted = bool(_RETRACTED_PUBTYPES & types) or _truthy_flag(evidence.get("is_retracted"))
+    is_corrected = bool(_CORRECTED_PUBTYPES & types) or _truthy_flag(evidence.get("is_corrected"))
+    if is_retracted:
+        return [("retracted", "Retracted publication", "structured:pubtypes")]
+    if is_corrected:
+        return [("corrected", "Corrected / erratum", "structured:pubtypes")]
     return []
 
 

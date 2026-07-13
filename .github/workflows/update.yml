@@ -78,7 +78,13 @@ jobs:
           # is skipped -- so the last good site stays up instead of publishing a bad
           # build. Fetch/enrichment steps keep `|| true` (a source hiccup shouldn't
           # block a publish); only the final validation is a hard gate.
-          python3 scripts/validate_curated.py --curated-dir exports/curated
+          # --baseline points at data/ (the persistent Actions cache) so the anomaly
+          # gates compare this run against the previous known-good corpus_stats.json.
+          python3 scripts/validate_curated.py --curated-dir exports/curated --baseline data/corpus_stats_baseline.json
+          # Validation passed (no `|| true` above) -> promote THIS build's stats to
+          # the baseline so the NEXT run compares against this now-known-good corpus.
+          # On its own line after validate, so it only runs if validate didn't abort.
+          cp exports/curated/corpus_stats.json data/corpus_stats_baseline.json
           cp exports/curated/site_data.json exports/site/site_data.json
           # Rebuild + publish the registry feeds straight from the trials/preprints
           # SQLite DBs that registry.yml populates in the SHARED cache (exports/ is

@@ -8,13 +8,37 @@ No network, no SQLite needed. Run:
 
 from __future__ import annotations
 
+import csv
+import importlib.util
 import json
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from retarats_pipeline.curation.facets import derive_facets
+# Load the build_curated_database script by path (scripts/ is not a package) so
+# we can unit-test its _corpus_stats / _publication_flags helpers directly.
+_BCD_SPEC = importlib.util.spec_from_file_location(
+    "build_curated_database",
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "build_curated_database.py"),
+)
+bcd = importlib.util.module_from_spec(_BCD_SPEC)
+sys.modules["build_curated_database"] = bcd
+_BCD_SPEC.loader.exec_module(bcd)  # type: ignore
+
+# Same trick for the curated-dataset validator so we can unit-test its
+# corpus-collapse anomaly gates directly.
+_VC_SPEC = importlib.util.spec_from_file_location(
+    "validate_curated",
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "validate_curated.py"),
+)
+vc = importlib.util.module_from_spec(_VC_SPEC)
+sys.modules["validate_curated"] = vc
+_VC_SPEC.loader.exec_module(vc)  # type: ignore
+
+import tempfile
+
+from retarats_pipeline.curation.facets import derive_facets, FACET_GROUPS
 from retarats_pipeline.curation.reliability import assess_reliability, classify_evidence, CLASS_DIRECTNESS
 from retarats_pipeline.curation.publication_status import decide_publication, check_required_fields
 from retarats_pipeline.curation.appraisal import appraise_evidence
@@ -96,6 +120,72 @@ def methods_noise():
         "processing_lane": "methods_assay_synthesis",
         "keep_for_final_database": True,
     }
+
+
+def _make_curated_dir(tmpdir, stats):
+    """Write a tiny-but-valid curated_evidence.csv + corpus_stats.json.
+
+    The CSV satisfies every existing invariant (scores, statuses, unique ids,
+    species vocab, a sane auto_publish band) so the only thing a test can trip is
+    the corpus-collapse anomaly gate.
+    """
+    fields = [
+        "evidence_id", "reliability_score", "reliability_tier", "publication_status",
+        "required_fields_present", "website_section", "facet_species", "auto_publish_eligible",
+    ]
+    rows = [
+        {"evidence_id": "e1", "reliability_score": "80", "reliability_tier": "high",
+         "publication_status": "featured", "required_fields_present": "True",
+         "website_section": "Human evidence", "facet_species": "human",
+         "auto_publish_eligible": "True"},
+        {"evidence_id": "e2", "reliability_score": "70", "reliability_tier": "moderate",
+         "publication_status": "listed", "required_fields_present": "True",
+         "website_section": "", "facet_species": "mouse",
+         "auto_publish_eligible": "False"},
+    ]
+    with open(os.path.join(tmpdir, "curated_evidence.csv"), "w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=fields)
+        w.writeheader()
+        w.writerows(rows)
+    with open(os.path.join(tmpdir, "corpus_stats.json"), "w", encoding="utf-8") as fh:
+        json.dump(stats, fh)
+
+
+def run_anomaly_gate_tests():
+    # Current run's stats (a healthy corpus).
+    current = {"total_papers": 100, "molecules_with_data": 20, "featured": 10, "listed": 30}
+
+    # 1) baseline showing a 90% total_papers drop -> catastrophic collapse -> FAIL.
+    with tempfile.TemporaryDirectory() as d:
+        _make_curated_dir(d, current)
+        base_path = os.path.join(d, "baseline.json")
+        with open(base_path, "w", encoding="utf-8") as fh:
+            json.dump({"total_papers": 1000, "molecules_with_data": 20,
+                       "featured": 10, "listed": 30}, fh)
+        _rep, code = vc.validate(d, baseline_path=base_path)
+        check("90% total_papers drop FAILS (non-zero)", code != 0)
+
+    # 2) normal / growth baseline -> PASS (growth must never fail).
+    with tempfile.TemporaryDirectory() as d:
+        _make_curated_dir(d, current)
+        base_path = os.path.join(d, "baseline.json")
+        with open(base_path, "w", encoding="utf-8") as fh:
+            json.dump({"total_papers": 90, "molecules_with_data": 18,
+                       "featured": 8, "listed": 25}, fh)
+        _rep, code = vc.validate(d, baseline_path=base_path)
+        check("growth baseline PASSES (zero)", code == 0)
+
+    # 3) no baseline (bootstrapping first run) -> PASS.
+    with tempfile.TemporaryDirectory() as d:
+        _make_curated_dir(d, current)
+        _rep, code = vc.validate(d)
+        check("no baseline PASSES (zero)", code == 0)
+
+    # 4) baseline path that doesn't exist -> skipped, PASS (bootstrapping).
+    with tempfile.TemporaryDirectory() as d:
+        _make_curated_dir(d, current)
+        _rep, code = vc.validate(d, baseline_path=os.path.join(d, "nope.json"))
+        check("missing baseline file PASSES (zero)", code == 0)
 
 
 def run():
@@ -317,6 +407,61 @@ def run():
           int(f_ra.wide.get("facet_count", "0")) == _base_count + 1
           and sum(1 for (g, *_r) in f_ra.long if g == "research_article") == 1)
 
+    # --- publication_flag facet (retraction / correction from PubMed pubtypes) ---
+    base_paper = {"pmid": "700", "title": "A study", "abstract": "text"}
+    retr_paper = dict(base_paper, pubtypes=["Journal Article", "Retracted Publication"])
+    corr_paper = dict(base_paper, pubtypes=["Published Erratum"])
+    ok_paper = dict(base_paper, pubtypes=["Journal Article"])
+    fev = human_rct()
+    check("publication_flag group emitted", "publication_flag" in FACET_GROUPS)
+    check("retracted bucket", derive_facets(fev, retr_paper).wide.get("facet_publication_flag", "") == "retracted")
+    check("corrected bucket", derive_facets(fev, corr_paper).wide.get("facet_publication_flag", "") == "corrected")
+    check("no flag -> blank", derive_facets(fev, ok_paper).wide.get("facet_publication_flag", "") == "")
+    check("blank pubtypes -> blank", derive_facets(fev, base_paper).wide.get("facet_publication_flag", "") == "")
+    # "Retraction of Publication" (the pointer type) also flags retracted.
+    check("retraction-of bucket",
+          derive_facets(fev, dict(base_paper, pubtypes="Retraction of Publication")).wide.get("facet_publication_flag", "") == "retracted")
+    # "Corrected and Republished Article" flags corrected.
+    check("corrected-and-republished bucket",
+          derive_facets(fev, dict(base_paper, pubtypes=["Corrected and Republished Article"])).wide.get("facet_publication_flag", "") == "corrected")
+    # Retraction wins over a co-present correction type.
+    check("retracted precedence over corrected",
+          derive_facets(fev, dict(base_paper, pubtypes=["Published Erratum", "Retracted Publication"])).wide.get("facet_publication_flag", "") == "retracted")
+    # A pre-derived is_retracted flag on the evidence row also lights it up.
+    check("is_retracted flag fallback",
+          derive_facets(dict(fev, is_retracted=True), base_paper).wide.get("facet_publication_flag", "") == "retracted")
+    # No flag -> no long row for the group + no facet_count bump.
+    _pf_base = int(derive_facets(fev, ok_paper).wide.get("facet_count", "0"))
+    _pf_retr = derive_facets(fev, retr_paper)
+    check("retracted adds exactly one long row",
+          sum(1 for (g, *_r) in _pf_retr.long if g == "publication_flag") == 1
+          and int(_pf_retr.wide.get("facet_count", "0")) == _pf_base + 1)
+
+    # --- build_curated_database publication flags (paper -> row) ---
+    check("pubtypes list retracted", bcd._publication_flags({"pubtypes": ["Retracted Publication"]}, {}) == (True, False))
+    check("pubtypes string corrected", bcd._publication_flags({"pubtypes": "Published Erratum"}, {}) == (False, True))
+    check("pubtypes ordinary -> neither", bcd._publication_flags({"pubtypes": ["Journal Article"]}, {}) == (False, False))
+    check("pubtypes absent -> neither", bcd._publication_flags({}, {}) == (False, False))
+
+    # --- corpus_stats data-health coverage keys ---
+    cs_rows = [
+        {"abstract": "a", "doi": "10.1/x", "icite_rcr": "1.2", "citation_count": "5",
+         "pub_year": "2020", "molecule_id": "m", "publication_status": "featured"},
+        {"abstract": "", "doi": "", "icite_apt": "", "citation_count": "0",
+         "pub_year": "2021", "molecule_id": "m", "publication_status": "listed"},
+    ]
+    cs = bcd._corpus_stats(cs_rows, [1, 2, 3], [1, 2])
+    for key in ("pct_with_abstract", "pct_with_doi", "pct_with_icite", "pct_citations_filled"):
+        check("corpus_stats has " + key, key in cs)
+    check("pct_with_abstract 50%", cs["pct_with_abstract"] == 50.0)
+    check("pct_with_doi 50%", cs["pct_with_doi"] == 50.0)
+    check("pct_with_icite counts rcr OR apt (50%)", cs["pct_with_icite"] == 50.0)
+    check("pct_citations_filled reused (50%)", cs["pct_citations_filled"] == 50.0)
+    # Empty corpus -> 0.0, no ZeroDivision.
+    cs0 = bcd._corpus_stats([], [], [])
+    check("empty corpus coverage is 0.0 (no crash)",
+          cs0["pct_with_abstract"] == 0.0 and cs0["pct_with_doi"] == 0.0 and cs0["pct_with_icite"] == 0.0)
+
     # --- Semantic Scholar extractors ---
     s2 = {
         "citationCount": 42,
@@ -333,6 +478,9 @@ def run():
     check("s2 authors parsed", len(s2_auth) == 2 and s2_auth[0]["name"] == "Jane Doe")
     check("s2 author url filled from id", s2_auth[1]["url"].endswith("/author/456"))
     check("s2 empty on non-record", semanticscholar_citation_count(None) is None and semanticscholar_authors(None) == [])
+
+    # --- validate_curated corpus-collapse anomaly gates ---
+    run_anomaly_gate_tests()
 
     print(f"\n{PASS} passed, {FAIL} failed")
     return 0 if FAIL == 0 else 1

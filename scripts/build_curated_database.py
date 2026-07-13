@@ -141,6 +141,12 @@ def build(db_path: str, out_dir: str, limit: int = 0) -> dict:
         row["author_count"] = len(authors)
         row["authors_short"] = "; ".join(authors[:3]) + (" et al." if len(authors) > 3 else "")
 
+        # Retraction / correction flags from PubMed publication types. ``pubtypes``
+        # is a list (or "; "-joined string) parsed onto each paper by pubmed.py; a
+        # blank/absent list simply leaves both flags False, so ordinary papers are
+        # unaffected. Derived here so the facet layer + site can surface them.
+        row["is_retracted"], row["is_corrected"] = _publication_flags(paper, row)
+
         # 1) facets
         fr = derive_facets(row, paper, facet_defs)
         row.update(fr.wide)
@@ -303,6 +309,18 @@ def _corpus_stats(curated_rows: List[dict], papers: List[dict], evidence: List[d
     total_curated = len(curated_rows)
     pct_citations = round(100.0 * filled / total_curated, 1) if total_curated else 0.0
 
+    # Data-health coverage: share of curated records carrying each core signal.
+    # Cheap -- derived from fields already merged onto the rows in memory. A record
+    # counts as iCite-covered if it has a non-blank icite_rcr OR icite_apt.
+    def _pct(pred) -> float:
+        if not total_curated:
+            return 0.0
+        return round(100.0 * sum(1 for r in curated_rows if pred(r)) / total_curated, 1)
+
+    pct_with_abstract = _pct(lambda r: not _blank(r.get("abstract")))
+    pct_with_doi = _pct(lambda r: not _blank(r.get("doi")))
+    pct_with_icite = _pct(lambda r: not _blank(r.get("icite_rcr")) or not _blank(r.get("icite_apt")))
+
     molecules_with_data = len({str(r.get("molecule_id", "")) for r in curated_rows if r.get("molecule_id")})
     featured = sum(1 for r in curated_rows if r.get("publication_status") == "featured")
     listed = sum(1 for r in curated_rows if r.get("publication_status") == "listed")
@@ -315,6 +333,11 @@ def _corpus_stats(curated_rows: List[dict], papers: List[dict], evidence: List[d
         "year_min": min(years) if years else None,
         "year_max": max(years) if years else None,
         "pct_citations_filled": pct_citations,
+        # Data-health coverage percentages (share of curated records with each
+        # signal filled). pct_with_citation reuses pct_citations_filled above.
+        "pct_with_abstract": pct_with_abstract,
+        "pct_with_doi": pct_with_doi,
+        "pct_with_icite": pct_with_icite,
         "featured": featured,
         "listed": listed,
     }
@@ -340,6 +363,9 @@ SITE_JSON_FIELDS = [
     # offer them as filters. Absent on un-enriched papers -> empty string.
     "facet_evidence_impact", "facet_clinical_article",
     "facet_research_article", "facet_translational_compartment",
+    # Retraction / correction flags (from PubMed pubtypes) + the filterable
+    # publication_flag facet. Blank/False on ordinary papers.
+    "is_retracted", "is_corrected", "facet_publication_flag",
     "facet_all",
 ]
 
@@ -630,6 +656,39 @@ def _auto_desc(col: str) -> str:
     if col.startswith("facet_"):
         return f"Normalized facet: {col[len('facet_'):]} (semicolon-joined; filterable)."
     return col.replace("_", " ")
+
+
+# PubMed publication types that mark a paper as retracted vs. corrected. Matched
+# case-insensitively against the paper's ``pubtypes`` list.
+_RETRACTED_PUBTYPES = {"retracted publication", "retraction of publication"}
+_CORRECTED_PUBTYPES = {"published erratum", "corrected and republished article"}
+
+
+def _pubtype_set(*sources) -> set:
+    """Lowercased set of publication types from the first non-empty source.
+
+    Accepts a list/tuple or a ``;``/``,``-joined string (papers may carry either
+    shape). Absent/blank -> empty set.
+    """
+    for raw in sources:
+        if raw in (None, ""):
+            continue
+        if isinstance(raw, (list, tuple)):
+            items = [str(x) for x in raw]
+        else:
+            items = str(raw).replace(",", ";").split(";")
+        types = {t.strip().lower() for t in items if t.strip()}
+        if types:
+            return types
+    return set()
+
+
+def _publication_flags(paper: dict, row: dict) -> tuple:
+    """Return ``(is_retracted, is_corrected)`` from PubMed publication types."""
+    types = _pubtype_set(paper.get("pubtypes"), row.get("pubtypes"))
+    is_retracted = bool(_RETRACTED_PUBTYPES & types)
+    is_corrected = bool(_CORRECTED_PUBTYPES & types)
+    return is_retracted, is_corrected
 
 
 def _blank(v) -> bool:

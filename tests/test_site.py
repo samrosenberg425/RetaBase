@@ -859,6 +859,170 @@ def run():
               evmap_html.count("</script>") == 2)
         check("evmap build: no </script> breakout", "</script><" not in evmap_html)
 
+    # 17) Data-health coverage line: the new corpus_stats keys survive the site
+    #     normalizer, are wired into CORPUS_STATS_FIELDS, and the corpus strip
+    #     renders a compact "Data health" line referencing each metric.
+    for k in ("pct_with_abstract", "pct_with_doi", "pct_with_icite"):
+        check(k + " in CORPUS_STATS_FIELDS", k in site.CORPUS_STATS_FIELDS)
+    with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as out:
+        with open(os.path.join(src, "site_data.json"), "w", encoding="utf-8") as fh:
+            json.dump({
+                "records": [{"molecule_id": "r", "molecule_name": "R", "title": "T", "facet_all": "x"}],
+                "molecules": [{"molecule_id": "r", "molecule_name": "R", "auto_published": "1"}],
+                "corpus_stats": {"generated_utc": "2026-07-04T00:00:00Z", "total_papers": 36371,
+                                 "pct_with_abstract": 98, "pct_with_doi": 91,
+                                 "pct_citations_filled": 55, "pct_with_icite": 40},
+            }, fh)
+        sd = site.load_site_data(src)
+        check("pct_with_abstract survives normalizer", sd.corpus_stats.get("pct_with_abstract") == 98)
+        check("pct_with_icite survives normalizer", sd.corpus_stats.get("pct_with_icite") == 40)
+        site.build_site(src, out, mode="inline")
+        with open(os.path.join(out, "index.html"), encoding="utf-8") as fh:
+            dh_html = fh.read()
+        check("Data health line rendered", "Data health" in dh_html)
+        check("data-health references pct_with_abstract", "CORPUS.pct_with_abstract" in dh_html)
+        check("data-health references pct_with_doi", "CORPUS.pct_with_doi" in dh_html)
+        check("data-health references pct_with_icite", "CORPUS.pct_with_icite" in dh_html)
+        check("data-health uses abstracts/DOIs/iCite labels",
+              '"abstracts"' in dh_html and '"DOIs"' in dh_html and '"iCite"' in dh_html)
+        check("coverage values inlined", '"pct_with_abstract":98' in dh_html and '"pct_with_icite":40' in dh_html)
+        check("data-health build: exactly 2 </script> tags", dh_html.count("</script>") == 2)
+
+    # 18) Retraction badge: is_retracted / facet_publication_flag reach the browser,
+    #     the CSS + badge machinery are emitted, and only the retracted record
+    #     carries the flag (the non-retracted one does not).
+    check("is_retracted in RECORD_FIELDS", "is_retracted" in site.RECORD_FIELDS)
+    check("facet_publication_flag in RECORD_FIELDS", "facet_publication_flag" in site.RECORD_FIELDS)
+    check("facet_publication_flag is a filter facet",
+          "facet_publication_flag" in {f for f, _ in site.FILTER_FACETS})
+    with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as out:
+        with open(os.path.join(src, "site_data.json"), "w", encoding="utf-8") as fh:
+            json.dump({
+                "records": [
+                    {"molecule_id": "r", "molecule_name": "R", "title": "Retracted paper",
+                     "is_retracted": True, "facet_publication_flag": "retracted", "facet_all": "x"},
+                    {"molecule_id": "r", "molecule_name": "R", "title": "Clean paper",
+                     "facet_all": "x"},
+                ],
+                "molecules": [{"molecule_id": "r", "molecule_name": "R", "auto_published": "2"}],
+            }, fh)
+        sd = site.load_site_data(src)
+        flags = [rr.get("is_retracted") for rr in sd.records]
+        check("retracted record flagged True through normalizer", "True" in flags)
+        check("non-retracted record blank/not-True", flags.count("True") == 1)
+        site.build_site(src, out, mode="inline")
+        with open(os.path.join(out, "index.html"), encoding="utf-8") as fh:
+            rt_html = fh.read()
+        check("retracted CSS pill class present", ".pill.retracted" in rt_html)
+        check("isRetracted helper present", "function isRetracted" in rt_html)
+        check("RETRACTED badge text present", "\\u26a0 RETRACTED" in rt_html)
+        check("retracted flag inlined for exactly one record",
+              rt_html.count('"is_retracted":"True"') == 1)
+        check("publication_flag filter label rendered", "Publication flag" in rt_html)
+        check("retraction build: exactly 2 </script> tags", rt_html.count("</script>") == 2)
+        check("retraction build: no </script> breakout", "</script><" not in rt_html)
+
+    # 19) Single-molecule Safety & evidence status panel: a caution panel computed
+    #     from the visible records for one molecule (NOT a safety/efficacy verdict).
+    #     facet_route must reach the browser; the built page must expose the render
+    #     function, the persistent caution strings, the "Human efficacy data" line,
+    #     and a studied route. The yes/none branch is driven by whether any visible
+    #     record is human evidence; we verify both cases via what is inlined for the
+    #     browser to compute (a molecule WITH vs WITHOUT human evidence). Injection-
+    #     safe invariant preserved.
+    check("facet_route in RECORD_FIELDS", "facet_route" in site.RECORD_FIELDS)
+    # 19a) A single molecule WITH human evidence and a studied route.
+    with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as out:
+        feed = {
+            "generated_utc": "2026-07-04T00:00:00Z",
+            "records": [
+                {"molecule_id": "retatrutide", "molecule_name": "Retatrutide", "title": "RCT",
+                 "evidence_class": "human_clinical_controlled", "website_section": "Human evidence",
+                 "facet_route": "subcutaneous", "facet_all": "x"},
+                {"molecule_id": "retatrutide", "molecule_name": "Retatrutide", "title": "mouse",
+                 "evidence_class": "preclinical_invivo", "website_section": "Preclinical evidence",
+                 "facet_route": "oral", "facet_all": "x"},
+            ],
+            "molecules": [{"molecule_id": "retatrutide", "molecule_name": "Retatrutide",
+                           "auto_published": "2"}],
+        }
+        with open(os.path.join(src, "site_data.json"), "w", encoding="utf-8") as fh:
+            json.dump(feed, fh)
+        # data-level: facet_route survives the site normalizer into the browser payload.
+        sd = site.load_site_data(src)
+        routes = {r.get("facet_route") for r in sd.records}
+        check("facet_route value survives normalizer",
+              "subcutaneous" in routes and "oral" in routes)
+        site.build_site(src, out, mode="inline")
+        with open(os.path.join(out, "index.html"), encoding="utf-8") as fh:
+            safe_html = fh.read()
+        # UI-level: render function, host div, single-molecule detection reuse.
+        check("safety-panel host div rendered", 'id="safety-panel"' in safe_html)
+        check("renderSafetyPanel function defined",
+              "function renderSafetyPanel" in safe_html)
+        check("safety panel reuses singleMoleculeId detection",
+              "function singleMoleculeId" in safe_html)
+        check("safety CSS class rule present", ".safety {" in safe_html)
+        # Human-efficacy line + both yes/none branch literals present.
+        check("Human efficacy data line present", "Human efficacy data" in safe_html)
+        check("safety yes-branch literal present", '"yes ("' in safe_html)
+        check("safety none-branch literal present", '"none found"' in safe_html)
+        check("Controlled human trials line present", "Controlled human trials" in safe_html)
+        check("Routes studied line present", "Routes studied" in safe_html)
+        check("route not-reported fallback present", '"not clearly reported"' in safe_html)
+        # Persistent static caution strings (the two the task names explicitly).
+        check("caution: absence of harms is not safety",
+              "Absence of reported harms is not evidence of safety." in safe_html)
+        check("caution: not medical advice",
+              "not medical advice" in safe_html)
+        check("caution: experimental/investigational framing",
+              "experimental, investigational, or not approved" in safe_html)
+        check("caution: purity/dose/formulation differ",
+              "purity, dose, and formulation" in safe_html)
+        # WITH-human case: a human evidence_class + section are inlined so the
+        # browser computes "yes"; a studied route reaches the browser too.
+        check("human evidence_class inlined (drives yes)",
+              '"evidence_class":"human_clinical_controlled"' in safe_html)
+        check("human website_section inlined (drives yes)",
+              '"website_section":"Human evidence"' in safe_html)
+        check("studied route inlined for the panel",
+              '"facet_route":"subcutaneous"' in safe_html)
+        # Injection-safe invariant unaffected by the safety panel markup.
+        check("safety build: exactly 2 </script> tags",
+              safe_html.count("</script>") == 2)
+        check("safety build: no </script> breakout", "</script><" not in safe_html)
+    # 19b) A single molecule WITHOUT any human evidence: nothing human is inlined,
+    #      so the browser computes "none found" for Human efficacy data; a route is
+    #      still reported.
+    with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as out:
+        feed = {
+            "generated_utc": "2026-07-04T00:00:00Z",
+            "records": [
+                {"molecule_id": "kisspeptin", "molecule_name": "Kisspeptin", "title": "mouse",
+                 "evidence_class": "preclinical_invivo", "website_section": "Preclinical evidence",
+                 "facet_route": "intranasal", "facet_all": "x"},
+            ],
+            "molecules": [{"molecule_id": "kisspeptin", "molecule_name": "Kisspeptin",
+                           "auto_published": "1"}],
+        }
+        with open(os.path.join(src, "site_data.json"), "w", encoding="utf-8") as fh:
+            json.dump(feed, fh)
+        site.build_site(src, out, mode="inline")
+        with open(os.path.join(out, "index.html"), encoding="utf-8") as fh:
+            nohuman_html = fh.read()
+        # No human evidence_class / section is inlined -> the panel would render
+        # "none found"; the render function + none-branch literal are still present.
+        check("no-human page: renderSafetyPanel present",
+              "function renderSafetyPanel" in nohuman_html)
+        check("no-human page: no human evidence_class inlined",
+              '"evidence_class":"human_clinical_controlled"' not in nohuman_html)
+        check("no-human page: no Human evidence section inlined",
+              '"website_section":"Human evidence"' not in nohuman_html)
+        check("no-human page: route still inlined for panel",
+              '"facet_route":"intranasal"' in nohuman_html)
+        check("no-human build: exactly 2 </script> tags",
+              nohuman_html.count("</script>") == 2)
+
     print(f"\n{PASS} passed, {FAIL} failed")
     return 0 if FAIL == 0 else 1
 

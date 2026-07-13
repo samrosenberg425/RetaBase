@@ -62,6 +62,9 @@ RECORD_FIELDS = [
     # flag. Carried through so they can be offered as sidebar filters. "" when absent.
     "facet_evidence_impact", "facet_clinical_article",
     "facet_research_article", "facet_translational_compartment",
+    # Retraction / correction flags (from PubMed pubtypes) drive a caution badge;
+    # facet_publication_flag makes them filterable. Blank/False on ordinary papers.
+    "is_retracted", "is_corrected", "facet_publication_flag",
     "facet_all",
     # NIH iCite metrics (merged per-record upstream by build_curated_database.py).
     # Carried through so the UI can sort by impact percentile / translational
@@ -96,6 +99,7 @@ FILTER_FACETS = [
     ("facet_clinical_article", "Clinical article"),
     ("facet_research_article", "Research article"),
     ("facet_translational_compartment", "Translational compartment"),
+    ("facet_publication_flag", "Publication flag"),
     ("reliability_tier", "Reliability tier"),
     ("directness_tier", "Directness tier"),
     ("website_section", "Website section"),
@@ -164,6 +168,9 @@ PREPRINT_FIELDS = [
 CORPUS_STATS_FIELDS = [
     "generated_utc", "total_papers", "total_evidence", "molecules_with_data",
     "year_min", "year_max", "pct_citations_filled", "featured", "listed",
+    # Data-health coverage percentages (share of curated records with each signal
+    # filled). Surfaced as a compact "Data health" line in the corpus strip.
+    "pct_with_abstract", "pct_with_doi", "pct_with_icite",
     # Per-molecule feed-cap disclosure ({focus_cap, other_cap, total_public_records,
     # published_records, capped_molecule_count, capped_molecules}); nested dict is
     # preserved verbatim and JSON-serialized for the "top N of M" UI note.
@@ -678,6 +685,7 @@ _TEMPLATE = """<!DOCTYPE html>
   .card h3 {{ margin: 0 0 6px; font-size: 15px; line-height: 1.35; }}
   .meta {{ display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; color: var(--muted); margin-bottom: 8px; align-items: center; }}
   .pill {{ background: var(--panel2); border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; }}
+  .pill.retracted {{ background: #7f1d1d; border-color: #ef4444; color: #fff; font-weight: 700; letter-spacing: .02em; }}
   /* reliability meter */
   .meter-wrap {{ display: flex; align-items: center; gap: 8px; }}
   .meter {{ width: 84px; height: 8px; background: var(--panel2); border-radius: 999px; overflow: hidden; border: 1px solid var(--border); }}
@@ -764,6 +772,21 @@ _TEMPLATE = """<!DOCTYPE html>
   .evmap-table th {{ color: var(--muted); font-weight: 600; }}
   .evmap-table .use {{ text-align: left; color: var(--text); overflow-wrap: anywhere; }}
   .evmap-table td.zero {{ color: var(--muted); }}
+  /* single-molecule "Safety & evidence status": caution panel (NOT a safety
+     verdict). Amber border sets it apart from the neutral evidence-map. */
+  .safety {{
+    margin: 8px 0; padding: 10px 12px; background: var(--panel2);
+    border: 1px solid #f59e0b; border-left: 4px solid #f59e0b; border-radius: 8px;
+  }}
+  .safety h4 {{ margin: 0 0 6px; font-size: 13px; color: var(--text); }}
+  .safety .srow {{ font-size: 12px; color: var(--text); margin: 2px 0; }}
+  .safety .slabel {{ color: var(--muted); }}
+  .safety .sretract {{ font-size: 12px; color: #ef4444; font-weight: 600; margin: 4px 0 2px; }}
+  .safety .scaution {{
+    margin: 8px 0 0; padding: 6px 0 0; border-top: 1px solid var(--border);
+    font-size: 11px; color: var(--muted); font-style: italic;
+  }}
+  .safety .scaution li {{ margin: 2px 0; }}
   /* corpus-stats summary strip near the header */
   .corpus-strip {{
     display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
@@ -951,6 +974,7 @@ _TEMPLATE = """<!DOCTYPE html>
         <button id="triangle-toggle" class="reset" style="width:auto;padding:4px 10px" onclick="toggleTriangle()">Triangle view</button>
       </div>
       <div class="tab-desc" id="cap-note" style="display:none"></div>
+      <div class="safety" id="safety-panel" style="display:none"></div>
       <div class="evmap" id="evidence-map" style="display:none"></div>
       <div id="triangle-wrap" style="display:none;margin:8px 0;text-align:center">
         <svg id="triangle-svg" viewBox="0 0 300 260" width="300" height="260" role="img" aria-label="Translational triangle"></svg>
@@ -1228,6 +1252,15 @@ _TEMPLATE = """<!DOCTYPE html>
     return e;
   }}
 
+  // Retraction flag, tolerant of the value's serialized shape (Python bool ->
+  // "True"/"False" string, JSON bool, or "1"/"yes"). Blank/False -> not retracted.
+  function isRetracted(r) {{
+    var v = r && r.is_retracted;
+    if (v === true) return true;
+    var s = String(v == null ? "" : v).trim().toLowerCase();
+    return s === "true" || s === "1" || s === "yes";
+  }}
+
   function reliabilityMeter(rec) {{
     var wrap = el("span", "meter-wrap");
     var score = Math.max(0, Math.min(100, num(rec.reliability_score)));
@@ -1318,6 +1351,8 @@ _TEMPLATE = """<!DOCTYPE html>
     card.appendChild(el("h3", null, r.title || "(untitled)"));
 
     var meta = el("div", "meta");
+    // Prominent caution badge first so a retracted paper is unmistakable.
+    if (isRetracted(r)) meta.appendChild(el("span", "pill retracted", "\\u26a0 RETRACTED"));
     if (r.molecule_name) meta.appendChild(el("span", "pill", r.molecule_name));
     if (r.pub_year) meta.appendChild(el("span", "pill", r.pub_year));
     if (r.evidence_class_label) meta.appendChild(el("span", "pill", r.evidence_class_label));
@@ -1471,6 +1506,8 @@ _TEMPLATE = """<!DOCTYPE html>
 
     // meters
     var mrow = el("div", "meta");
+    // Prominent caution badge first so a retracted paper is unmistakable.
+    if (isRetracted(r)) mrow.appendChild(el("span", "pill retracted", "\\u26a0 RETRACTED"));
     mrow.appendChild(reliabilityMeter(r));
     mrow.appendChild(directnessBadge(r));
     if (r.rank_score) mrow.appendChild(el("span", "badge tier-" + tierClass(r.rank_tier),
@@ -1927,6 +1964,76 @@ _TEMPLATE = """<!DOCTYPE html>
     if (otherRow) addRow("other", otherRow);
     host.appendChild(table);
   }}
+  // Safety & evidence status panel: when the browser is filtered to exactly ONE
+  // molecule, summarize what the VISIBLE records for that molecule do and do not
+  // contain, plus a persistent static caution block. This is a literature map,
+  // NOT an assertion that any molecule is safe or effective. Detection reuses
+  // singleMoleculeId(); built entirely via createElement + textContent.
+  // Human-efficacy is scoped per the task spec (tighter than isHuman(): the
+  // "Human evidence" section OR the three human evidence_class values, NOT
+  // reviews/synthesis) so the yes/none/count reflect primary human data only.
+  var SAFETY_HUMAN_CLASSES = new Set([
+    "human_clinical_controlled", "human_clinical", "human_observational"
+  ]);
+  function safetyIsHuman(r) {{
+    return (r.website_section || "") === "Human evidence" ||
+           SAFETY_HUMAN_CLASSES.has(r.evidence_class || "");
+  }}
+  function renderSafetyPanel() {{
+    var host = document.getElementById("safety-panel");
+    if (!host) return;
+    host.textContent = "";  // rebuild from scratch each call (injection-safe)
+    var molId = singleMoleculeId();
+    if (!molId || !lastVisible.length) {{ host.style.display = "none"; return; }}
+    // Tally over the visible records for this single molecule.
+    var humanCount = 0, controlledCount = 0, anyRetracted = false;
+    var routeSet = {{}}, routeList = [];
+    for (var i = 0; i < lastVisible.length; i++) {{
+      var r = lastVisible[i];
+      if (safetyIsHuman(r)) humanCount += 1;
+      if ((r.evidence_class || "") === "human_clinical_controlled") controlledCount += 1;
+      if (isRetracted(r)) anyRetracted = true;
+      var routes = splitVals(r, "facet_route");
+      for (var j = 0; j < routes.length; j++) {{
+        var rt = routes[j];
+        if (!rt) continue;  // skip blanks
+        if (!routeSet[rt]) {{ routeSet[rt] = true; routeList.push(rt); }}
+      }}
+    }}
+    routeList.sort();
+    host.style.display = "";
+    host.appendChild(el("h4", null, "Safety & evidence status"));
+    // Helper: one "Label: value" row (label muted, value plain), textContent only.
+    function srow(label, value) {{
+      var p = el("div", "srow");
+      p.appendChild(el("span", "slabel", label + ": "));
+      p.appendChild(document.createTextNode(value));
+      host.appendChild(p);
+    }}
+    srow("Human efficacy data",
+      humanCount > 0 ? ("yes (" + humanCount + " record" + (humanCount === 1 ? "" : "s") + ")")
+                     : "none found");
+    srow("Controlled human trials", String(controlledCount));
+    srow("Routes studied", routeList.length ? routeList.join(", ") : "not clearly reported");
+    if (anyRetracted) {{
+      host.appendChild(el("div", "sretract",
+        "Includes retracted literature \\u2014 see flagged records."));
+    }}
+    // Persistent static caution block: always shown, textContent only. These are
+    // framing statements, NOT claims about this specific molecule.
+    var ul = document.createElement("ul");
+    ul.className = "scaution";
+    var cautions = [
+      "Many of these compounds are experimental, investigational, or not approved for the uses discussed.",
+      "Absence of reported harms is not evidence of safety.",
+      "Research compounds can differ from commercially sold preparations in purity, dose, and formulation.",
+      "This is a literature map, not medical advice \\u2014 consult a qualified clinician."
+    ];
+    for (var c = 0; c < cautions.length; c++) {{
+      ul.appendChild(el("li", null, cautions[c]));
+    }}
+    host.appendChild(ul);
+  }}
   function renderVisible() {{
     var total = lastVisible.length;
     var shown = Math.min(visibleCount, total);
@@ -1960,6 +2067,10 @@ _TEMPLATE = """<!DOCTYPE html>
       capNote.textContent = "";
       capNote.style.display = "none";
     }}
+
+    // Single-molecule safety & evidence status panel: shown only when the view is
+    // exactly one molecule; hidden otherwise. Never asserts safety/efficacy.
+    renderSafetyPanel();
 
     // Single-molecule evidence map: counts by use case x evidence class (a map,
     // not an efficacy verdict). Shown only when the view is one molecule.
@@ -2388,6 +2499,17 @@ _TEMPLATE = """<!DOCTYPE html>
     if (ymin && ymax) parts.push([null, (ymin === ymax ? String(ymin) : ymin + "\\u2013" + ymax)]);
     if (CORPUS.pct_citations_filled != null && CORPUS.pct_citations_filled !== "")
       parts.push([null, CORPUS.pct_citations_filled + "% with cited-by counts"]);
+    // Compact "Data health" coverage line: share of records carrying each core
+    // signal. Each metric is optional (shown only when present in corpus_stats).
+    var health = [];
+    function healthPart(label, v) {{
+      if (v != null && v !== "") health.push(label + " " + v + "%");
+    }}
+    healthPart("abstracts", CORPUS.pct_with_abstract);
+    healthPart("DOIs", CORPUS.pct_with_doi);
+    healthPart("citations", CORPUS.pct_citations_filled);
+    healthPart("iCite", CORPUS.pct_with_icite);
+    if (health.length) parts.push(["Data health", health.join(" \\u00b7 ")]);
     var upd = String(CORPUS.generated_utc || "").slice(0, 10);
     if (upd) parts.push([null, "updated " + upd]);
     parts.forEach(function(pr, i) {{
