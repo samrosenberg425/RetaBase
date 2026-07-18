@@ -275,8 +275,29 @@ def pubtator_chemicals(pmid: str, cache_dir: Optional[str] = None) -> List[dict]
 
 
 # --------------------- ClinicalTrials.gov (local, no network) ----------------
+def _index_trial_rows(rows, index: Dict[str, dict]) -> Dict[str, dict]:
+    for t in rows:
+        if not isinstance(t, dict):
+            continue
+        facts = {
+            "nct_id": t.get("nct_id", ""),
+            "enrollment_count": t.get("enrollment_count", ""),
+            "interventions": t.get("interventions", ""),
+            "phases": t.get("phases", ""),
+            "study_type": t.get("study_type", ""),
+        }
+        for key in ("result_pmids", "reference_pmids"):
+            for pmid in re.findall(r"\d+", str(t.get(key, "") or "")):
+                index.setdefault(pmid, facts)
+    return index
+
+
 def load_trial_index(trials_db: str) -> Dict[str, dict]:
-    """Map PMID -> structured trial facts from the LOCAL trials mirror.
+    """Map PMID -> structured trial facts from the local trials mirror.
+
+    Accepts EITHER the trials SQLite mirror or a ``trials_data.json`` feed (the
+    published site already serves that file, so you don't need the Actions cache to
+    get authoritative CT.gov enrollment locally).
 
     Uses the ``result_pmids`` / ``reference_pmids`` links already captured from
     CT.gov, so a paper reporting a registered trial inherits authoritative
@@ -285,6 +306,14 @@ def load_trial_index(trials_db: str) -> Dict[str, dict]:
     index: Dict[str, dict] = {}
     if not trials_db or not os.path.exists(trials_db):
         return index
+    if trials_db.lower().endswith(".json"):
+        try:
+            with open(trials_db, encoding="utf-8") as fh:
+                payload = json.load(fh)
+        except (OSError, json.JSONDecodeError):
+            return index
+        rows = payload.get("trials", payload) if isinstance(payload, dict) else payload
+        return _index_trial_rows(rows or [], index)
     conn = sqlite3.connect(trials_db)
     try:
         cur = conn.execute("select payload_json from trials")
