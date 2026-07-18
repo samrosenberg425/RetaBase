@@ -64,8 +64,9 @@ _MISSING = {
 _DOSE_UNIT = (r"(?:micrograms?|milligrams?|nanograms?|kilograms?|grams?|"
               r"mg|µg|μg|ug|mcg|ng|g|IU|U|nmol|pmol|µmol|umol|mmol|mol|mL|ml|L)")
 _DOSE_RE = re.compile(
-    r"(?<![A-Za-z0-9.·])"
-    r"\d+(?:[.·]\d+)?"
+    # The comma is in the lookbehind so "1,000 mg" can't start matching at "000".
+    r"(?<![A-Za-z0-9.·,])"
+    r"(?:\d{1,3}(?:,\d{3})+|\d+(?:[.·]\d+)?)"
     r"\s*[-‐‑–]?\s*"
     rf"{_DOSE_UNIT}"
     r"(?:\s*/\s*(?:kg|g|day|d|dose|wk|week))*"
@@ -636,9 +637,10 @@ def disambiguate_model(evidence: dict, paper: dict) -> Tuple[str, str, str, str]
 # dose "not localized". Single-drug papers are unaffected (whole-text, as before).
 # The chosen scope is reported in ``refined_extraction_scope`` for provenance.
 _COMPARATOR_CUE = re.compile(
-    r"\b(?:versus|vs\.?|compared\s+(?:with|to|against)|head[\s-]?to[\s-]?head|"
+    r"\b(?:versus|vs\.?|compared?|comparison|head[\s-]?to[\s-]?head|"
     r"relative\s+to|non-?inferior(?:ity)?|superiority\s+(?:to|over)|"
-    r"in\s+combination\s+with|combined\s+with|co-?administ|as\s+an?\s+add-?on)\b",
+    r"in\s+combination\s+with|combined\s+with|co-?administ|as\s+an?\s+add-?on|"
+    r"added\s+to|both\s+agents|two\s+agents)\b",
     re.IGNORECASE,
 )
 
@@ -661,6 +663,60 @@ def _molecule_terms(evidence: dict, paper: dict) -> List[str]:
 def _mentions(sentence: str, terms: List[str]) -> bool:
     s = sentence.lower()
     return any(t in s for t in terms)
+
+
+# Tokens between a molecule name and a dose that mean the dose belongs to a
+# DIFFERENT agent: a conjunction/comparison, or a comma introducing a new list item
+# ("metformin (200 mg/kg), RCL (0.75 g/kg)"). A bare comma before the number is fine
+# ("metformin, 500 mg daily").
+_ATTR_BREAK = re.compile(
+    r"\b(?:or|versus|vs\.?|and|plus|compared\s+(?:with|to)|added\s+to|against)\b"
+    r"|,\s*[A-Za-z]", re.IGNORECASE)
+
+
+def _doses_near_molecule(text: str, terms: List[str], window: int = 45) -> List[str]:
+    """Doses attached to a mention of THIS molecule by proximity.
+
+    In multi-drug abstracts the owner of a dose is identified by ADJACENCY, not by
+    sentence membership: "fluvoxamine (100 mg twice daily), metformin (750 mg twice
+    daily), or matching placebo". Sentence-level gating has to give up here (three
+    doses, one sentence), but the dose that follows within a few characters of
+    "metformin" is unambiguously metformin's. This recovers a correct dose from
+    comparator papers instead of discarding them.
+    """
+    low = text.lower()
+    ends: List[int] = []
+    for t in terms:
+        start = 0
+        while True:
+            i = low.find(t, start)
+            if i == -1:
+                break
+            ends.append(i + len(t))
+            start = i + len(t)
+    ends.sort()
+    out: List[str] = []
+    for m in _DOSE_RE.finditer(text):
+        if _PLACEBO_CUE.search(text[max(0, m.start() - 40):m.start()]):
+            continue
+        # Nearest PRECEDING mention of our molecule.
+        prior = [e for e in ends if e <= m.start()]
+        if not prior:
+            continue
+        e = prior[-1]
+        if m.start() - e > window:
+            continue
+        # Reject if anything between the name and the dose hands ownership to another
+        # agent -- a conjunction/comparison ("metformin 500 mg or pioglitazone 7.5 mg")
+        # or a list separator introducing a new item ("metformin (200 mg/kg), RCL (...").
+        if _ATTR_BREAK.search(text[e:m.start()]):
+            continue
+        value = re.sub(r"\s+", " ", m.group(0)).strip()
+        freq = _DOSE_FREQ.match(text[m.end():m.end() + 30])
+        if freq:
+            value += " " + re.sub(r"\s+", " ", freq.group(1)).strip()
+        out.append(value)
+    return _dedupe(out)
 
 
 _SYNTH_TEXT_RE = re.compile(
@@ -691,15 +747,22 @@ def refine_extraction(evidence: dict, paper: dict) -> dict:
     if comparator:
         local = [s for s in _sentences(text) if _mentions(s, terms)]
         local_text = " ".join(local)
-        # If a single molecule-local clause still carries two+ distinct doses, the
-        # comparator's dose is entangled with ours -> don't guess.
-        ambiguous = any(len(set(_dose_list(s))) >= 2 for s in local)
-        if ambiguous:
-            refined_dose = ""
-            extraction_scope = "ambiguous_multidrug"
-        else:
-            refined_dose = parse_dose(local_text)
+        # Preferred: a dose sitting immediately after this molecule's name is
+        # unambiguously ITS dose, even in a sentence listing several drugs.
+        near = _doses_near_molecule(text, terms)
+        if near:
+            refined_dose = "; ".join(near[:6])
             extraction_scope = "molecule_local"
+        else:
+            # No adjacency evidence. If a molecule-local clause still carries two+
+            # distinct doses, the comparator's dose is entangled with ours -> don't guess.
+            ambiguous = any(len(set(_dose_list(s))) >= 2 for s in local)
+            if ambiguous:
+                refined_dose = ""
+                extraction_scope = "ambiguous_multidrug"
+            else:
+                refined_dose = parse_dose(local_text)
+                extraction_scope = "molecule_local"
         refined_route = parse_route(local_text)
         refined_duration = parse_duration(local_text)
     else:

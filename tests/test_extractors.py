@@ -274,13 +274,25 @@ def run():
     check("comparator drops the other drug's dose", "1 mg" not in r_cmp["refined_dose"])
     check("comparator scope is molecule_local", r_cmp["refined_extraction_scope"] == "molecule_local")
 
-    # Comparator paper, both doses in ONE clause naming both drugs: omit, don't guess.
+    # Comparator paper, both doses in ONE clause: proximity resolves ownership --
+    # the dose adjacent to OUR molecule is ours, the one after "versus" is not.
     r_amb = refine_extraction(
         {"molecule_name": "Tirzepatide"},
         {"title": "Head-to-head trial",
          "abstract": "Tirzepatide 5 mg versus semaglutide 1 mg were compared over 40 weeks."})
-    check("ambiguous multi-drug dose omitted", r_amb["refined_dose"] == "")
-    check("ambiguous scope flagged", r_amb["refined_extraction_scope"] == "ambiguous_multidrug")
+    check("adjacent dose attributed to our molecule", r_amb["refined_dose"] == "5 mg")
+    check("comparator's dose excluded", "1 mg" not in r_amb["refined_dose"])
+    check("comparator scope flagged", r_amb["refined_extraction_scope"] == "molecule_local")
+
+    # No adjacency evidence at all -> still refuse rather than guess.
+    r_far = refine_extraction(
+        {"molecule_name": "Tirzepatide"},
+        {"title": "x",
+         "abstract": "Doses of 5 mg and 1 mg were compared between the two agents "
+                     "tirzepatide and semaglutide."})
+    check("non-adjacent multi-drug doses omitted", r_far["refined_dose"] == "")
+    check("non-adjacent scope flagged ambiguous",
+          r_far["refined_extraction_scope"] == "ambiguous_multidrug")
 
     # BMI middle-dot false positive stays gone under the new path.
     r_bmi = refine_extraction(
