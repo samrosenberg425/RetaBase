@@ -119,6 +119,92 @@ def _sections_from_jats(xml_text: str) -> Dict[str, str]:
     return {k: re.sub(r"\s+", " ", " ".join(v)).strip() for k, v in out.items()}
 
 
+# ------------------- PMC ID Converter (bulk PMID -> PMCID) -------------------
+IDCONV_URL = ("https://pmc.ncbi.nlm.nih.gov/tools/idconv/api/v1/articles/"
+              "?ids={ids}&format=json")
+
+
+def pmc_ids_bulk(pmids: List[str], cache_dir: Optional[str] = None) -> Dict[str, str]:
+    """Map PMID -> PMCID for up to 200 PMIDs per request.
+
+    Far cheaper than resolving one at a time via a per-paper search: 100 papers
+    becomes ONE request instead of 100.
+    """
+    out: Dict[str, str] = {}
+    todo: List[str] = []
+    for p in pmids:
+        cached = _cache_get(cache_dir, "idconv", str(p))
+        if cached is not None:
+            if cached:
+                out[str(p)] = cached
+        else:
+            todo.append(str(p))
+    for i in range(0, len(todo), 200):
+        chunk = todo[i:i + 200]
+        r = _get(IDCONV_URL.format(ids=",".join(chunk)))
+        found = {}
+        if r is not None:
+            try:
+                for rec in (r.json().get("records") or []):
+                    pmid, pmcid = str(rec.get("pmid", "")), str(rec.get("pmcid", "") or "")
+                    if pmid and pmcid:
+                        found[pmid] = pmcid
+            except ValueError:
+                pass
+        for p in chunk:  # cache misses too, so we don't retry them every run
+            _cache_put(cache_dir, "idconv", p, found.get(p, ""))
+            if found.get(p):
+                out[p] = found[p]
+    return out
+
+
+# ---------------------- PMC BioC (structured full text) ----------------------
+BIOC_URL = ("https://www.ncbi.nlm.nih.gov/research/bionlp/RESTful/pmcoa.cgi/"
+            "BioC_json/{pmcid}/unicode")
+
+
+def bioc_fulltext(pmcid: str, cache_dir: Optional[str] = None) -> Dict[str, str]:
+    """Methods/Results text for an OA article via PMC's BioC API.
+
+    BioC returns passages already LABELLED with their section type, so we can pick
+    the Methods without guessing from section titles the way JATS parsing requires.
+    """
+    cached = _cache_get(cache_dir, "bioc", pmcid)
+    if cached is not None:
+        return cached
+    out = {"methods": "", "results": ""}
+    r = _get(BIOC_URL.format(pmcid=pmcid))
+    if r is not None:
+        try:
+            payload = r.json()
+        except ValueError:
+            payload = None
+        docs = []
+        if isinstance(payload, list):
+            for entry in payload:
+                docs.extend((entry or {}).get("documents", []) or [])
+        elif isinstance(payload, dict):
+            docs = payload.get("documents", []) or []
+        buckets = {"methods": [], "results": []}
+        for doc in docs:
+            for passage in (doc or {}).get("passages", []) or []:
+                infons = passage.get("infons") or {}
+                sec = str(infons.get("section_type") or infons.get("section") or "").lower()
+                typ = str(infons.get("type") or "").lower()
+                if typ in {"title", "ref", "front"}:
+                    continue
+                text = str(passage.get("text", "") or "").strip()
+                if not text:
+                    continue
+                if "method" in sec:
+                    buckets["methods"].append(text)
+                elif "result" in sec:
+                    buckets["results"].append(text)
+        out = {k: re.sub(r"\s+", " ", " ".join(v)).strip() for k, v in buckets.items()}
+    _cache_put(cache_dir, "bioc", pmcid, out)
+    return out
+
+
 def europepmc_fulltext(pmid: str, cache_dir: Optional[str] = None) -> Dict[str, str]:
     """{"methods": str, "results": str, "pmcid": str} -- empty strings when not OA."""
     cached = _cache_get(cache_dir, "epmc", pmid)
@@ -226,14 +312,27 @@ def load_trial_index(trials_db: str) -> Dict[str, dict]:
 
 def build_context(pmid: str, molecule: str, abstract: str, *, trials_index=None,
                   use_fulltext: bool = False, use_pubtator: bool = False,
-                  cache_dir: Optional[str] = None) -> dict:
-    """Assemble everything available for one paper. Missing pieces are just empty."""
+                  cache_dir: Optional[str] = None, pmcid_map: Optional[Dict[str, str]] = None) -> dict:
+    """Assemble everything available for one paper. Missing pieces are just empty.
+
+    ``pmcid_map`` comes from :func:`pmc_ids_bulk` (one request for up to 200 PMIDs);
+    when supplied we go straight to PMC BioC, whose passages are already labelled by
+    section. Europe PMC remains the fallback when the paper isn't in that map.
+    """
     ctx = {"pmid": pmid, "molecule": molecule, "abstract": abstract,
            "methods": "", "results": "", "pmcid": "", "chemicals": [], "trial": {}}
     if use_fulltext:
-        ft = europepmc_fulltext(pmid, cache_dir)
+        pmcid = (pmcid_map or {}).get(str(pmid), "")
+        ft = {}
+        if pmcid:
+            bio = bioc_fulltext(pmcid, cache_dir)
+            if bio.get("methods") or bio.get("results"):
+                ft = {"methods": bio.get("methods", ""), "results": bio.get("results", ""),
+                      "pmcid": pmcid}
+        if not ft:  # not in the OA map, or BioC had nothing -> Europe PMC
+            ft = europepmc_fulltext(pmid, cache_dir)
         ctx.update({"methods": ft.get("methods", ""), "results": ft.get("results", ""),
-                    "pmcid": ft.get("pmcid", "")})
+                    "pmcid": ft.get("pmcid", "") or pmcid})
     if use_pubtator:
         ctx["chemicals"] = pubtator_chemicals(pmid, cache_dir)
     if trials_index:

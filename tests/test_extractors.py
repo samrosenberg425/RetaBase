@@ -116,6 +116,31 @@ def run():
     check("dose rejects mg/dL concentration", parse_dose("LDL 140 mg/dL") == "")
     check("dose rejects mg/mL concentration", parse_dose("formulated at 5 mg/mL") == "")
     check("dose keeps bare molar amount", "300 nmol" in parse_dose("a 300 nmol bolus"))
+    # Spelled-out and hyphenated units were previously missed entirely.
+    check("spelled-out micrograms parsed", "500 micrograms" in parse_dose("given 500 micrograms daily"))
+    check("hyphenated unit parsed", "250-µg" in parse_dose("a 250-µg dose"))
+    check("spelled-out milligrams parsed", "2 milligrams" in parse_dose("2 milligrams once daily"))
+    # Frequency qualifiers are clinically essential and must be retained.
+    check("frequency 'twice a day' kept", parse_dose("500 mg twice a day") == "500 mg twice a day")
+    check("frequency 'BID' kept", parse_dose("500 mg BID") == "500 mg BID")
+    check("frequency 'three times daily' kept",
+          parse_dose("2 g three times daily") == "2 g three times daily")
+    # A dose belonging to the placebo/control arm is not the drug's dose.
+    check("placebo-arm dose excluded",
+          parse_dose("tirzepatide 5 mg or matching placebo 10 mg") == "5 mg")
+
+    # Reviews/meta-analyses report k studies + pooled N, not one cohort.
+    from retarats_pipeline.curation.extractors import parse_synthesis_scale
+    disp_s, n_s = parse_synthesis_scale("We included 12 studies with 4,530 participants.")
+    check("synthesis keeps study count", "12 studies" in disp_s)
+    check("synthesis keeps pooled N", n_s == 4530 and "4530 participants" in disp_s)
+    disp_w, _ = parse_synthesis_scale("Twelve trials (n=3,201 participants) were pooled.")
+    check("synthesis handles word numbers", "12 studies" in disp_w)
+    r_syn = refine_extraction(
+        {"evidence_class": "evidence_synthesis", "molecule_name": "Metformin"},
+        {"title": "Metformin: a systematic review and meta-analysis",
+         "abstract": "We included 12 studies with 4,530 participants."})
+    check("review routed to synthesis scale", "12 studies" in r_syn["refined_sample_size"])
 
     # --- outcome classification ---
     check(
@@ -236,7 +261,8 @@ def run():
         {"molecule_name": "Retatrutide"},
         {"title": "Retatrutide in obesity",
          "abstract": "Participants received 5 mg once weekly for 24 weeks."})
-    check("single-drug dose extracted", r_single["refined_dose"] == "5 mg")
+    # Frequency is part of the dose: "5 mg once weekly" != "5 mg once daily".
+    check("single-drug dose extracted with frequency", r_single["refined_dose"] == "5 mg once weekly")
     check("single-drug scope is document", r_single["refined_extraction_scope"] == "document")
 
     # Comparator paper, doses in SEPARATE sentences: keep only this molecule's dose.

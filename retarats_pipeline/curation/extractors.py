@@ -59,11 +59,14 @@ _MISSING = {
 # "5 mg/mL") are lab READOUTS / concentrations, not doses. So we keep the units but
 # reject a match whose denominator is a concentration volume (see the lookahead).
 # Per-body-weight ("/kg") stays a valid dose compound.
-_DOSE_UNIT = r"(?:mg|µg|μg|ug|mcg|ng|g|IU|U|nmol|pmol|µmol|umol|mmol|mol|mL|ml|L)"
+# Spelled-out unit words are included because abstracts often write "500 micrograms"
+# rather than "500 µg"; a hyphen between number and unit ("250-µg dose") is allowed.
+_DOSE_UNIT = (r"(?:micrograms?|milligrams?|nanograms?|kilograms?|grams?|"
+              r"mg|µg|μg|ug|mcg|ng|g|IU|U|nmol|pmol|µmol|umol|mmol|mol|mL|ml|L)")
 _DOSE_RE = re.compile(
     r"(?<![A-Za-z0-9.·])"
     r"\d+(?:[.·]\d+)?"
-    r"\s*"
+    r"\s*[-‐‑–]?\s*"
     rf"{_DOSE_UNIT}"
     r"(?:\s*/\s*(?:kg|g|day|d|dose|wk|week))*"
     # reject BMI "kg/m²" and concentration denominators "/L", "/dL", "/mL".
@@ -270,9 +273,39 @@ def off_focus_reason(evidence: dict, paper: dict) -> str:
 # --- public field-level parsers --------------------------------------------
 
 
+# Frequency/schedule qualifier that follows a dose ("500 mg twice daily", "5 mg
+# once weekly", "10 mg BID"). Dropping it loses clinically essential information --
+# 500 mg twice a day is double 500 mg once a day.
+_DOSE_FREQ = re.compile(
+    r"^\s*(?:,)?\s*("
+    r"(?:once|twice|thrice|(?:\d+|two|three|four|five|six)\s*(?:x|times))\s*(?:a|per|every)?\s*"
+    r"(?:daily|day|week(?:ly)?|month(?:ly)?|hour(?:ly)?|d\b|wk\b)"
+    r"|q\.?\s?(?:d|h|12h|8h|6h|w)\b|b\.?i\.?d\.?|t\.?i\.?d\.?|q\.?i\.?d\.?|o\.?d\.?|b\.?d\.?"
+    r"|daily|weekly|monthly|nightly|every\s+(?:other\s+)?(?:day|week|month)"
+    r"|per\s+day|per\s+week|/\s*day|/\s*week"
+    r")", re.IGNORECASE)
+
+# A dose immediately preceded by placebo/vehicle wording belongs to the CONTROL arm,
+# not to the drug ("tirzepatide 5 mg or matching placebo 5 mg").
+_PLACEBO_CUE = re.compile(r"(?:placebo|vehicle|sham|saline|control\s+arm)\b[^.]{0,25}$", re.IGNORECASE)
+
+
 def _dose_list(text: str) -> List[str]:
-    """Raw dose expressions in ``text`` (order-preserving, not de-duped)."""
-    return [re.sub(r"\s+", " ", m.group(0)).strip() for m in _DOSE_RE.finditer(text)]
+    """Raw dose expressions in ``text`` (order-preserving, not de-duped).
+
+    Keeps any trailing frequency qualifier and drops placebo/vehicle doses.
+    """
+    out: List[str] = []
+    for m in _DOSE_RE.finditer(text):
+        # Skip a dose that is attached to the placebo/control arm.
+        if _PLACEBO_CUE.search(text[max(0, m.start() - 40):m.start()]):
+            continue
+        value = re.sub(r"\s+", " ", m.group(0)).strip()
+        freq = _DOSE_FREQ.match(text[m.end():m.end() + 30])
+        if freq:
+            value += " " + re.sub(r"\s+", " ", freq.group(1)).strip()
+        out.append(value)
+    return out
 
 
 def parse_dose(text: str) -> str:
@@ -361,6 +394,51 @@ def parse_sample_size(text: str) -> Tuple[str, Optional[int]]:
     else:
         return "", None
     return display, best
+
+
+# --- synthesis (review / meta-analysis) scale --------------------------------
+# A review does not have one cohort; it has K INCLUDED STUDIES and a POOLED total.
+# "12 studies with 4,530 participants" must yield BOTH numbers -- reporting only
+# 4,530 hides the design, and reporting a single "dose" is meaningless for a review.
+_WORD_NUM = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+    "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
+    "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
+    "nineteen": 19, "twenty": 20,
+}
+_STUDY_NOUN = r"(?:studies|study|trials?|rcts?|randomi[sz]ed\s+controlled\s+trials?|articles?|papers?|cohorts?|publications?)"
+_K_STUDIES_RE = re.compile(rf"\b(\d{{1,4}}|[a-z]+)\s+(?:eligible\s+|included\s+|unique\s+)?{_STUDY_NOUN}\b",
+                           re.IGNORECASE)
+_POOLED_N_RE = re.compile(
+    r"\b(?:n\s*=\s*)?(\d{1,3}(?:,\d{3})+|\d{2,7})\s*"
+    r"(?:participants?|patients?|subjects?|individuals?|adults?|women|men|children)\b",
+    re.IGNORECASE)
+
+
+def parse_synthesis_scale(text: str) -> Tuple[str, Optional[int]]:
+    """Return (display, pooled_N) for a review/meta-analysis.
+
+    Display looks like "12 studies; 4,530 participants" so the number of included
+    studies is never lost. ``pooled_N`` is the participant total when stated.
+    """
+    k = None
+    for m in _K_STUDIES_RE.finditer(text):
+        raw = m.group(1)
+        val = int(raw) if raw.isdigit() else _WORD_NUM.get(raw.lower())
+        if val and 1 <= val <= 2000:
+            k = val
+            break
+    pooled = None
+    for m in _POOLED_N_RE.finditer(text):
+        val = int(m.group(1).replace(",", ""))
+        if val >= 10:  # ignore per-arm handfuls
+            pooled = max(pooled or 0, val)
+    bits = []
+    if k:
+        bits.append(f"{k} studies")
+    if pooled:
+        bits.append(f"{pooled} participants")
+    return "; ".join(bits), pooled
 
 
 def _resolve_counts(counts: List[int], prefix: str, has_total_cue: bool,
@@ -585,6 +663,20 @@ def _mentions(sentence: str, terms: List[str]) -> bool:
     return any(t in s for t in terms)
 
 
+_SYNTH_TEXT_RE = re.compile(
+    r"meta-?analys|systematic review|pooled analysis|scoping review|umbrella review", re.I)
+
+
+def _is_synthesis_record(evidence: dict, paper: dict) -> bool:
+    """True for reviews / meta-analyses, which report k studies rather than a cohort."""
+    for key in ("evidence_class", "model_primary", "model_type", "primary_study_type"):
+        v = str(evidence.get(key, "") or "").strip().lower()
+        if v in {"evidence_synthesis", "review"} or "meta-analysis" in v or "systematic review" in v:
+            return True
+    title = str(paper.get("title", "") or evidence.get("title", "") or "")
+    return bool(_SYNTH_TEXT_RE.search(title))
+
+
 def refine_extraction(evidence: dict, paper: dict) -> dict:
     """Return additive refined-extraction + model-disambiguation fields.
 
@@ -617,8 +709,15 @@ def refine_extraction(evidence: dict, paper: dict) -> dict:
         extraction_scope = "document"
 
     # Sample size is about participants (one cohort), not per-drug, so it stays
-    # document-wide regardless of scope.
-    sample_display, sample_n = parse_sample_size(text)
+    # document-wide regardless of scope. For a REVIEW/META-ANALYSIS the meaningful
+    # scale is "k included studies + pooled participants", not a single cohort, so
+    # those papers use the synthesis parser instead.
+    if _is_synthesis_record(evidence, paper):
+        sample_display, sample_n = parse_synthesis_scale(text)
+        if not sample_display:  # nothing stated in review form -> fall back
+            sample_display, sample_n = parse_sample_size(text)
+    else:
+        sample_display, sample_n = parse_sample_size(text)
     refined_outcome = classify_outcome(evidence, text)
 
     model_primary, model_flags, model_conf, model_reason = disambiguate_model(evidence, paper)

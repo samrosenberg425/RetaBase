@@ -173,8 +173,21 @@ _BATCH_HEADER = (
     "return one JSON object. Respond with ONLY a JSON object of the form "
     "{{\"results\": [ ... ]}} where each element has keys: pmid, {fields}, "
     "one_sentence_summary. Use \"\" for anything not stated. Copy values verbatim "
-    "from the text; do not infer. Attribute dose/route to that item's OWN molecule, "
-    "never to a comparator drug.\n\n"
+    "from the text; do not infer.\n"
+    "RULES (these are the common mistakes):\n"
+    "1. Attribute dose/route ONLY to that item's OWN molecule. If a dose belongs to a "
+    "comparator drug, a background/concomitant medication, or any drug that is not the "
+    "item's molecule, leave dose \"\".\n"
+    "2. NEVER report a placebo, vehicle, sham or saline dose as the drug's dose.\n"
+    "3. KEEP the frequency/schedule with the dose: \"500 mg twice daily\", \"5 mg once "
+    "weekly\", \"10 mg/kg BID\". A dose without its frequency is incomplete.\n"
+    "4. Keep the units exactly as written (micrograms/µg/mcg/mg/g/IU). Do not convert.\n"
+    "5. If several doses of the SAME molecule are given (dose-ranging/escalation), "
+    "report the range, e.g. \"0.3-15 mg once weekly\".\n"
+    "6. Animal studies may use MORE THAN ONE route (e.g. oral and intraperitoneal in "
+    "different cohorts) - list all of them, separated by \"; \".\n"
+    "7. A number that is a lab value or a baseline characteristic (BMI, glucose "
+    "mmol/L, mg/dL, HbA1c) is NOT a dose.\n\n"
 )
 _BATCH_FIELDS_PRIMARY = "dose, route, duration, sample_size, outcome_direction"
 _BATCH_FIELDS_SYNTH = ("included_studies, pooled_sample_size, dose (RANGE across included "
@@ -184,8 +197,14 @@ _BATCH_FIELDS_SYNTH = ("included_studies, pooled_sample_size, dose (RANGE across
 def build_batch_prompt(papers: List[dict], synthesis: bool, per_paper_chars: int = 4000) -> str:
     head = _BATCH_HEADER.format(
         n=len(papers),
-        kind="systematic reviews / meta-analyses (NOT single studies: report the "
-             "number of included studies and pooled totals, and dose as a RANGE)"
+        kind="systematic reviews / meta-analyses. These are NOT single studies. Report "
+             "included_studies = the number of studies/trials/RCTs included (the "
+             "abstract usually phrases it as \"12 studies\", \"Twelve trials\", \"23 RCTs\") "
+             "and pooled_sample_size = the TOTAL participants across those studies "
+             "(\"4,530 participants\", \"n=3,201 patients\"). Digits only for both. Dose must "
+             "be the RANGE across included studies (\"500-2000 mg daily\"), never a single "
+             "study's dose. If the review pools different drugs, only report doses for "
+             "the item's own molecule"
              if synthesis else "studies",
         fields=_BATCH_FIELDS_SYNTH if synthesis else _BATCH_FIELDS_PRIMARY)
     blocks = []
@@ -637,13 +656,19 @@ def main() -> None:
                 time.sleep(gap)
             last_call[0] = time.time()
 
+    # Resolve PMID -> PMCID for the whole sample in ONE request (PMC ID Converter,
+    # 200 ids/call) instead of a per-paper lookup, then pull structured full text.
+    pmcid_map = {}
+    if args.fulltext:
+        pmcid_map = ctxmod.pmc_ids_bulk([p["pmid"] for p in papers], args.cache_dir)
+        print(f"Open-access full text available for {len(pmcid_map)}/{len(papers)} papers.")
     # Build context once per paper (cached; independent of batching).
     ctxs = {}
     for p in papers:
         ctxs[p["pmid"]] = ctxmod.build_context(
             p["pmid"], p.get("molecule_name", ""), p.get("abstract", ""),
             trials_index=trials_index, use_fulltext=args.fulltext,
-            use_pubtator=args.pubtator, cache_dir=args.cache_dir)
+            use_pubtator=args.pubtator, cache_dir=args.cache_dir, pmcid_map=pmcid_map)
 
     if args.batch > 1:
         # Group by kind so reviews get the synthesis prompt, then chunk. One request
