@@ -773,26 +773,32 @@ def run():
     check("triangle corner label Human", '"Human"' in tri_html)
     check("triangle corner label Animal", '"Animal"' in tri_html)
     check("triangle corner label Molecular/Cellular", '"Molecular/Cellular"' in tri_html)
-    check("triangle plots from icite coords",
-          "icite_x_coord" in tri_html and "icite_y_coord" in tri_html)
+    check("triangle plots from icite composition (barycentric)",
+          "icite_human" in tri_html and "icite_animal" in tri_html and "icite_molecular" in tri_html)
+    check("triangle uses barycentric placement of the 3 corners",
+          "top[0]" in tri_html and "bl[0]" in tri_html and "br[0]" in tri_html)
+    check("triangle no longer min-max fits into a rectangle",
+          "function sx(v)" not in tri_html and "function sy(v)" not in tri_html)
     # Injection-safe invariant still holds for the triangle-bearing page.
     check("triangle build: exactly 2 </script> tags", tri_html.count("</script>") == 2)
 
-    # Triangle dot -> paper interaction (task 1): each dot keeps a reference to its
-    # record, opens the detail modal on click/keyboard, and carries a <title>
-    # tooltip element (native hover tooltip). The dot is styled clickable (tri-dot).
+    # Triangle dot -> paper interaction: each dot keeps a reference to its record,
+    # opens the detail modal on click/keyboard, and shows a custom cursor-following
+    # tooltip box (the flaky native <title> + hover-reparent was replaced).
     check("triangle dot keeps its record for interaction",
-          "pts.push([xv, yv, r])" in tri_html)
+          "pts.push([px, py, r])" in tri_html)
     check("triangle dot opens the modal on click (openModal hook)",
-          'd.addEventListener("click", function() {' in tri_html
-          and "openModal(rec)" in tri_html)
+          "openModal(rec)" in tri_html and 'd.addEventListener("click"' in tri_html)
     check("triangle dot keyboard-operable (Enter/Space -> openModal)",
           '"Enter"' in tri_html and "openModal(rec)" in tri_html)
-    check("triangle dot has a <title> tooltip element",
-          'svgEl("title")' in tri_html and "tnode.textContent" in tri_html)
-    check("triangle dot tooltip built via textContent (injection-safe)",
-          "tnode.appendChild" not in tri_html  # sanity: title text is set, not markup
-          or "tnode.textContent = ttl" in tri_html)
+    check("triangle dot shows a custom tooltip box on hover",
+          'tip.id = "tri-tip"' in tri_html and "tip.style.display" in tri_html
+          and 'd.addEventListener("mouseenter"' in tri_html)
+    check("triangle tooltip built via textContent (injection-safe)",
+          "tip.textContent = text" in tri_html)
+    check("triangle no longer re-parents dots on hover (was breaking the tooltip)",
+          'd.addEventListener("mouseover"' not in tri_html)
+    check("triangle tooltip styled (tri-tip class)", ".tri-tip {" in tri_html)
     check("triangle dot styled clickable (tri-dot class + hover)",
           ".tri-dot {" in tri_html and ".tri-dot:hover" in tri_html)
     # Dot interaction must not smuggle a javascript: scheme.

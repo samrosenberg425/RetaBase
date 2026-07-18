@@ -691,6 +691,12 @@ _TEMPLATE = """<!DOCTYPE html>
   /* Translational-triangle dots: clickable, with a clear hover state. */
   .tri-dot {{ cursor: pointer; }}
   .tri-dot:hover {{ fill-opacity: 1; stroke: var(--accent); stroke-width: 1.5; }}
+  /* Custom hover tooltip for triangle dots (a real text box; the native SVG
+     <title> was unreliable). Follows the cursor via inline left/top. */
+  .tri-tip {{ position: fixed; z-index: 1000; display: none; max-width: 260px;
+    background: var(--panel); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 9px; font-size: 12px; line-height: 1.35;
+    text-align: left; pointer-events: none; box-shadow: 0 4px 14px rgba(0,0,0,.4); }}
   .card.ap-approve {{ border-left: 4px solid var(--ap-approve); }}
   .card.ap-reject {{ border-left: 4px solid var(--ap-reject); opacity: .7; }}
   .card h3 {{ margin: 0 0 6px; font-size: 15px; line-height: 1.35; }}
@@ -2160,15 +2166,37 @@ _TEMPLATE = """<!DOCTYPE html>
       t.textContent = corners[i][3];
       svg.appendChild(t);
     }}
+    // One shared, cursor-following tooltip box (reused across dots). The native
+    // SVG <title> was unreliable, and re-parenting a dot on hover to raise it
+    // cancelled the hover -- so no tooltip ever showed. This replaces both.
+    var tip = document.getElementById("tri-tip");
+    if (!tip) {{
+      tip = document.createElement("div");
+      tip.id = "tri-tip";
+      tip.className = "tri-tip";
+      tip.setAttribute("role", "tooltip");
+      document.body.appendChild(tip);
+    }}
+    function hideTip() {{ tip.style.display = "none"; }}
+    hideTip();
+
+    // Place each dot by its Human / Animal / Molecular composition using the
+    // barycentric coordinates of the triangle's three corners, so every dot lands
+    // INSIDE the triangle at its true translational position. (The old code
+    // min-max-normalized iCite x/y into a rectangle, which floated dots above the
+    // triangle's narrowing top edge -- the "elevated" look.)
     var pts = [];
     for (var j = 0; j < lastVisible.length; j++) {{
       var r = lastVisible[j];
-      var xs = String(r.icite_x_coord == null ? "" : r.icite_x_coord).trim();
-      var ys = String(r.icite_y_coord == null ? "" : r.icite_y_coord).trim();
-      if (xs === "" || ys === "") continue;  // skip records lacking coords
-      var xv = parseFloat(xs), yv = parseFloat(ys);
-      if (isNaN(xv) || isNaN(yv)) continue;
-      pts.push([xv, yv, r]);  // keep the record so each dot can open its paper
+      var h = parseFloat(r.icite_human), a = parseFloat(r.icite_animal), c = parseFloat(r.icite_molecular);
+      if (isNaN(h)) h = 0;
+      if (isNaN(a)) a = 0;
+      if (isNaN(c)) c = 0;
+      var s = h + a + c;
+      if (s <= 0) continue;  // no translational composition -> skip
+      var px = (h * top[0] + a * bl[0] + c * br[0]) / s;
+      var py = (h * top[1] + a * bl[1] + c * br[1]) / s;
+      pts.push([px, py, r]);
     }}
     var note = svgEl("text", {{
       x: W / 2, y: H - 6, "text-anchor": "middle", fill: "var(--muted)", "font-size": "10"
@@ -2176,43 +2204,51 @@ _TEMPLATE = """<!DOCTYPE html>
     note.textContent = pts.length + " of " + lastVisible.length + " evidence records have translational coordinates";
     svg.appendChild(note);
     if (!pts.length) return;
-    var minX = pts[0][0], maxX = pts[0][0], minY = pts[0][1], maxY = pts[0][1];
-    for (var k = 1; k < pts.length; k++) {{
-      if (pts[k][0] < minX) minX = pts[k][0];
-      if (pts[k][0] > maxX) maxX = pts[k][0];
-      if (pts[k][1] < minY) minY = pts[k][1];
-      if (pts[k][1] > maxY) maxY = pts[k][1];
-    }}
-    var x0 = pad + 14, x1 = W - pad - 14, y0 = pad + 14, y1 = H - pad - 14;
-    function sx(v) {{ return maxX === minX ? (x0 + x1) / 2 : x0 + (v - minX) / (maxX - minX) * (x1 - x0); }}
-    function sy(v) {{ return maxY === minY ? (y0 + y1) / 2 : y1 - (v - minY) / (maxY - minY) * (y1 - y0); }}
     for (var m = 0; m < pts.length; m++) {{
       var recRef = pts[m][2];
       var dot = svgEl("circle", {{
-        cx: sx(pts[m][0]), cy: sy(pts[m][1]), r: "3.5",
+        cx: pts[m][0], cy: pts[m][1], r: "3.5",
         fill: "var(--accent)", "fill-opacity": "0.75",
         "class": "tri-dot", tabindex: "0", role: "button"
       }});
-      // Native tooltip on hover/focus: truncated title + journal/year (textContent
-      // only -> injection-safe). A <title> child renders as the SVG hover tooltip.
+      // Tooltip label: truncated title + journal/year (textContent only -> safe).
       var ttl = String((recRef && recRef.title) || "(untitled)");
-      if (ttl.length > 80) ttl = ttl.slice(0, 79) + "\\u2026";
+      if (ttl.length > 90) ttl = ttl.slice(0, 89) + "\\u2026";
       var jy = [];
       if (recRef && recRef.journal) jy.push(String(recRef.journal));
       if (recRef && recRef.pub_year) jy.push(String(recRef.pub_year));
-      var tnode = svgEl("title");
-      tnode.textContent = ttl + (jy.length ? " \\u2014 " + jy.join(" ") : "");
-      dot.appendChild(tnode);
-      if (recRef) dot.setAttribute("aria-label", tnode.textContent);
-      // Click / Enter / Space opens the same detail modal as a card. Hovering
-      // raises the dot above its siblings so overlapping dots stay reachable.
-      (function(rec, d) {{
-        d.addEventListener("click", function() {{ openModal(rec); }});
-        d.addEventListener("keydown", function(ev) {{
-          if (ev.key === "Enter" || ev.key === " ") {{ ev.preventDefault(); openModal(rec); }}
+      var label = ttl + (jy.length ? " \\u2014 " + jy.join(" ") : "");
+      dot.setAttribute("aria-label", label);
+      // Click / Enter / Space opens the same detail modal as a card; hover/focus
+      // shows the tooltip box.
+      (function(rec, d, text) {{
+        function moveTip(ev) {{
+          d.setAttribute("fill-opacity", "1");
+          tip.textContent = text;
+          tip.style.display = "block";
+          var x = (ev.clientX || 0) + 14, y = (ev.clientY || 0) + 14;
+          var vw = window.innerWidth || 0;
+          if (x + 268 > vw) {{ x = (ev.clientX || 0) - 268; }}
+          tip.style.left = x + "px";
+          tip.style.top = y + "px";
+        }}
+        function leaveTip() {{ d.setAttribute("fill-opacity", "0.75"); hideTip(); }}
+        d.addEventListener("mouseenter", moveTip);
+        d.addEventListener("mousemove", moveTip);
+        d.addEventListener("mouseleave", leaveTip);
+        d.addEventListener("focus", function() {{
+          d.setAttribute("fill-opacity", "1");
+          tip.textContent = text;
+          tip.style.display = "block";
+          var bb = d.getBoundingClientRect ? d.getBoundingClientRect() : null;
+          if (bb) {{ tip.style.left = (bb.left + 12) + "px"; tip.style.top = (bb.bottom + 6) + "px"; }}
         }});
-        d.addEventListener("mouseover", function() {{ svg.appendChild(d); }});
-      }})(recRef, dot);
+        d.addEventListener("blur", leaveTip);
+        d.addEventListener("click", function() {{ hideTip(); openModal(rec); }});
+        d.addEventListener("keydown", function(ev) {{
+          if (ev.key === "Enter" || ev.key === " ") {{ ev.preventDefault(); hideTip(); openModal(rec); }}
+        }});
+      }})(recRef, dot, label);
       svg.appendChild(dot);
     }}
   }}
