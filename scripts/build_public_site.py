@@ -133,6 +133,9 @@ MOLECULE_FIELDS = [
     "molecule_id", "molecule_name", "total_records", "auto_published",
     "human_evidence", "preclinical_evidence", "reviews", "max_reliability",
     "top_conditions", "sections_present",
+    # Evidence-density tier (literature VOLUME, not quality) + the raw counts it
+    # derives from. Drives the honest density badge on the molecule card.
+    "record_count", "human_count", "density_tier",
     # Optional PubChem CID (from scripts/enrich_pubchem.py via molecule_index).
     # Drives the "View on PubChem" link on the Bioactives card; "" when unknown.
     "pubchem_cid",
@@ -153,7 +156,7 @@ TRIAL_FIELDS = [
     "nct_id", "molecule_id", "molecule_name", "brief_title", "overall_status",
     "phases", "study_type", "conditions", "interventions", "enrollment_count",
     "start_date", "primary_completion_date", "completion_date", "lead_sponsor",
-    "has_results", "url", "ongoing",
+    "has_results", "result_pmids", "reference_pmids", "url", "ongoing",
 ]
 
 # Preprint rows (bioRxiv/medRxiv via EuropePMC, ``preprints_data.json``). NOT
@@ -680,6 +683,14 @@ _TEMPLATE = """<!DOCTYPE html>
     padding: 14px 16px; margin-bottom: 12px; cursor: pointer; transition: border-color .1s;
   }}
   .card:hover {{ border-color: var(--accent); }}
+  /* Visible keyboard-focus ring for interactive elements (a11y). */
+  .card:focus, .card:focus-visible, button:focus, button:focus-visible,
+  a:focus, a:focus-visible, .tri-dot:focus, .tri-dot:focus-visible {{
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }}
+  /* Translational-triangle dots: clickable, with a clear hover state. */
+  .tri-dot {{ cursor: pointer; }}
+  .tri-dot:hover {{ fill-opacity: 1; stroke: var(--accent); stroke-width: 1.5; }}
   .card.ap-approve {{ border-left: 4px solid var(--ap-approve); }}
   .card.ap-reject {{ border-left: 4px solid var(--ap-reject); opacity: .7; }}
   .card h3 {{ margin: 0 0 6px; font-size: 15px; line-height: 1.35; }}
@@ -741,6 +752,11 @@ _TEMPLATE = """<!DOCTYPE html>
   .mol-card:hover {{ border-color: var(--accent); }}
   .mol-card h3 {{ margin: 0 0 8px; font-size: 15px; }}
   .mol-stats {{ display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; color: var(--muted); }}
+  .mol-density {{ margin-top: 8px; display: inline-block; font-size: 11px; padding: 2px 8px;
+    border-radius: 999px; border: 1px solid var(--border); color: var(--muted); cursor: help; }}
+  .mol-density.tier-sparse {{ border-color: var(--tier-limited); color: var(--tier-limited); }}
+  .mol-density.tier-moderate {{ border-color: var(--border); }}
+  .mol-density.tier-saturated {{ border-color: var(--accent); color: var(--accent); }}
   .empty {{ color: var(--muted); padding: 30px; text-align: center; }}
   /* experimental (candidate) section */
   .exp-banner {{
@@ -822,6 +838,8 @@ _TEMPLATE = """<!DOCTYPE html>
   .server-badge {{ font-size: 11px; font-weight: 600; border-radius: 999px; padding: 2px 9px; border: 1px solid var(--t-ind); color: var(--t-ind); text-transform: uppercase; letter-spacing: .03em; }}
   .trial-grid {{ display: grid; grid-template-columns: 130px 1fr; gap: 4px 14px; font-size: 12px; margin: 8px 0; }}
   .trial-grid .k {{ color: var(--muted); }}
+  .trial-pubs {{ display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12px; margin: 6px 0 2px; }}
+  .trial-pubs .k {{ color: var(--muted); }}
   /* include/exclude multi-select filter groups */
   .fgroup {{ margin-bottom: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel2); }}
   .fgroup > summary {{
@@ -912,7 +930,7 @@ _TEMPLATE = """<!DOCTYPE html>
   <aside id="sidebar">
     <div class="fg">
       <label for="q">Search</label>
-      <input id="q" type="search" placeholder="title, bioactive, facets, summary..." oninput="applyFilters()">
+      <input id="q" type="search" placeholder="title, bioactive, facets, summary..." oninput="qDebounced()">
     </div>
     <div class="fg">
       <label>Year (publication)</label>
@@ -945,7 +963,7 @@ _TEMPLATE = """<!DOCTYPE html>
     <div id="browser-view">
       <div class="tab-desc" id="browser-desc"></div>
       <div class="count" id="records-count">
-        <span id="showing"></span>
+        <span id="showing" aria-live="polite"></span>
         <label style="text-transform:none;display:inline-flex;gap:6px;align-items:center;color:var(--muted)">Sort
           <select id="sort" onchange="applyFilters()">
             <option value="rank">Rank (best first)</option>
@@ -1034,7 +1052,7 @@ _TEMPLATE = """<!DOCTYPE html>
 </main>
 
 <div class="modal-bg" id="modal-bg" onclick="if(event.target===this)closeModal()">
-  <div class="modal" id="modal"></div>
+  <div class="modal" id="modal" role="dialog" aria-modal="true"></div>
 </div>
 
 <script type="application/json" id="site-data">{data_json}</script>
@@ -1401,7 +1419,14 @@ _TEMPLATE = """<!DOCTYPE html>
     if (links.childNodes.length) card.appendChild(links);
 
     if (INTERNAL) card.appendChild(approvalRow(r, card));
+    // Keyboard-operable card: behaves like a button that opens the detail modal.
+    card.setAttribute("tabindex", "0");
+    card.setAttribute("role", "button");
+    card.setAttribute("aria-label", r.title || "(untitled)");
     card.addEventListener("click", function() {{ openModal(r); }});
+    card.addEventListener("keydown", function(e) {{
+      if (e.key === "Enter" || e.key === " ") {{ e.preventDefault(); openModal(r); }}
+    }});
     return card;
   }}
 
@@ -1493,7 +1518,9 @@ _TEMPLATE = """<!DOCTYPE html>
     cell.appendChild(node);
     grid.appendChild(cell);
   }}
+  var modalOpener = null;  // element to restore focus to when the modal closes
   function openModal(r) {{
+    modalOpener = document.activeElement;  // remember the opener for focus restore
     var m = document.getElementById("modal");
     m.textContent = "";
     var close = el("button", "close", "Close");
@@ -1596,8 +1623,15 @@ _TEMPLATE = """<!DOCTYPE html>
     }}
 
     document.getElementById("modal-bg").className = "modal-bg open";
+    // Move focus into the dialog so keyboard users land inside it.
+    close.focus();
   }}
-  function closeModal() {{ document.getElementById("modal-bg").className = "modal-bg"; }}
+  function closeModal() {{
+    document.getElementById("modal-bg").className = "modal-bg";
+    // Restore focus to whatever opened the modal (card, dot, etc.).
+    if (modalOpener && typeof modalOpener.focus === "function") modalOpener.focus();
+    modalOpener = null;
+  }}
   window.closeModal = closeModal;
   document.addEventListener("keydown", function(e) {{ if (e.key === "Escape") closeModal(); }});
 
@@ -2041,14 +2075,15 @@ _TEMPLATE = """<!DOCTYPE html>
     list.textContent = "";
     var frag = document.createDocumentFragment();
     for (var i = 0; i < shown; i++) {{ frag.appendChild(renderRecord(lastVisible[i])); }}
-    if (!total) frag.appendChild(el("div", "empty", "No papers match these filters."));
+    if (!total) frag.appendChild(el("div", "empty", "No evidence records match these filters."));
     list.appendChild(frag);
 
-    // Count clarity: X = papers passing filters, Y = papers in the current view,
-    // Z = papers filtered out. All are PAPER counts, explicitly labelled.
+    // Count clarity: X = evidence records passing filters, Y = evidence records in
+    // the current view, Z = filtered out. These are evidence-record counts (paper x
+    // molecule x rule), distinct from the corpus strip's distinct-PAPER count.
     var y = lastBaseTotal, x = total, z = y - x;
     var showing = document.getElementById("showing");
-    var msg = "Showing " + fmtInt(x) + " of " + fmtInt(y) + " papers";
+    var msg = "Showing " + fmtInt(x) + " of " + fmtInt(y) + " evidence records";
     if (z > 0) msg += " \\u00b7 " + fmtInt(z) + " filtered out";
     if (total > shown) msg += " \\u00b7 " + fmtInt(shown) + " rendered (Load more for the rest)";
     showing.textContent = msg;
@@ -2133,12 +2168,12 @@ _TEMPLATE = """<!DOCTYPE html>
       if (xs === "" || ys === "") continue;  // skip records lacking coords
       var xv = parseFloat(xs), yv = parseFloat(ys);
       if (isNaN(xv) || isNaN(yv)) continue;
-      pts.push([xv, yv]);
+      pts.push([xv, yv, r]);  // keep the record so each dot can open its paper
     }}
     var note = svgEl("text", {{
       x: W / 2, y: H - 6, "text-anchor": "middle", fill: "var(--muted)", "font-size": "10"
     }});
-    note.textContent = pts.length + " of " + lastVisible.length + " papers have translational coordinates";
+    note.textContent = pts.length + " of " + lastVisible.length + " evidence records have translational coordinates";
     svg.appendChild(note);
     if (!pts.length) return;
     var minX = pts[0][0], maxX = pts[0][0], minY = pts[0][1], maxY = pts[0][1];
@@ -2152,10 +2187,33 @@ _TEMPLATE = """<!DOCTYPE html>
     function sx(v) {{ return maxX === minX ? (x0 + x1) / 2 : x0 + (v - minX) / (maxX - minX) * (x1 - x0); }}
     function sy(v) {{ return maxY === minY ? (y0 + y1) / 2 : y1 - (v - minY) / (maxY - minY) * (y1 - y0); }}
     for (var m = 0; m < pts.length; m++) {{
-      svg.appendChild(svgEl("circle", {{
-        cx: sx(pts[m][0]), cy: sy(pts[m][1]), r: "3",
-        fill: "var(--accent)", "fill-opacity": "0.75"
-      }}));
+      var recRef = pts[m][2];
+      var dot = svgEl("circle", {{
+        cx: sx(pts[m][0]), cy: sy(pts[m][1]), r: "3.5",
+        fill: "var(--accent)", "fill-opacity": "0.75",
+        "class": "tri-dot", tabindex: "0", role: "button"
+      }});
+      // Native tooltip on hover/focus: truncated title + journal/year (textContent
+      // only -> injection-safe). A <title> child renders as the SVG hover tooltip.
+      var ttl = String((recRef && recRef.title) || "(untitled)");
+      if (ttl.length > 80) ttl = ttl.slice(0, 79) + "\\u2026";
+      var jy = [];
+      if (recRef && recRef.journal) jy.push(String(recRef.journal));
+      if (recRef && recRef.pub_year) jy.push(String(recRef.pub_year));
+      var tnode = svgEl("title");
+      tnode.textContent = ttl + (jy.length ? " \\u2014 " + jy.join(" ") : "");
+      dot.appendChild(tnode);
+      if (recRef) dot.setAttribute("aria-label", tnode.textContent);
+      // Click / Enter / Space opens the same detail modal as a card. Hovering
+      // raises the dot above its siblings so overlapping dots stay reachable.
+      (function(rec, d) {{
+        d.addEventListener("click", function() {{ openModal(rec); }});
+        d.addEventListener("keydown", function(ev) {{
+          if (ev.key === "Enter" || ev.key === " ") {{ ev.preventDefault(); openModal(rec); }}
+        }});
+        d.addEventListener("mouseover", function() {{ svg.appendChild(d); }});
+      }})(recRef, dot);
+      svg.appendChild(dot);
     }}
   }}
   window.renderTriangle = renderTriangle;
@@ -2165,6 +2223,19 @@ _TEMPLATE = """<!DOCTYPE html>
     renderVisible();
   }}
   window.loadMore = loadMore;
+
+  // Debounce so the search box does not re-filter on every keystroke (~150ms).
+  // Facet clicks / selects stay immediate (they call applyFilters directly).
+  function debounce(fn, wait) {{
+    var timer = null;
+    return function() {{
+      var ctx = this, args = arguments;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(function() {{ timer = null; fn.apply(ctx, args); }}, wait);
+    }};
+  }}
+  var qDebounced = debounce(function() {{ applyFilters(); }}, 150);
+  window.qDebounced = qDebounced;
 
   function applyFilters() {{
     var base = baseRecords();
@@ -2223,6 +2294,16 @@ _TEMPLATE = """<!DOCTYPE html>
       stat("preclinical", m.preclinical_evidence);
       stat("max rigor", m.max_reliability);
       card.appendChild(stats);
+      // Evidence-density badge: honest literature-VOLUME signal (not quality).
+      // Sparse molecules publish all their records; the badge sets expectations.
+      if (m.density_tier) {{
+        var rc = m.record_count || m.total_records || "0";
+        var dtxt = "Evidence density: " + m.density_tier + " (" + rc + " records"
+                   + (m.human_count && m.human_count !== "0" ? ", " + m.human_count + " human" : "") + ")";
+        var dbadge = el("div", "mol-density tier-" + m.density_tier, dtxt);
+        dbadge.title = "Amount of literature only \\u2014 not a rating of study quality.";
+        card.appendChild(dbadge);
+      }}
       if (m.top_conditions) card.appendChild(el("div", "sl", m.top_conditions));
       // Optional "learn more" link to PubChem. Only rendered when the molecule
       // resolved to a CID (from scripts/enrich_pubchem.py); href built with the
@@ -2403,6 +2484,20 @@ _TEMPLATE = """<!DOCTYPE html>
     if (t.nct_id) grid.appendChild(el("div", "k", "Registry ID"));
     if (t.nct_id) grid.appendChild(el("div", "v", t.nct_id));
     card.appendChild(grid);
+    // Published results: PMIDs CT.gov links as RESULT/DERIVED publications for
+    // this trial. Each renders as a PubMed link via the vetted safeLink helper.
+    var resultPmids = String(t.result_pmids || "").split(";").map(function(s) {{
+      return s.trim();
+    }}).filter(function(s) {{ return /^\\d+$/.test(s); }});
+    if (resultPmids.length) {{
+      var pubs = el("div", "trial-pubs");
+      pubs.appendChild(el("span", "k", "Published results:"));
+      resultPmids.forEach(function(pmid) {{
+        var pa = safeLink("PMID " + pmid, PUBMED + encodeURIComponent(pmid) + "/");
+        if (pa) pubs.appendChild(pa);
+      }});
+      card.appendChild(pubs);
+    }}
     var links = el("div", "links");
     var link = safeLink("View on ClinicalTrials.gov", t.url);
     if (link) links.appendChild(link);
@@ -2659,11 +2754,12 @@ _TEMPLATE = """<!DOCTYPE html>
       + "to its inputs.");
 
     h3("Counts");
-    p("Result counts are PAPER counts. The header reads \\u201cShowing X of Y papers\\u201d "
-      + "where Y is the papers in the current tab (all evidence, or human-only) and X is "
-      + "the number passing your filters; \\u201cZ filtered out\\u201d is Y minus X. Each "
-      + "filter option\\u2019s number is the count of papers with that value under all your "
-      + "OTHER active filters (cross-filtered).");
+    p("Result counts are EVIDENCE-RECORD counts (paper \\u00d7 molecule \\u00d7 rule), which is "
+      + "why they can exceed the distinct-paper number shown in the corpus strip. The header "
+      + "reads \\u201cShowing X of Y evidence records\\u201d where Y is the records in the current "
+      + "tab (all evidence, or human-only) and X is the number passing your filters; "
+      + "\\u201cZ filtered out\\u201d is Y minus X. Each filter option\\u2019s number is the count "
+      + "of records with that value under all your OTHER active filters (cross-filtered).");
 
     h3("What's published vs. the full corpus");
     p("A few molecules (for example metformin or rapamycin) have tens of thousands of "

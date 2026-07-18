@@ -277,7 +277,8 @@ def build(db_path: str, out_dir: str, limit: int = 0) -> dict:
     _write_csv(
         os.path.join(out_dir, "molecule_index.csv"),
         mol_rows,
-        ["molecule_id", "molecule_name", "total_records", "auto_published", "listed",
+        ["molecule_id", "molecule_name", "total_records", "record_count", "human_count",
+         "density_tier", "auto_published", "listed",
          "review_candidates", "held", "human_evidence", "preclinical_evidence",
          "reviews", "max_reliability", "top_conditions", "sections_present", "pubchem_cid"],
     )
@@ -424,6 +425,32 @@ FEED_OTHER_CAP = 500    # per molecule, for every other (lower-value) section
 FEED_KEEP_PERCENTILE = 90.0
 
 
+# --- evidence-density tiers (foundation for adaptive presentation) ----------
+# A molecule's tier describes how much LITERATURE exists for it, NOT its quality.
+# It drives (a) an honest "evidence density" badge on the molecule page and
+# (b) a density-aware feed cap: a sparse molecule's few records are never capped,
+# while saturated molecules keep the stricter per-section cap. Precedence is
+# sparse -> saturated -> moderate, so a molecule that is thin on human evidence
+# (human < 10) is treated as sparse even if it has many preclinical records.
+DENSITY_SPARSE_TOTAL = 100      # < this many total records -> sparse
+DENSITY_SPARSE_HUMAN = 10       # < this many human records -> sparse
+DENSITY_SATURATED_TOTAL = 1000  # > this many total records -> saturated
+DENSITY_SATURATED_HUMAN = 200   # > this many human records -> saturated
+
+
+def _density_tier(total: int, human: int) -> str:
+    """Classify a molecule's literature volume: sparse | moderate | saturated.
+
+    Volume only -- says nothing about study quality. Sparse is checked first so a
+    molecule thin on human evidence is flagged sparse regardless of preclinical bulk.
+    """
+    if total < DENSITY_SPARSE_TOTAL or human < DENSITY_SPARSE_HUMAN:
+        return "sparse"
+    if total > DENSITY_SATURATED_TOTAL or human > DENSITY_SATURATED_HUMAN:
+        return "saturated"
+    return "moderate"
+
+
 def _is_landmark(r: dict) -> bool:
     """High-signal record that is ALWAYS published regardless of the section cap."""
     if str(r.get("evidence_class", "")) == "evidence_synthesis":
@@ -454,6 +481,17 @@ def _cap_site_feed(records: List[dict], focus_cap: int = FEED_FOCUS_CAP, other_c
     kept: List[dict] = []
     capped: Dict[str, dict] = {}
     for mol, recs in by_mol.items():
+        # Density-aware exemption: a LOW-VOLUME molecule publishes ALL of its
+        # records -- capping the handful it has would hide the very evidence a user
+        # came for, and it is too few to bloat the feed. This is strictly a TOTAL-
+        # volume test (total < DENSITY_SPARSE_TOTAL): note that _density_tier also
+        # labels a molecule "sparse" when it is merely thin on HUMAN evidence
+        # (human < 10), but such a molecule can still have thousands of preclinical
+        # records, so we must NOT exempt it from the cap on that basis alone.
+        total = len(recs)
+        if total < DENSITY_SPARSE_TOTAL:
+            kept.extend(recs)
+            continue
         landmark = [r for r in recs if _is_landmark(r)]                       # always kept
         rest = [r for r in recs if not _is_landmark(r)]
         focus = [r for r in rest if str(r.get("website_section", "")) in FEED_FOCUS_SECTIONS]
@@ -548,6 +586,11 @@ def _molecule_index(rows: List[dict], pubchem_by_mol: Dict[str, str] | None = No
                 "molecule_id": mol_id,
                 "molecule_name": name,
                 "total_records": len(recs),
+                # Evidence-density tier (literature volume, NOT quality) + the raw
+                # counts it derives from, surfaced as an honest badge on the site.
+                "record_count": len(recs),
+                "human_count": human,
+                "density_tier": _density_tier(len(recs), human),
                 "auto_published": statuses.get("featured", 0),   # featured = spotlight
                 "listed": statuses.get("listed", 0),
                 "review_candidates": statuses.get("review", 0),

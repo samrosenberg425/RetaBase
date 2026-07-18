@@ -47,10 +47,17 @@ _MISSING = {
 # A dose: a number (optionally decimal or a fraction) followed by a unit,
 # optionally with a per-kg / per-day compound (e.g. "2 mg/kg/day"). Anchored on
 # word boundaries; matched case-insensitively against the raw text.
-_DOSE_UNIT = r"(?:mg|µg|μg|ug|mcg|ng|g|kg|IU|U|nmol|pmol|µmol|umol|mmol|mol|mL|ml|L)"
+# NOTE: "kg" is deliberately NOT a standalone dose unit. A real drug dose is
+# expressed in mg/µg/g or *per* kilogram (mg/kg); a bare "9 kg" is body weight
+# or a BMI fragment (e.g. "39·9 kg/m²"), never a dose. "kg" is still honored as
+# the denominator of a per-weight compound (the "/kg" group below).
+# The number also accepts a middle-dot decimal (U+00B7), which journals such as
+# The Lancet use in place of a period ("39·9", "1·25 mg") -- without this the
+# regex would split "39·9" and pick up the trailing "9 kg" as a phantom dose.
+_DOSE_UNIT = r"(?:mg|µg|μg|ug|mcg|ng|g|IU|U|nmol|pmol|µmol|umol|mmol|mol|mL|ml|L)"
 _DOSE_RE = re.compile(
-    r"(?<![A-Za-z0-9.])"
-    r"\d+(?:\.\d+)?"
+    r"(?<![A-Za-z0-9.·])"
+    r"\d+(?:[.·]\d+)?"
     r"\s*"
     rf"{_DOSE_UNIT}"
     r"(?:\s*/\s*(?:kg|g|mL|ml|L|day|d|dose|wk|week))*"
@@ -78,8 +85,8 @@ _ROUTE_PATTERNS: Tuple[Tuple[str, "re.Pattern"], ...] = tuple(
 # Duration: "12 weeks", "8-week", "for 6 months", "over 24 h".
 _DURATION_UNIT = r"(?:hours?|hrs?|h|days?|d|weeks?|wk|wks|months?|mo|years?|yrs?|yr)"
 _DURATION_RE = re.compile(
-    r"(?<![A-Za-z0-9])"
-    r"\d+(?:\.\d+)?"
+    r"(?<![A-Za-z0-9·])"
+    r"\d+(?:[.·]\d+)?"
     r"\s*[-‐‑‒–—]?\s*"
     rf"{_DURATION_UNIT}"
     r"(?![A-Za-z])",

@@ -188,6 +188,38 @@ def run_anomaly_gate_tests():
         check("missing baseline file PASSES (zero)", code == 0)
 
 
+def run_density_tests():
+    # _density_tier boundaries (precedence: sparse -> saturated -> moderate).
+    check("density 99 total -> sparse", bcd._density_tier(99, 50) == "sparse")
+    check("density 100 total -> moderate", bcd._density_tier(100, 50) == "moderate")
+    check("density 1001 total -> saturated", bcd._density_tier(1001, 50) == "saturated")
+    check("density 9 human -> sparse", bcd._density_tier(500, 9) == "sparse")
+    check("density 201 human -> saturated", bcd._density_tier(500, 201) == "saturated")
+    check("density mid -> moderate", bcd._density_tier(500, 50) == "moderate")
+
+    # Density-aware cap: a LOW-VOLUME molecule keeps ALL records (exempt), but a
+    # high-volume preclinical molecule (thin on human) is still capped -- the
+    # exemption is total-volume based, NOT tier=='sparse'.
+    lowvol = [{"molecule_id": "a", "website_section": "Biomarkers",
+               "model_type": "animal", "rank_score": i} for i in range(50)]
+    kept, _ = bcd._cap_site_feed(lowvol, other_cap=10)
+    check("low-volume molecule exempt from cap (all kept)", len(kept) == 50)
+
+    highvol = [{"molecule_id": "b", "website_section": "Biomarkers",
+                "model_type": "animal", "rank_score": i} for i in range(1200)]
+    kept2, _ = bcd._cap_site_feed(highvol, other_cap=10)
+    check("high-volume preclinical still capped (not exempt on human-sparse)", len(kept2) == 10)
+
+    # molecule_index attaches the tier + counts.
+    rows = [{"molecule_id": "m", "molecule_name": "Mol",
+             "model_type": "human", "publication_status": "featured"} for _ in range(5)]
+    idx = {r["molecule_id"]: r for r in bcd._molecule_index(rows, pubchem_by_mol={})}
+    m = idx["m"]
+    check("molecule_index has density_tier", m.get("density_tier") == "sparse")
+    check("molecule_index has record_count", m.get("record_count") == 5)
+    check("molecule_index has human_count", m.get("human_count") == 5)
+
+
 def run():
     # --- facets ---
     ev = human_rct()
@@ -481,6 +513,9 @@ def run():
 
     # --- validate_curated corpus-collapse anomaly gates ---
     run_anomaly_gate_tests()
+
+    # --- evidence-density tiers + density-aware cap ---
+    run_density_tests()
 
     print(f"\n{PASS} passed, {FAIL} failed")
     return 0 if FAIL == 0 else 1

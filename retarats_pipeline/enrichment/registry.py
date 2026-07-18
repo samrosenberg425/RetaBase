@@ -15,7 +15,7 @@ import csv
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
-from .common import clean_text
+from .common import clean_text, semicolon_join
 
 # --- Ongoing-status set (ClinicalTrials.gov v2 overallStatus values) ----------
 # A trial is "ongoing" when it is actively enrolling or running. CT.gov v2 emits
@@ -65,6 +65,23 @@ def normalize_trial(
     """
     nct_id = clean_text(parsed.get("nct_id", "")).upper()
     status = clean_text(parsed.get("overall_status", ""))
+    # Linked publications parsed from the study's referencesModule (each a
+    # {"pmid", "type"} dict). ``result_pmids`` keeps only the papers CT.gov marks
+    # as reporting this trial's results (RESULT / DERIVED); ``reference_pmids``
+    # keeps every linked PubMed id. Stored "; "-joined like other multi-value
+    # trial fields, blank-safe when the study links no publications.
+    references = parsed.get("references") or []
+    result_pmids: List[str] = []
+    reference_pmids: List[str] = []
+    for ref in references:
+        if not isinstance(ref, Mapping):
+            continue
+        pmid = clean_text(ref.get("pmid", ""))
+        if not pmid:
+            continue
+        reference_pmids.append(pmid)
+        if clean_text(ref.get("type", "")).upper() in {"RESULT", "DERIVED"}:
+            result_pmids.append(pmid)
     row: Dict[str, Any] = {
         "nct_id": nct_id,
         "molecule_id": clean_text(molecule_id),
@@ -81,6 +98,8 @@ def normalize_trial(
         "completion_date": clean_text(parsed.get("completion_date", "")),
         "lead_sponsor": clean_text(parsed.get("lead_sponsor", "")),
         "has_results": bool(parsed.get("has_results")),
+        "result_pmids": semicolon_join(result_pmids),
+        "reference_pmids": semicolon_join(reference_pmids),
         "url": trial_url(nct_id),
         "ongoing": is_ongoing(status),
     }

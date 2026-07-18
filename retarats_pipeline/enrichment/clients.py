@@ -65,6 +65,7 @@ class ClinicalTrialsClient:
         outcomes = protocol.get("outcomesModule") or {}
         eligibility = protocol.get("eligibilityModule") or {}
         sponsor = protocol.get("sponsorCollaboratorsModule") or {}
+        references_mod = protocol.get("referencesModule") or {}
 
         arms = arms_mod.get("armGroups") or []
         interventions = arms_mod.get("interventions") or []
@@ -105,8 +106,32 @@ class ClinicalTrialsClient:
             "adverse_events_available": bool(adverse),
             "serious_events": semicolon_join(_event_label(e) for e in (adverse.get("seriousEvents") or [])[:20]),
             "other_events": semicolon_join(_event_label(e) for e in (adverse.get("otherEvents") or [])[:20]),
+            # Linked publications from the study's referencesModule. Only entries
+            # carrying a numeric PubMed id survive; the CT.gov reference ``type``
+            # (RESULT / BACKGROUND / DERIVED) is preserved so downstream code can
+            # keep just the result/derived papers.
+            "references": _trial_references(references_mod.get("references") or []),
         }
         return parsed
+
+
+def _trial_references(references: Any) -> List[Dict[str, str]]:
+    """Extract linked publications from a study's ``referencesModule.references``.
+
+    Keeps only entries that carry a numeric PubMed id and preserves the CT.gov
+    reference ``type`` (RESULT / BACKGROUND / DERIVED, upper-cased). Returns a
+    list of ``{"pmid": ..., "type": ...}`` dicts (possibly empty).
+    """
+    out: List[Dict[str, str]] = []
+    for ref in _as_list(references):
+        if not isinstance(ref, Mapping):
+            continue
+        pmid = clean_text(ref.get("pmid", ""))
+        if not pmid.isdigit():
+            continue
+        typ = clean_text(ref.get("type", "")).upper()
+        out.append({"pmid": pmid, "type": typ})
+    return out
 
 
 def _date_struct_text(value: Any) -> str:

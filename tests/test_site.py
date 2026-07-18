@@ -79,6 +79,13 @@ def run():
     check("breakout sequence is neutralized", "<\\/script><img" in html_text)
     check("no javascript: href scheme emitted", "href=\"javascript:" not in html_text.lower())
 
+    # Evidence-density badge: the molecule card renders a density tier + counts.
+    check("density badge markup present", "mol-density" in html_text and "tier-" in html_text)
+    check("density badge reads the tier field", "density_tier" in html_text)
+    check("density badge labels literature volume honestly", "Evidence density:" in html_text)
+    check("density fields survive the molecule allowlist",
+          all(f in site.MOLECULE_FIELDS for f in ("density_tier", "record_count", "human_count")))
+
     # 3) Missing columns / empty inputs don't crash.
     empty = site.SiteData(records=[], molecules=[])
     check("empty site data renders", isinstance(site._safe_json_block({"records": []}), str))
@@ -279,9 +286,16 @@ def run():
     check("visibleCount state present", "var visibleCount" in feed_html)
     check("Load more control present",
           'id="load-more"' in feed_html and "function loadMore" in feed_html)
-    check("count line uses base total (Showing X of Y papers)",
-          'Showing " + fmtInt(x) + " of " + fmtInt(y) + " papers"' in feed_html
+    check("count line uses base total (Showing X of Y evidence records)",
+          'Showing " + fmtInt(x) + " of " + fmtInt(y) + " evidence records"' in feed_html
           and "filtered out" in feed_html)
+    # Count-label honesty (task 4): the feed-length label must NOT say "papers"
+    # (it counts evidence records, unlike the corpus strip's distinct-paper number).
+    check("count label no longer says 'papers' for the feed length",
+          '+ fmtInt(y) + " papers"' not in feed_html)
+    check("empty-feed message relabeled to evidence records",
+          "No evidence records match these filters." in feed_html
+          and "No papers match these filters." not in feed_html)
     check("render window mounts only first visibleCount",
           "Math.min(visibleCount, total)" in feed_html)
     check("visibleCount resets on filter/search/sort change",
@@ -764,6 +778,58 @@ def run():
     # Injection-safe invariant still holds for the triangle-bearing page.
     check("triangle build: exactly 2 </script> tags", tri_html.count("</script>") == 2)
 
+    # Triangle dot -> paper interaction (task 1): each dot keeps a reference to its
+    # record, opens the detail modal on click/keyboard, and carries a <title>
+    # tooltip element (native hover tooltip). The dot is styled clickable (tri-dot).
+    check("triangle dot keeps its record for interaction",
+          "pts.push([xv, yv, r])" in tri_html)
+    check("triangle dot opens the modal on click (openModal hook)",
+          'd.addEventListener("click", function() {' in tri_html
+          and "openModal(rec)" in tri_html)
+    check("triangle dot keyboard-operable (Enter/Space -> openModal)",
+          '"Enter"' in tri_html and "openModal(rec)" in tri_html)
+    check("triangle dot has a <title> tooltip element",
+          'svgEl("title")' in tri_html and "tnode.textContent" in tri_html)
+    check("triangle dot tooltip built via textContent (injection-safe)",
+          "tnode.appendChild" not in tri_html  # sanity: title text is set, not markup
+          or "tnode.textContent = ttl" in tri_html)
+    check("triangle dot styled clickable (tri-dot class + hover)",
+          ".tri-dot {" in tri_html and ".tri-dot:hover" in tri_html)
+    # Dot interaction must not smuggle a javascript: scheme.
+    check("triangle build: no javascript: href", 'href="javascript:' not in tri_html.lower())
+
+    # Search debounce (task 2): the q input's oninput is routed through a ~150ms
+    # debounce wrapper, and it no longer calls applyFilters() inline. Other triggers
+    # (facet selects) stay immediate.
+    check("debounce helper present", "function debounce(fn, wait)" in tri_html)
+    check("q input routes through qDebounced (150ms)",
+          'oninput="qDebounced()"' in tri_html
+          and "debounce(function() {" in tri_html and ", 150)" in tri_html)
+    check("q input no longer calls applyFilters() inline",
+          'id="q"' in tri_html and 'id="q" type="search" placeholder="title, bioactive, facets, summary..." oninput="applyFilters()"' not in tri_html)
+    check("facet selects stay immediate (year-mode still calls applyFilters)",
+          'id="year-mode" onchange="applyFilters()"' in tri_html)
+
+    # A11y (task 3): cards are keyboard-operable (tabindex/role/aria-label + keydown),
+    # the modal is a real dialog, focus is managed, the count region is a live region,
+    # and there is a visible focus outline.
+    check("card is keyboard-operable (tabindex + role button)",
+          'card.setAttribute("tabindex", "0")' in tri_html
+          and 'card.setAttribute("role", "button")' in tri_html)
+    check("card carries aria-label with the title",
+          'card.setAttribute("aria-label", r.title' in tri_html)
+    check("card keydown fires openModal on Enter/Space",
+          'card.addEventListener("keydown"' in tri_html and "openModal(r)" in tri_html)
+    check("modal is a dialog (role=dialog aria-modal)",
+          'role="dialog"' in tri_html and 'aria-modal="true"' in tri_html)
+    check("modal moves focus in on open, restores on close",
+          "modalOpener = document.activeElement" in tri_html
+          and "close.focus()" in tri_html and "modalOpener.focus()" in tri_html)
+    check("count region is an aria-live polite region",
+          'id="showing" aria-live="polite"' in tri_html)
+    check("visible focus outline in CSS for cards/buttons/links",
+          ".card:focus-visible" in tri_html and "outline:" in tri_html.replace(" ", ""))
+
     # Honest rigor labeling + ranking presets. The user-facing "Reliability"
     # label is relabeled to "Automated rigor" (the underlying data fields such as
     # reliability_score are unchanged), the detail view carries an explicit
@@ -1022,6 +1088,50 @@ def run():
               '"facet_route":"intranasal"' in nohuman_html)
         check("no-human build: exactly 2 </script> tags",
               nohuman_html.count("</script>") == 2)
+
+    # 20) Trial -> publication linkage: a trial carrying RESULT/DERIVED PMIDs
+    #     (result_pmids) renders a "Published results:" line with pubmed.ncbi.nlm.nih.gov
+    #     links via the safe helper; a trial without carries an empty string and
+    #     renders no such link. The field must be in the trial allowlist or it is
+    #     stripped by _norm_trial before it ever reaches the UI.
+    check("result_pmids is a trial field", "result_pmids" in site.TRIAL_FIELDS)
+    check("reference_pmids is a trial field", "reference_pmids" in site.TRIAL_FIELDS)
+    with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as out:
+        with open(os.path.join(src, "site_data.json"), "w", encoding="utf-8") as fh:
+            json.dump({"records": [], "molecules": []}, fh)
+        with open(os.path.join(src, "trials_data.json"), "w", encoding="utf-8") as fh:
+            json.dump({"generated_utc": "2026-07-04T00:00:00Z", "count": 2,
+                       "ongoing_count": 0, "trials": [
+                           {"nct_id": "NCT77", "molecule_name": "R", "brief_title": "With results",
+                            "overall_status": "COMPLETED", "ongoing": False,
+                            "result_pmids": "37345678", "reference_pmids": "37345678; 36000000",
+                            "url": "https://clinicaltrials.gov/study/NCT77"},
+                           {"nct_id": "NCT88", "molecule_name": "R", "brief_title": "No results",
+                            "overall_status": "RECRUITING", "ongoing": True,
+                            "result_pmids": "", "reference_pmids": "",
+                            "url": "https://clinicaltrials.gov/study/NCT88"},
+                       ]}, fh)
+        # data-level: the allowlist threads result_pmids through untouched.
+        sd = site.load_site_data(src)
+        by_nct = {t["nct_id"]: t for t in sd.trials}
+        check("trial with results keeps result_pmids", by_nct["NCT77"]["result_pmids"] == "37345678")
+        check("trial without results has empty result_pmids", by_nct["NCT88"]["result_pmids"] == "")
+        site.build_site(src, out, mode="inline")
+        with open(os.path.join(out, "index.html"), encoding="utf-8") as fh:
+            pmid_html = fh.read()
+        # PubMed base + safe href construction + guarded "Published results:" line.
+        check("trials pubmed base present", "https://pubmed.ncbi.nlm.nih.gov/" in pmid_html)
+        check("trial pmid href uses encodeURIComponent(pmid)",
+              "PUBMED + encodeURIComponent(pmid)" in pmid_html)
+        check("Published results label present", "Published results:" in pmid_html)
+        check("trial pubs guarded on non-empty result_pmids", "if (resultPmids.length) {" in pmid_html)
+        # result pmid inlined for the trial that has one; empty for the one without.
+        check("result pmid inlined in data block", '"result_pmids":"37345678"' in pmid_html)
+        check("no-result trial inlined as empty string", '"result_pmids":""' in pmid_html)
+        check("trial pmid link keeps security invariant (no javascript:)",
+              'href="javascript:' not in pmid_html.lower())
+        # _TEMPLATE.format() still renders (page built without KeyError/IndexError).
+        check("trials page rendered via _TEMPLATE.format()", "<!DOCTYPE html>" in pmid_html)
 
     print(f"\n{PASS} passed, {FAIL} failed")
     return 0 if FAIL == 0 else 1

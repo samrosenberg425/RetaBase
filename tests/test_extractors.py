@@ -10,6 +10,7 @@ disambiguation rules. No network, no SQLite. Run:
 from __future__ import annotations
 
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -45,6 +46,38 @@ def run():
     check("dose nmol", "300 nmol" in parse_dose("A 300 nmol bolus was given."))
     check("dose mg/kg/day", "2 mg/kg/day" in parse_dose("Treatment was 2 mg/kg/day for 4 weeks."))
     check("dose absent -> empty", parse_dose("No numeric dose here, just prose.") == "")
+
+    # --- dose regression: middle-dot (U+00B7) decimals & no phantom bare-kg ---
+    # BMI range with middle-dot decimals and "kg/m²" must not yield a "9 kg" dose.
+    _bmi = parse_dose(
+        "in participants aged 18-55 years with overweight or obesity "
+        "(BMI 27·0-39·9 kg/m²). treated"
+    )
+    _bmi_toks = [t.strip() for t in _bmi.split(";") if t.strip()]
+    check("dose BMI no phantom '9 kg'", "9 kg" not in _bmi)
+    check(
+        "dose BMI no bare-kg token",
+        not any(re.fullmatch(r"\d+(?:[.·]\d+)?\s*kg", t) for t in _bmi_toks),
+    )
+
+    # Middle-dot doses parse whole (not split at the "·").
+    _md = parse_dose("escalated from 0·3 mg to 60 mg once weekly then 1·25 mg")
+    check("dose middle-dot 0·3 mg whole", "0·3 mg" in _md)
+    check("dose middle-dot 60 mg present", "60 mg" in _md)
+    check("dose middle-dot 1·25 mg whole", "1·25 mg" in _md)
+
+    # Per-weight compound still works (kg retained only as /kg denominator).
+    check("dose per-weight mg/kg retained", "mg/kg" in parse_dose("2 mg/kg/day"))
+
+    # Plain units still parse.
+    check("dose plain 5 mg", "5 mg" in parse_dose("5 mg"))
+    check("dose plain 250 µg", "250 µg" in parse_dose("250 µg"))
+
+    # Standalone body-weight kg no longer yields a dose.
+    check("dose standalone body-weight kg -> none", parse_dose("lost 9 kg of body weight") == "")
+
+    # Period-decimal still works.
+    check("dose period-decimal 1.5 mg", "1.5 mg" in parse_dose("1.5 mg"))
 
     # --- route parsing ---
     check("route oral", "oral" in parse_route("Given orally each morning."))

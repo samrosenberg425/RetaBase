@@ -68,6 +68,15 @@ def sample_study(status="RECRUITING"):
                 ]
             },
             "sponsorCollaboratorsModule": {"leadSponsor": {"name": "Eli Lilly and Company"}},
+            "referencesModule": {
+                "references": [
+                    {"pmid": "37345678", "type": "RESULT", "citation": "Foo et al. 2023"},
+                    {"pmid": "37000000", "type": "DERIVED", "citation": "Bar et al. 2023"},
+                    {"pmid": "36000000", "type": "BACKGROUND", "citation": "Baz et al. 2022"},
+                    {"type": "BACKGROUND", "citation": "No pmid here"},
+                    {"pmid": "not-a-number", "type": "RESULT"},
+                ]
+            },
         },
         "resultsSection": {},
     }
@@ -110,6 +119,16 @@ def run():
     check("parse_study sponsor", parsed["lead_sponsor"] == "Eli Lilly and Company")
     check("parse_study start_date", parsed["start_date"] == "2024-01-15")
 
+    # --- parse_study: linked publications from referencesModule ---
+    refs = parsed["references"]
+    check("parse_study references keep only numeric pmids", len(refs) == 3)
+    check("parse_study references preserve pmid+type",
+          refs[0] == {"pmid": "37345678", "type": "RESULT"})
+    check("parse_study references drops non-numeric pmid",
+          all(r["pmid"].isdigit() for r in refs))
+    check("parse_study references types preserved",
+          {r["type"] for r in refs} == {"RESULT", "DERIVED", "BACKGROUND"})
+
     # --- normalize_trial: molecule attribution + url + ongoing flag ---
     trial = normalize_trial(parsed, molecule_id="retatrutide", molecule_name="Retatrutide")
     check("trial molecule_id", trial["molecule_id"] == "retatrutide")
@@ -117,12 +136,20 @@ def run():
     check("trial url", trial["url"] == "https://clinicaltrials.gov/study/NCT05723458")
     check("trial ongoing (recruiting)", trial["ongoing"] is True)
     check("trial has_results False", trial["has_results"] is False)
+    # result_pmids = RESULT + DERIVED only; reference_pmids = every linked pmid.
+    check("trial result_pmids RESULT+DERIVED", trial["result_pmids"] == "37345678; 37000000")
+    check("trial reference_pmids all", trial["reference_pmids"] == "37345678; 37000000; 36000000")
     check("trial keys compact", set(trial) >= {
         "nct_id", "molecule_id", "molecule_name", "brief_title", "overall_status",
         "phases", "study_type", "conditions", "interventions", "enrollment_count",
         "start_date", "primary_completion_date", "completion_date", "lead_sponsor",
-        "has_results", "url", "ongoing",
+        "has_results", "result_pmids", "reference_pmids", "url", "ongoing",
     })
+
+    # blank-safe: a parsed study with no references -> empty pmid strings
+    no_refs = normalize_trial({"nct_id": "NCT00000000", "overall_status": "COMPLETED"})
+    check("trial result_pmids blank-safe", no_refs["result_pmids"] == "")
+    check("trial reference_pmids blank-safe", no_refs["reference_pmids"] == "")
 
     # --- ongoing flag across statuses (v2 enum + humanized) ---
     check("ongoing RECRUITING", is_ongoing("RECRUITING"))

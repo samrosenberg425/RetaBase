@@ -27,7 +27,7 @@ COMPACT_FIELDS = [
     "nct_id", "molecule_id", "molecule_name", "brief_title", "overall_status",
     "phases", "study_type", "conditions", "interventions", "enrollment_count",
     "start_date", "primary_completion_date", "completion_date", "lead_sponsor",
-    "has_results", "url", "ongoing",
+    "has_results", "result_pmids", "reference_pmids", "url", "ongoing",
 ]
 
 
