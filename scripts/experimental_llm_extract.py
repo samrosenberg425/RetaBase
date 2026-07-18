@@ -202,34 +202,80 @@ def _norm(v) -> str:
     s = s.replace("n =", " ").replace("n=", " ")
     s = re.sub(r"\b(participants?|patients?|subjects?|volunteers?|individuals?|adults?)\b", " ", s)
     s = re.sub(r"[^\w.%/·-]+", " ", s)
-    return re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r"\s+", " ", s).strip()
+    # Fold synonyms/abbreviations so "SC" vs "subcutaneous" or "12 wks" vs "12 weeks"
+    # count as agreement (a difference in SYNTAX, not content).
+    return " ".join(_SYNONYMS.get(t, t) for t in s.split(" "))
 
 
-def _grounded(value: str, abstract: str) -> Optional[bool]:
-    """Is an LLM value literally supported by the abstract? None if no value.
+_SYNONYMS = {
+    # route
+    "sc": "subcutaneous", "s.c": "subcutaneous", "s.c.": "subcutaneous", "subq": "subcutaneous",
+    "subcutaneously": "subcutaneous", "subcut": "subcutaneous",
+    "po": "oral", "p.o": "oral", "orally": "oral", "gavage": "oral",
+    "iv": "intravenous", "i.v": "intravenous", "intravenously": "intravenous",
+    "ip": "intraperitoneal", "i.p": "intraperitoneal", "intraperitoneally": "intraperitoneal",
+    "im": "intramuscular", "i.m": "intramuscular", "intramuscularly": "intramuscular",
+    "inhaled": "inhalation", "topically": "topical",
+    # duration
+    "wk": "week", "wks": "week", "weeks": "week", "weekly": "week",
+    "d": "day", "days": "day", "daily": "day",
+    "mo": "month", "mos": "month", "months": "month",
+    "yr": "year", "yrs": "year", "years": "year", "hr": "hour", "hrs": "hour", "hours": "hour",
+    # dose units
+    "mgs": "mg", "milligram": "mg", "milligrams": "mg",
+    "mcg": "µg", "ug": "µg", "microgram": "µg", "micrograms": "µg",
+    "grams": "g", "gram": "g", "kilogram": "kg", "kilograms": "kg",
+}
 
-    This is the key trust filter: an LLM-only value that appears verbatim (or whose
-    numbers all appear) in the source text is an extraction; one that doesn't is a
-    plausible hallucination and must not be published.
+
+# Fields an LLM value could ever be ADOPTED for. outcome_direction is deliberately
+# excluded and stays rules-based: authors systematically frame their own findings
+# positively, so a model reading that framing over-calls "beneficial". The rules
+# engine reads negation/effect words, not the authors' enthusiasm.
+ADOPTABLE_FIELDS = ["dose", "route", "duration", "sample_size"]
+RULES_ONLY_FIELDS = ["outcome_direction"]
+
+
+def _split_sentences(text: str) -> List[str]:
+    return [s for s in re.split(r"(?<=[.!?])\s+", str(text or "")) if s.strip()]
+
+
+def ground_status(value: str, abstract: str, molecule: str) -> Optional[str]:
+    """attributed | unattributed | ungrounded (None when there's no value).
+
+    Groundedness alone is NOT enough: a comparator's dose, or a number belonging to a
+    different endpoint, also appears in the abstract. So we locate the sentence that
+    supports the value and require it to ALSO name this record's molecule. Only then
+    is the value both real and about the right drug.
     """
-    v, a = _norm(value), _norm(abstract)
+    v = _norm(value)
     if not v:
         return None
-    if v in a:
-        return True
     nums = re.findall(r"\d+(?:\.\d+)?", v)
-    return bool(nums) and all(n in a for n in nums)
+    mol = _norm(molecule)
+    hit = False
+    for s in _split_sentences(abstract):
+        ns = _norm(s)
+        if v in ns or (nums and all(n in ns for n in nums)):
+            hit = True
+            if mol and mol in ns:
+                return "attributed"
+    return "unattributed" if hit else "ungrounded"
 
 
-def classify_field(rules_v: str, llm_v: str, abstract: str) -> str:
-    """agree | differ | llm_only_grounded | llm_only_ungrounded | rules_only | both_empty."""
+def classify_field(rules_v: str, llm_v: str, abstract: str, molecule: str = "") -> str:
+    """agree | differ | llm_only_attributed | llm_only_unattributed |
+    llm_only_ungrounded | rules_only | both_empty."""
     r, l = _norm(rules_v), _norm(llm_v)
     if not r and not l:
         return "both_empty"
     if r and not l:
         return "rules_only"
     if l and not r:
-        return "llm_only_grounded" if _grounded(llm_v, abstract) else "llm_only_ungrounded"
+        g = ground_status(llm_v, abstract, molecule)
+        return {"attributed": "llm_only_attributed",
+                "unattributed": "llm_only_unattributed"}.get(g, "llm_only_ungrounded")
     if r == l or r in l or l in r:
         return "agree"
     return "differ"
@@ -248,8 +294,10 @@ def compare_paper(paper: dict, api: str, base_url: str, model: str,
         "sample_size": rules.get("refined_sample_size", ""),
         "outcome_direction": rules.get("refined_outcome_direction", ""),
     }
-    status = {f: classify_field(rules_map[f], llm.get(f, ""), paper.get("abstract", "")) for f in FIELDS}
-    disagree = [f for f in FIELDS if status[f] in ("differ", "llm_only_ungrounded")]
+    status = {f: classify_field(rules_map[f], llm.get(f, ""), paper.get("abstract", ""),
+                                paper.get("molecule_name", "")) for f in FIELDS}
+    disagree = [f for f in FIELDS
+                if status[f] in ("differ", "llm_only_ungrounded", "llm_only_unattributed")]
     return {
         "pmid": paper["pmid"],
         "molecule_name": paper["molecule_name"],
@@ -270,7 +318,8 @@ def write_report(rows: List[dict], out: str, mock: bool = False, model: str = ""
         return html.escape(str(s or ""))
     n = len(rows)
     n_dis = sum(1 for r in rows if r["disagree"])
-    STATUSES = ["agree", "differ", "llm_only_grounded", "llm_only_ungrounded", "rules_only", "both_empty"]
+    STATUSES = ["agree", "differ", "llm_only_attributed", "llm_only_unattributed",
+                "llm_only_ungrounded", "rules_only", "both_empty"]
     tally = {f: {s: sum(1 for r in rows if r.get("status", {}).get(f) == s) for s in STATUSES} for f in FIELDS}
     agree = {f: tally[f]["agree"] for f in FIELDS}
     parts = [
@@ -305,12 +354,21 @@ def write_report(rows: List[dict], out: str, mock: bool = False, model: str = ""
     parts.append("</table>"
                  "<div class=sum><b>How to read this:</b> "
                  "<b>agree</b> = both extracted the same value (highest confidence). "
-                 "<b>llm_only_grounded</b> = the LLM filled a gap AND the value appears "
-                 "verbatim in the abstract (safe to use as a gap-fill). "
-                 "<b>llm_only_ungrounded</b> = the LLM produced a value NOT supported by the "
-                 "abstract text — treat as hallucination, never publish. "
-                 "<b>differ</b> = both produced values that conflict — do not publish "
-                 "either as fact. <b>rules_only</b> = the LLM missed something the rules found."
+                 "<b>llm_only_attributed</b> = the LLM filled a gap AND the supporting "
+                 "sentence both contains the value and names THIS molecule &mdash; the only "
+                 "LLM-only case safe to adopt. "
+                 "<b>llm_only_unattributed</b> = the value is in the abstract but in a "
+                 "sentence that does not name this molecule (likely a comparator's dose or a "
+                 "different endpoint) &mdash; do not adopt. "
+                 "<b>llm_only_ungrounded</b> = not supported by the abstract at all &mdash; "
+                 "hallucination, never publish. "
+                 "<b>differ</b> = both produced conflicting values &mdash; publish neither as "
+                 "fact; keep the rules value (auditable) and flag. "
+                 "<b>rules_only</b> = the LLM missed something the rules found."
+                 "<br><br><b>outcome_direction is rules-only by policy</b> and is shown for "
+                 "comparison only: authors frame their own findings positively, so a model "
+                 "reading that framing over-calls &ldquo;beneficial&rdquo;. It is never adopted "
+                 "from the LLM regardless of its status above."
                  "</div>")
     for r in rows:
         parts.append(f"<h3 class=h>{esc(r['molecule_name'])} &middot; PMID {esc(r['pmid'])}</h3>")
