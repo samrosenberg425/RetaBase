@@ -475,6 +475,24 @@ def _cap_site_feed(records: List[dict], focus_cap: int = FEED_FOCUS_CAP, other_c
     """
     from collections import defaultdict
 
+    # Collapse duplicate (pmid, molecule) records that arise when one paper matches
+    # the same molecule via more than one search rule. Without this, the same paper
+    # renders as two cards under one molecule and is double-counted. Keep the
+    # highest-ranked instance. (Rare in practice -- ~0.2% of records -- but it makes
+    # the per-molecule counts honest and removes visible duplicates.)
+    _best: Dict[tuple, dict] = {}
+    _no_id: List[dict] = []
+    for r in records:
+        pmid = str(r.get("pmid", ""))
+        if not pmid:
+            _no_id.append(r)  # no identifier -> can't dedup safely, keep as-is
+            continue
+        k = (pmid, str(r.get("molecule_id", "")))
+        cur = _best.get(k)
+        if cur is None or _int(r.get("rank_score")) > _int(cur.get("rank_score")):
+            _best[k] = r
+    records = _no_id + list(_best.values())
+
     by_mol: Dict[str, List[dict]] = defaultdict(list)
     for r in records:
         by_mol[str(r.get("molecule_id", ""))].append(r)

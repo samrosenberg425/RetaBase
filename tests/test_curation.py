@@ -232,6 +232,20 @@ def run_density_tests():
     kept2, _ = bcd._cap_site_feed(highvol, other_cap=10)
     check("high-volume preclinical still capped (not exempt on human-sparse)", len(kept2) == 10)
 
+    # Duplicate (pmid, molecule) records collapse to the highest-ranked one.
+    dup_recs = [
+        {"molecule_id": "m", "pmid": "111", "website_section": "Human evidence",
+         "model_type": "human", "rank_score": 40},
+        {"molecule_id": "m", "pmid": "111", "website_section": "Human evidence",
+         "model_type": "human", "rank_score": 88},  # same paper+molecule, higher rank
+        {"molecule_id": "m", "pmid": "222", "website_section": "Human evidence",
+         "model_type": "human", "rank_score": 50},
+    ]
+    kept_d, _ = bcd._cap_site_feed(dup_recs)
+    keys = sorted((r["pmid"], r["rank_score"]) for r in kept_d)
+    check("duplicate paper+molecule collapsed to one", len(kept_d) == 2)
+    check("dedup keeps the higher-ranked instance", ("111", 88) in keys and ("111", 40) not in keys)
+
     # molecule_index attaches the tier + counts.
     rows = [{"molecule_id": "m", "molecule_name": "Mol",
              "model_type": "human", "publication_status": "featured"} for _ in range(5)]

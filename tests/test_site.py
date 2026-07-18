@@ -86,6 +86,20 @@ def run():
     check("density fields survive the molecule allowlist",
           all(f in site.MOLECULE_FIELDS for f in ("density_tier", "record_count", "human_count")))
 
+    # Initial-load performance: fetch mode preloads the feed, shows a loading
+    # state, renders the evidence view without waiting on the trials/preprints
+    # side feeds, and defers the hidden tabs (molecules/experimental/about).
+    fetch_html = site._render_html('{"records":[],"molecules":[],"corpus_stats":{}}', 0, 0,
+                                   "2026-01-01T00:00:00Z", 0, 0, "fetch")
+    inline_html = site._render_html('{"records":[],"molecules":[],"corpus_stats":{}}', 0, 0,
+                                    "2026-01-01T00:00:00Z", 0, 0, "inline")
+    check("fetch mode preloads site_data.json", 'rel="preload"' in fetch_html and "site_data.json" in fetch_html)
+    check("inline mode adds no dead preload", 'rel="preload"' not in inline_html)
+    check("fetch mode shows a loading state", "Loading evidence" in fetch_html)
+    check("boot does not block first paint on side feeds", "Promise.all" not in fetch_html)
+    check("hidden tabs render lazily on first open", "_rendered.molecules" in fetch_html)
+    check("side feeds refresh their tab when they arrive", 'currentTab === "trials"' in fetch_html)
+
     # 3) Missing columns / empty inputs don't crash.
     empty = site.SiteData(records=[], molecules=[])
     check("empty site data renders", isinstance(site._safe_json_block({"records": []}), str))

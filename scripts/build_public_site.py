@@ -613,6 +613,13 @@ def _render_html(json_block: str, record_count: int, molecule_count: int,
         '\n    <button class="exp" onclick="exportDecisions(\'json\')">Export decisions</button>'
         if internal else ""
     )
+    # In hosted (fetch) mode, tell the browser to start downloading the data feed
+    # during HTML parse -- in parallel with parsing the large inline script -- so
+    # it's ready the moment the boot code calls fetch(). No effect in inline mode.
+    preload_hint = (
+        '\n<link rel="preload" as="fetch" href="site_data.json" crossorigin="anonymous">'
+        if mode == "fetch" else ""
+    )
     return _TEMPLATE.format(
         title=title,
         subtitle=subtitle,
@@ -621,6 +628,7 @@ def _render_html(json_block: str, record_count: int, molecule_count: int,
         molecule_count=molecule_count,
         data_json=json_block,
         export_btn=export_btn,
+        preload_hint=preload_hint,
     )
 
 
@@ -629,7 +637,7 @@ _TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">{preload_hint}
 <title>{title}</title>
 <style>
   :root {{
@@ -1075,6 +1083,10 @@ _TEMPLATE = """<!DOCTYPE html>
   var TRIALS = DATA.trials || [];
   var PREPRINTS = DATA.preprints || [];
   var CORPUS = DATA.corpus_stats || {{}};
+  // Which tab is showing + which lazy tabs have rendered, so the hidden tabs
+  // (molecules grid / experimental / about) are built on first open, not on load.
+  var currentTab = "evidence";
+  var _rendered = {{molecules: false, experimental: false, about: false}};
   var FILTERS = DATA.filters || [];
   var MULTI = new Set(DATA.multi || []);
   var ASPECTS = DATA.aspects || [];
@@ -2737,6 +2749,11 @@ _TEMPLATE = """<!DOCTYPE html>
     document.getElementById("tab-molecules").className = isMol ? "active" : "";
     document.getElementById("tab-experimental").className = isExp ? "active" : "";
     document.getElementById("tab-about").className = isAbout ? "active" : "";
+    currentTab = name;
+    // Lazy-render hidden tabs on first open so they don't cost anything at load.
+    if (isMol && !_rendered.molecules) {{ renderMolecules(); _rendered.molecules = true; }}
+    if (isExp && !_rendered.experimental) {{ renderExperimental(); _rendered.experimental = true; }}
+    if (isAbout && !_rendered.about) {{ renderAbout(); _rendered.about = true; }}
     if (isTrials) trialsFeedInit();
     if (isPreprints) preprintsFeedInit();
     if (isBrowser) {{
@@ -2896,9 +2913,8 @@ _TEMPLATE = """<!DOCTYPE html>
     buildFilters();
     if (INTERNAL) updateApSummary();
     renderCorpusStrip();
-    renderMolecules();
-    renderExperimental();
-    renderAbout();
+    // molecules / experimental / about are rendered lazily on first tab open
+    // (see showTab) so the initial paint only builds the evidence view.
     showTab("evidence");
   }}
 
@@ -2915,25 +2931,34 @@ _TEMPLATE = """<!DOCTYPE html>
   }}
 
   if (DATA.mode === "fetch") {{
-    // Hosted mode: fetch the sibling feed, then boot with real records.
+    // Hosted mode. Show an immediate loading state, fetch the main feed, and boot
+    // the evidence view AS SOON as it arrives -- without blocking first paint on
+    // the trials/preprints side feeds, which load in the background afterward and
+    // refresh their own tab if it happens to be open.
+    var loadingEl = document.getElementById("records-list");
+    if (loadingEl) loadingEl.appendChild(el("div", "empty", "Loading evidence\\u2026"));
     fetch("site_data.json").then(function(r) {{ return r.json(); }}).then(function(feed) {{
       RECORDS = feed.records || [];
-      MOLECULES = (feed.molecules || []).filter(function(m) {{ return true; }});
+      MOLECULES = feed.molecules || [];
       // Prefer the feed's experimental list if present; else keep the inlined one.
       if (feed.experimental) EXPERIMENTAL = feed.experimental;
       // corpus_stats travels with the main feed; prefer it, else keep inlined.
       if (feed.corpus_stats) CORPUS = feed.corpus_stats;
-      // Trials + preprints are separate sibling feeds (may 404 -> stay empty).
-      return Promise.all([
-        fetchSideFeed("trials_data.json", "trials", function(v) {{ TRIALS = v || []; }}),
-        fetchSideFeed("preprints_data.json", "preprints", function(v) {{ PREPRINTS = v || []; }}),
-      ]);
-    }}).then(function() {{
-      boot();
+      boot();  // render the evidence view now; don't await the side feeds
+      // Trials + preprints load in the background (may 404 -> stay empty). If the
+      // user is already on that tab when it arrives, re-render it in place.
+      fetchSideFeed("trials_data.json", "trials", function(v) {{
+        TRIALS = v || []; if (currentTab === "trials") renderTrials();
+      }});
+      fetchSideFeed("preprints_data.json", "preprints", function(v) {{
+        PREPRINTS = v || []; if (currentTab === "preprints") renderPreprints();
+      }});
     }}).catch(function() {{
+      var rl = document.getElementById("records-list");
+      if (rl) rl.textContent = "";
       document.getElementById("records-list").appendChild(el("div", "empty",
         "Could not load site_data.json (fetch mode requires it be served alongside this page)."));
-      buildFilters(); if (INTERNAL) updateApSummary(); renderCorpusStrip(); renderExperimental(); renderAbout();
+      buildFilters(); if (INTERNAL) updateApSummary(); renderCorpusStrip();
     }});
   }} else {{
     boot();
