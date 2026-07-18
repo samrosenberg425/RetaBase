@@ -243,6 +243,19 @@ def run_pipeline_robustness_tests():
          {"citation_count": "", "pub_year": 2022}], [{"pmid": "1"}], [{"pmid": "1"}])
     check("pct_citations excludes '0.0'/blank", cstats["pct_citations_filled"] == 33.3)
 
+    # site_data.json omits empty values (payload size) -- missing key == empty string
+    # for the UI, so this must not change behaviour, only bytes.
+    import tempfile as _tf, json as _json, os as _os
+    _rec = {k: "" for k in bcd.SITE_JSON_FIELDS}
+    _rec.update({"molecule_id": "m", "molecule_name": "M", "pmid": "1", "title": "T"})
+    with _tf.TemporaryDirectory() as _d:
+        _p = _os.path.join(_d, "s.json")
+        bcd._write_site_json(_p, [_rec], [], {})
+        _out = _json.load(open(_p, encoding="utf-8"))["records"][0]
+    check("empty fields omitted from site_data", all(v != "" for v in _out.values()))
+    check("filled fields preserved", _out.get("molecule_name") == "M" and _out.get("pmid") == "1")
+    check("blank field is simply absent", "journal" not in _out)
+
     # molecule_index dedups (pmid,molecule) and counts human via model_primary.
     mrecs = [
         {"molecule_id": "m", "molecule_name": "M", "pmid": "1", "model_primary": "human",

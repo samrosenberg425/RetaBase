@@ -192,6 +192,50 @@ def parse_llm_json(text: str) -> Dict[str, str]:
 
 
 # ------------------------------- comparison ---------------------------------
+def _norm(v) -> str:
+    """Normalize a field value so cosmetic differences aren't counted as conflicts.
+
+    "n=101" / "101" / "101 participants" all collapse to the same thing; without
+    this, sample_size showed 0% agreement purely from formatting.
+    """
+    s = str(v or "").strip().lower()
+    s = s.replace("n =", " ").replace("n=", " ")
+    s = re.sub(r"\b(participants?|patients?|subjects?|volunteers?|individuals?|adults?)\b", " ", s)
+    s = re.sub(r"[^\w.%/·-]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _grounded(value: str, abstract: str) -> Optional[bool]:
+    """Is an LLM value literally supported by the abstract? None if no value.
+
+    This is the key trust filter: an LLM-only value that appears verbatim (or whose
+    numbers all appear) in the source text is an extraction; one that doesn't is a
+    plausible hallucination and must not be published.
+    """
+    v, a = _norm(value), _norm(abstract)
+    if not v:
+        return None
+    if v in a:
+        return True
+    nums = re.findall(r"\d+(?:\.\d+)?", v)
+    return bool(nums) and all(n in a for n in nums)
+
+
+def classify_field(rules_v: str, llm_v: str, abstract: str) -> str:
+    """agree | differ | llm_only_grounded | llm_only_ungrounded | rules_only | both_empty."""
+    r, l = _norm(rules_v), _norm(llm_v)
+    if not r and not l:
+        return "both_empty"
+    if r and not l:
+        return "rules_only"
+    if l and not r:
+        return "llm_only_grounded" if _grounded(llm_v, abstract) else "llm_only_ungrounded"
+    if r == l or r in l or l in r:
+        return "agree"
+    return "differ"
+
+
+
 def compare_paper(paper: dict, api: str, base_url: str, model: str,
                   api_key: Optional[str], mock: bool) -> dict:
     rules = refine_extraction(paper["_evidence"], paper["_paper"])
@@ -204,8 +248,8 @@ def compare_paper(paper: dict, api: str, base_url: str, model: str,
         "sample_size": rules.get("refined_sample_size", ""),
         "outcome_direction": rules.get("refined_outcome_direction", ""),
     }
-    disagree = [f for f in FIELDS
-                if (rules_map[f] or "").strip().lower() != (llm.get(f, "") or "").strip().lower()]
+    status = {f: classify_field(rules_map[f], llm.get(f, ""), paper.get("abstract", "")) for f in FIELDS}
+    disagree = [f for f in FIELDS if status[f] in ("differ", "llm_only_ungrounded")]
     return {
         "pmid": paper["pmid"],
         "molecule_name": paper["molecule_name"],
@@ -215,6 +259,7 @@ def compare_paper(paper: dict, api: str, base_url: str, model: str,
         "llm": {f: llm.get(f, "") for f in FIELDS},
         "llm_summary": llm.get("one_sentence_summary", ""),
         "rules_scope": rules.get("refined_extraction_scope", ""),
+        "status": status,
         "disagree": disagree,
         "raw": raw,
     }
@@ -225,8 +270,9 @@ def write_report(rows: List[dict], out: str, mock: bool = False, model: str = ""
         return html.escape(str(s or ""))
     n = len(rows)
     n_dis = sum(1 for r in rows if r["disagree"])
-    # Per-field agreement rate (how often rules and LLM produced the same value).
-    agree = {f: sum(1 for r in rows if f not in r["disagree"]) for f in FIELDS}
+    STATUSES = ["agree", "differ", "llm_only_grounded", "llm_only_ungrounded", "rules_only", "both_empty"]
+    tally = {f: {s: sum(1 for r in rows if r.get("status", {}).get(f) == s) for s in STATUSES} for f in FIELDS}
+    agree = {f: tally[f]["agree"] for f in FIELDS}
     parts = [
         "<!doctype html><meta charset=utf-8><title>LLM vs rules extraction</title>",
         "<style>body{font:14px system-ui;margin:24px;background:#0f1115;color:#e6e8ec}"
@@ -249,6 +295,23 @@ def write_report(rows: List[dict], out: str, mock: bool = False, model: str = ""
                  + " &middot; ".join(f"{esc(f)} <b>{(100*agree[f]//n) if n else 0}%</b>" for f in FIELDS)
                  + "<br><small>Research comparison only &mdash; the LLM output is NOT used "
                  "anywhere on the live site.</small></div>")
+    # Trust breakdown: the number that actually matters is llm_only_GROUNDED (safe
+    # gap-fill) vs llm_only_UNGROUNDED (likely hallucination) vs differ (conflict).
+    parts.append("<h2>Trust breakdown</h2><table><tr><th>field</th>"
+                 + "".join(f"<th>{esc(s)}</th>" for s in STATUSES) + "</tr>")
+    for f in FIELDS:
+        parts.append(f"<tr><td>{esc(f)}</td>"
+                     + "".join(f"<td>{tally[f][s]}</td>" for s in STATUSES) + "</tr>")
+    parts.append("</table>"
+                 "<div class=sum><b>How to read this:</b> "
+                 "<b>agree</b> = both extracted the same value (highest confidence). "
+                 "<b>llm_only_grounded</b> = the LLM filled a gap AND the value appears "
+                 "verbatim in the abstract (safe to use as a gap-fill). "
+                 "<b>llm_only_ungrounded</b> = the LLM produced a value NOT supported by the "
+                 "abstract text — treat as hallucination, never publish. "
+                 "<b>differ</b> = both produced values that conflict — do not publish "
+                 "either as fact. <b>rules_only</b> = the LLM missed something the rules found."
+                 "</div>")
     for r in rows:
         parts.append(f"<h3 class=h>{esc(r['molecule_name'])} &middot; PMID {esc(r['pmid'])}</h3>")
         parts.append(f"<p>{esc(r['title'])}</p>")
@@ -256,11 +319,12 @@ def write_report(rows: List[dict], out: str, mock: bool = False, model: str = ""
             parts.append(f"<div class=ab>{esc(r['abstract'])}&hellip;</div>")
         if r["llm_summary"]:
             parts.append(f"<p><small>LLM summary:</small> {esc(r['llm_summary'])}</p>")
-        parts.append("<table><tr><th>field</th><th>rules-based</th><th>LLM</th></tr>")
+        parts.append("<table><tr><th>field</th><th>rules-based</th><th>LLM</th><th>verdict</th></tr>")
         for f in FIELDS:
-            cls = " class=d" if f in r["disagree"] else ""
+            st = r.get("status", {}).get(f, "")
+            cls = " class=d" if st in ("differ", "llm_only_ungrounded") else ""
             parts.append(f"<tr{cls}><td>{esc(f)}</td><td>{esc(r['rules'][f])}</td>"
-                         f"<td>{esc(r['llm'][f])}</td></tr>")
+                         f"<td>{esc(r['llm'][f])}</td><td><small>{esc(st)}</small></td></tr>")
         parts.append("</table>")
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     with open(out, "w", encoding="utf-8") as fh:

@@ -16,12 +16,15 @@ All test suites currently green: test_curation, test_extractors, test_site, test
    (low risk). NOTE: the Playwright E2E workflow is the real browser gate — confirm it
    passes after deploy, since a hash mismatch would only surface in a browser.
 
-2. **Offload `JSON.parse` + filtering to a Web Worker.** On the full corpus the
-   synchronous `JSON.parse(site_data.json)` and per-keystroke `crossFilterCounts` +
-   sort block the main thread on first paint / low-end phones. Move parse + filter +
-   count into a Worker; keep the 300-card render cap. Also verify the `<link
-   rel=preload as=fetch crossorigin>` isn't double-downloading `site_data.json`
-   (check DevTools; drop `crossorigin` if the preload isn't reused).
+2. **Load time.** PARTLY DONE (2026-07-18): the real bottleneck was payload BYTES,
+   not parsing — 63 fields/record meant ~1.1 KB of key names per record even when
+   blank. `_write_site_json` now omits empty values (missing key behaves exactly like
+   `""` for the UI), ~79% smaller on sparse records. STILL OPEN if load is still slow:
+   (a) offload `JSON.parse` + filtering to a **Web Worker** — this fixes main-thread
+   jank/responsiveness, NOT wall-clock download time; (b) shorten JSON keys via a
+   rename map (another big byte win, more invasive); (c) verify the `<link rel=preload
+   as=fetch crossorigin>` is actually reused and not double-downloading (DevTools →
+   Network; drop `crossorigin` if it isn't).
 
 3. **De-nest interactive controls from `role="button"` cards.** A card is
    `role="button"` yet contains real `<a>` links (PubMed/DOI/authors) + filter tags —

@@ -581,7 +581,20 @@ def _write_site_json(path: str, records: List[dict], molecules: List[dict], corp
     """Compact, rank-sorted JSON feed for a hosted (fetch-based) site."""
     import datetime as _dt
 
-    trimmed = [{k: _flat(r.get(k, "")) for k in SITE_JSON_FIELDS} for r in records]
+    # PAYLOAD SIZE: omit empty values instead of emitting `"field":""` for all 63
+    # fields on every record. Key names alone are ~1.1 KB/record, and most records
+    # leave many fields blank, so this is the single biggest reduction in the file
+    # the browser must download and parse. It is behaviour-preserving: the UI reads
+    # every field as `rec.field || ""` / `String(rec.field == null ? "" : ...)`, so a
+    # MISSING key behaves exactly like an empty string.
+    trimmed = []
+    for r in records:
+        row = {}
+        for k in SITE_JSON_FIELDS:
+            v = _flat(r.get(k, ""))
+            if v != "":
+                row[k] = v
+        trimmed.append(row)
     experimental = _load_experimental()
     payload = {
         "generated_utc": _dt.datetime.utcnow().isoformat() + "Z",

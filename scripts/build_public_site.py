@@ -1463,16 +1463,24 @@ _TEMPLATE = """<!DOCTYPE html>
     var parts = raw.split(";").map(function(s) {{ return s.trim(); }}).filter(Boolean);
     parts.forEach(function(name, i) {{
       if (i > 0) wrap.appendChild(document.createTextNode("; "));
-      // "et al." (and similar trailing markers) is not a searchable author name.
-      if (/^et al\\.?$/i.test(name)) {{
+      // A standalone "et al." part is not a searchable author name.
+      if (/^et\\s+al\\.?$/i.test(name)) {{
         wrap.appendChild(document.createTextNode(name));
         return;
       }}
+      // PubMed often appends the marker to the LAST name ("Adelborg K et al."),
+      // so strip a trailing "et al." and render it as plain text -- otherwise it
+      // gets linked and ends up inside the Scholar query.
+      var trail = "";
+      var m = name.match(/^(.*?)[,\\s]+et\\s+al\\.?$/i);
+      if (m) {{ name = m[1].trim(); trail = " et al."; }}
+      if (!name) {{ wrap.appendChild(document.createTextNode(trail.trim())); return; }}
       var a = el("a", null, name);  // textContent set via el() -> safe
       a.href = SCHOLAR + encodeURIComponent(name);
       a.target = "_blank"; a.rel = "noopener noreferrer";
       a.addEventListener("click", function(e) {{ e.stopPropagation(); }});
       wrap.appendChild(a);
+      if (trail) wrap.appendChild(document.createTextNode(trail));
     }});
     return wrap;
   }}
@@ -2956,6 +2964,33 @@ _TEMPLATE = """<!DOCTYPE html>
       + "detail view labels it \\u201cnot assessed (automated rigor signals only)\\u201d. "
       + "Treat the score as an automated triage signal, not a substitute for reading the "
       + "methods or a systematic critical appraisal.");
+    p("Design credits are negation-aware: a study is not given points for a method it "
+      + "explicitly lacks or merely cites. \\u201cAn open-label study, unlike double-blind "
+      + "trials\\u2026\\u201d and \\u201cnot randomized\\u201d earn no blinding/randomization "
+      + "credit, and a term inside a larger word (\\u201cunblinded\\u201d) is not counted. "
+      + "Where an abstract is structured, these design terms are read from its Methods "
+      + "section, so background or citation mentions do not leak rigor credit.");
+
+    h3("Extracted study details (dose, route, duration, sample size)");
+    p("Dose, route, duration and sample size are parsed from the title/abstract by rules "
+      + "\\u2014 no model interprets them. Two safeguards matter. First, values are tied to "
+      + "the record\\u2019s own molecule: when a paper compares drugs, extraction is "
+      + "restricted to sentences naming THIS molecule, and if two drugs\\u2019 doses sit in "
+      + "one clause so they cannot be attributed, the dose is omitted rather than guessed "
+      + "(the paper detail view says so). Second, look-alikes are rejected: a BMI figure "
+      + "(\\u201c39\\u00b79 kg/m\\u00b2\\u201d) is not a dose, lab concentrations "
+      + "(\\u201c7\\u00b72 mmol/L\\u201d, \\u201c140 mg/dL\\u201d) are readouts rather than "
+      + "doses, and counts reported at different stages of one cohort (\\u201cn=50 enrolled "
+      + "\\u2026 n=48 analysed\\u201d) are not summed \\u2014 only genuine multi-arm counts are. "
+      + "Blank means \\u201cnot stated or not safely attributable,\\u201d never zero.");
+
+    h3("Evidence density per bioactive");
+    p("Each bioactive carries an evidence-density tier \\u2014 sparse, moderate or "
+      + "saturated \\u2014 shown on its card. This describes how MUCH literature exists "
+      + "(record and human-study counts), not how good it is: a sparse molecule is "
+      + "under-studied, not disproven. Low-volume molecules are exempt from the per-molecule "
+      + "publishing cap so none of their few records are hidden. Records are also de-duplicated "
+      + "per paper+bioactive, so a paper matched by several search rules is counted once.");
 
     h3("Directness \\u2014 translational level");
     p("Directness measures how directly the evidence bears on human outcomes: human "
