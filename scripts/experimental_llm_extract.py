@@ -181,16 +181,20 @@ def call_llm(prompt: str, api: str, base_url: str, model: str,
                           timeout=timeout)
         r.raise_for_status()
         return r.json().get("response", "")
-    # OpenAI-compatible
+    # OpenAI-compatible endpoint. Works for OpenAI, Google Gemini (via its
+    # /v1beta/openai compat layer), Groq, Mistral, DeepSeek, Together, vLLM, etc.
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = "Bearer " + api_key
-    r = requests.post(base_url.rstrip("/") + "/chat/completions",
-                      headers=headers,
-                      json={"model": model, "temperature": 0,
-                            "response_format": {"type": "json_object"},
-                            "messages": [{"role": "user", "content": prompt}]},
-                      timeout=timeout)
+    url = base_url.rstrip("/") + "/chat/completions"
+    body = {"model": model, "temperature": 0,
+            "messages": [{"role": "user", "content": prompt}]}
+    # Ask for JSON-constrained output, but not every compatible endpoint accepts
+    # response_format -- retry once without it rather than failing the whole run.
+    r = requests.post(url, headers=headers,
+                      json={**body, "response_format": {"type": "json_object"}}, timeout=timeout)
+    if r.status_code >= 400:
+        r = requests.post(url, headers=headers, json=body, timeout=timeout)
     r.raise_for_status()
     return r.json()["choices"][0]["message"]["content"]
 
