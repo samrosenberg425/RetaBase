@@ -37,6 +37,7 @@ import random
 import re
 import sqlite3
 import sys
+import time
 from typing import Dict, List, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -189,14 +190,29 @@ def call_llm(prompt: str, api: str, base_url: str, model: str,
     url = base_url.rstrip("/") + "/chat/completions"
     body = {"model": model, "temperature": 0,
             "messages": [{"role": "user", "content": prompt}]}
-    # Ask for JSON-constrained output, but not every compatible endpoint accepts
-    # response_format -- retry once without it rather than failing the whole run.
-    r = requests.post(url, headers=headers,
-                      json={**body, "response_format": {"type": "json_object"}}, timeout=timeout)
-    if r.status_code >= 400:
-        r = requests.post(url, headers=headers, json=body, timeout=timeout)
-    r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"]
+    # Two things to survive on free tiers: (1) not every compatible endpoint accepts
+    # response_format, so fall back to a plain request; (2) free tiers rate-limit
+    # aggressively (Gemini ~10-15 RPM), so back off and retry on 429/5xx instead of
+    # dropping the paper.
+    retry_codes = {429, 500, 502, 503, 504}
+    r = None
+    for variant in ({**body, "response_format": {"type": "json_object"}}, body):
+        for attempt in range(1, 6):
+            r = requests.post(url, headers=headers, json=variant, timeout=timeout)
+            if r.status_code in retry_codes:
+                wait = 0.0
+                try:
+                    wait = float(r.headers.get("Retry-After") or 0)
+                except (TypeError, ValueError):
+                    wait = 0.0
+                time.sleep(wait or min(60.0, 5.0 * attempt))
+                continue
+            break
+        if r is not None and r.status_code < 400:
+            return r.json()["choices"][0]["message"]["content"]
+    if r is not None:
+        r.raise_for_status()
+    raise RuntimeError("no response from LLM endpoint")
 
 
 def preflight(api: str, base_url: str, model: str) -> Optional[str]:
@@ -503,6 +519,9 @@ def main() -> None:
                     help="local CT.gov mirror; gives structured enrollment for trial-linked papers")
     ap.add_argument("--cache-dir", default=".cache/context",
                     help="on-disk cache for fetched context so re-runs don't re-fetch")
+    ap.add_argument("--rpm", type=float, default=0,
+                    help="throttle to at most N requests/minute (free tiers rate-limit; "
+                         "e.g. --rpm 10 for the Gemini free tier). 0 = no throttle.")
     args = ap.parse_args()
 
     if not args.mock and not os.path.exists(args.db):
@@ -527,7 +546,16 @@ def main() -> None:
     if trials_index:
         print(f"Trial links loaded for {len(trials_index)} PMIDs (structured CT.gov facts).")
     rows = []
+    min_gap = 60.0 / args.rpm if args.rpm and args.rpm > 0 else 0.0
+    last_call = 0.0
     for i, p in enumerate(papers):
+        if min_gap:
+            gap = min_gap - (time.time() - last_call)
+            if gap > 0:
+                time.sleep(gap)
+            last_call = time.time()
+        if i and i % 10 == 0:
+            print(f"  ...{i}/{len(papers)} papers", file=sys.stderr)
         try:
             ctx = ctxmod.build_context(
                 p["pmid"], p.get("molecule_name", ""), p.get("abstract", ""),
