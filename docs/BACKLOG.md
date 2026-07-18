@@ -7,12 +7,14 @@ All test suites currently green: test_curation, test_extractors, test_site, test
 
 ## Big structural items (deferred on purpose — they need care + a backup first)
 
-1. **Drop `'unsafe-inline'` from the CSP.** Today `script-src 'self' 'unsafe-inline'`
-   (in `build_public_site.py` `_TEMPLATE` head) is required because the app uses one
-   big inline `<script>` plus many inline `onclick=`/`oninput=` handlers. Real fix:
-   move every inline handler to `addEventListener`, then add a per-build nonce (or
-   hashes) so the CSP can drop `'unsafe-inline'`. Biggest security hardening left.
-   Touches: many handler attributes in `_TEMPLATE` + the CSP meta + `_render_html`.
+1. ~~**Drop `'unsafe-inline'` from the CSP.**~~ **DONE (2026-07-18).** All 31 inline
+   `on*=` handlers moved to `addEventListener` (`wireStaticEvents()`); the CSP now uses
+   a **sha256 hash** of the executable inline `<script>` (`_apply_csp` in `_render_html`,
+   two-pass) so `script-src 'self' 'sha256-…'` with NO `'unsafe-inline'`. Verified: 0
+   inline handlers, hash matches the script byte-for-byte, JS parses (node --check),
+   all suites green. `style-src` keeps `'unsafe-inline'` for inline style attributes
+   (low risk). NOTE: the Playwright E2E workflow is the real browser gate — confirm it
+   passes after deploy, since a hash mismatch would only surface in a browser.
 
 2. **Offload `JSON.parse` + filtering to a Web Worker.** On the full corpus the
    synchronous `JSON.parse(site_data.json)` and per-keystroke `crossFilterCounts` +

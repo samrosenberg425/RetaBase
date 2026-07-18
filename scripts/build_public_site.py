@@ -612,7 +612,7 @@ def _render_html(json_block: str, record_count: int, molecule_count: int,
     ) + note
     # Curator approval controls (public build omits them entirely).
     export_btn = (
-        '\n    <button class="exp" onclick="exportDecisions(\'json\')">Export decisions</button>'
+        '\n    <button class="exp" id="export-decisions">Export decisions</button>'
         if internal else ""
     )
     # In hosted (fetch) mode, tell the browser to start downloading the data feed
@@ -622,7 +622,7 @@ def _render_html(json_block: str, record_count: int, molecule_count: int,
         '\n<link rel="preload" as="fetch" href="site_data.json" crossorigin="anonymous">'
         if mode == "fetch" else ""
     )
-    return _TEMPLATE.format(
+    rendered = _TEMPLATE.format(
         title=title,
         subtitle=subtitle,
         generated=gen,
@@ -632,6 +632,37 @@ def _render_html(json_block: str, record_count: int, molecule_count: int,
         export_btn=export_btn,
         preload_hint=preload_hint,
     )
+    return _apply_csp(rendered)
+
+
+def _apply_csp(html_out: str) -> str:
+    """Insert a hash-based Content-Security-Policy computed from the executable
+    inline <script>. Because the page is a static file, a nonce would be public and
+    useless; a sha256 hash of the exact script content lets the browser run OUR
+    script while blocking any injected inline script (and all inline event handlers
+    have been removed so they aren't needed). The type="application/json" data block
+    is inert and not covered by script-src. Recomputed each build so it always
+    matches. style-src keeps 'unsafe-inline' for the many inline style attributes
+    (style injection is far lower risk than script)."""
+    import base64
+    import hashlib
+
+    open_tag = "<script>"
+    i = html_out.rfind(open_tag)  # the executable block (data block is <script type=...>)
+    script_hash = ""
+    if i != -1:
+        start = i + len(open_tag)
+        end = html_out.index("</script>", start)
+        content = html_out[start:end]
+        digest = hashlib.sha256(content.encode("utf-8")).digest()
+        script_hash = "'sha256-" + base64.b64encode(digest).decode("ascii") + "'"
+    script_src = "script-src 'self' " + script_hash if script_hash else "script-src 'self' 'unsafe-inline'"
+    policy = (
+        "default-src 'self'; " + script_src + "; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; "
+        "frame-ancestors 'none'"
+    )
+    return html_out.replace("__CSP_POLICY__", policy)
 
 
 # The template uses {{ }} for literal CSS/JS braces and { } for .format fields.
@@ -640,7 +671,7 @@ _TEMPLATE = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">{preload_hint}
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
+<meta http-equiv="Content-Security-Policy" content="__CSP_POLICY__">
 <meta name="referrer" content="no-referrer">
 <title>{title}</title>
 <style>
@@ -966,13 +997,13 @@ _TEMPLATE = """<!DOCTYPE html>
   </details>
   <div class="corpus-strip" id="corpus-strip" style="display:none"></div>
   <div class="tabs" role="tablist" aria-label="Views">
-    <button id="tab-evidence" class="active" role="tab" aria-selected="true" onclick="showTab('evidence')">Evidence</button>
-    <button id="tab-clinical" role="tab" aria-selected="false" onclick="showTab('clinical')">Clinical evidence</button>
-    <button id="tab-trials" role="tab" aria-selected="false" onclick="showTab('trials')">Trials registry</button>
-    <button id="tab-preprints" role="tab" aria-selected="false" onclick="showTab('preprints')">Preprints</button>
-    <button id="tab-molecules" role="tab" aria-selected="false" onclick="showTab('molecules')">Bioactives</button>
-    <button id="tab-experimental" role="tab" aria-selected="false" style="display:none" onclick="showTab('experimental')">Experimental</button>
-    <button id="tab-about" role="tab" aria-selected="false" onclick="showTab('about')">About / Methods</button>
+    <button id="tab-evidence" class="active" role="tab" aria-selected="true">Evidence</button>
+    <button id="tab-clinical" role="tab" aria-selected="false">Clinical evidence</button>
+    <button id="tab-trials" role="tab" aria-selected="false">Trials registry</button>
+    <button id="tab-preprints" role="tab" aria-selected="false">Preprints</button>
+    <button id="tab-molecules" role="tab" aria-selected="false">Bioactives</button>
+    <button id="tab-experimental" role="tab" aria-selected="false" style="display:none">Experimental</button>
+    <button id="tab-about" role="tab" aria-selected="false">About / Methods</button>
     <span class="spacer"></span>
     <span class="ap-summary" id="ap-summary"></span>{export_btn}
   </div>
@@ -981,43 +1012,43 @@ _TEMPLATE = """<!DOCTYPE html>
   <aside id="sidebar">
     <div class="fg">
       <label for="q">Search</label>
-      <input id="q" type="search" placeholder="title, bioactive, facets, summary..." oninput="qDebounced()">
+      <input id="q" type="search" placeholder="title, bioactive, facets, summary...">
     </div>
     <div class="fg">
       <label>Year (publication)</label>
       <div class="yearrow">
-        <select id="year-mode" onchange="applyFilters()">
+        <select id="year-mode">
           <option value="">Any</option>
           <option value="after">After</option>
           <option value="before">Before</option>
           <option value="exact">Exact</option>
           <option value="range">Range</option>
         </select>
-        <input id="year-a" type="number" placeholder="year" oninput="applyFilters()">
-        <input id="year-b" type="number" placeholder="to" oninput="applyFilters()" style="display:none">
+        <input id="year-a" type="number" placeholder="year">
+        <input id="year-b" type="number" placeholder="to" style="display:none">
       </div>
     </div>
     <div class="fg">
       <label for="journal-sub">Journal name includes</label>
-      <input id="journal-sub" type="search" placeholder="type part of a journal, e.g. Lancet" oninput="applyFilters()">
+      <input id="journal-sub" type="search" placeholder="type part of a journal, e.g. Lancet">
       <div class="note-hint">Text match on the journal name &mdash; a partial word works (e.g. &ldquo;diabetes&rdquo;).</div>
     </div>
     <div class="fg">
       <label for="min-cit">Min times cited</label>
-      <input id="min-cit" type="number" placeholder="0" min="0" oninput="applyFilters()">
+      <input id="min-cit" type="number" placeholder="0" min="0">
       <div class="note-hint">How often the paper has been cited by others (via OpenAlex).</div>
     </div>
     <div id="facet-filters"></div>
-    <button class="reset" onclick="resetFilters()">Reset filters</button>
+    <button class="reset" id="reset-filters">Reset filters</button>
   </aside>
   <section class="content">
     <div id="browser-view">
-      <button class="filters-toggle" id="filters-toggle" aria-expanded="false" aria-controls="sidebar" onclick="toggleFilters()">&#9776; Filters</button>
+      <button class="filters-toggle" id="filters-toggle" aria-expanded="false" aria-controls="sidebar">&#9776; Filters</button>
       <div class="tab-desc" id="browser-desc"></div>
       <div class="count" id="records-count">
         <span id="showing" aria-live="polite"></span>
         <label style="text-transform:none;display:inline-flex;gap:6px;align-items:center;color:var(--muted)">Sort
-          <select id="sort" onchange="applyFilters()">
+          <select id="sort">
             <option value="rank">Rank (best first)</option>
             <option value="reliability">Automated rigor</option>
             <option value="directness">Directness</option>
@@ -1029,7 +1060,7 @@ _TEMPLATE = """<!DOCTYPE html>
           </select>
         </label>
         <label style="text-transform:none;display:inline-flex;gap:6px;align-items:center;color:var(--muted)">View
-          <select id="rank-preset" onchange="applyFilters()">
+          <select id="rank-preset">
             <option value="default">Default (blended rank)</option>
             <option value="clinical">Clinical answer</option>
             <option value="synthesis">Best synthesis</option>
@@ -1039,9 +1070,9 @@ _TEMPLATE = """<!DOCTYPE html>
           </select>
         </label>
         <label style="text-transform:none;display:inline-flex;gap:6px;align-items:center;color:var(--muted)">
-          <input id="clinical-only" type="checkbox" onchange="applyFilters()" style="width:auto"> Clinical articles only
+          <input id="clinical-only" type="checkbox" style="width:auto"> Clinical articles only
         </label>
-        <button id="triangle-toggle" class="reset" style="width:auto;padding:4px 10px" onclick="toggleTriangle()">Triangle view</button>
+        <button id="triangle-toggle" class="reset" style="width:auto;padding:4px 10px">Triangle view</button>
       </div>
       <div class="tab-desc" id="cap-note" style="display:none"></div>
       <div class="safety" id="safety-panel" style="display:none"></div>
@@ -1051,7 +1082,7 @@ _TEMPLATE = """<!DOCTYPE html>
       </div>
       <div id="records-list"></div>
       <div id="load-more-wrap" style="text-align:center;margin:8px 0 24px;display:none">
-        <button id="load-more" class="reset" style="width:auto;padding:8px 20px" onclick="loadMore()">Load more</button>
+        <button id="load-more" class="reset" style="width:auto;padding:8px 20px">Load more</button>
       </div>
     </div>
     <div id="molecules-view" style="display:none">
@@ -1069,15 +1100,15 @@ _TEMPLATE = """<!DOCTYPE html>
       <div class="tab-desc">Trials registry &mdash; ongoing &amp; completed studies from ClinicalTrials.gov &mdash; study registrations, not published results.</div>
       <div class="caution-banner" id="trials-note"></div>
       <div class="feed-toolbar" id="trials-toolbar" style="display:none">
-        <input id="trials-q" type="search" placeholder="search title / conditions..." oninput="renderTrials()">
-        <select id="trials-mol" onchange="renderTrials()"><option value="">All bioactives</option></select>
-        <select id="trials-sort" onchange="renderTrials()">
+        <input id="trials-q" type="search" placeholder="search title / conditions...">
+        <select id="trials-mol"><option value="">All bioactives</option></select>
+        <select id="trials-sort">
           <option value="ongoing">Ongoing first</option>
           <option value="start">Start date (newest)</option>
           <option value="start-asc">Start date (oldest)</option>
         </select>
-        <input id="trials-year" type="number" placeholder="year" min="1990" max="2035" style="width:5.5em" oninput="renderTrials()">
-        <label><input id="trials-ongoing" type="checkbox" onchange="renderTrials()"> Ongoing only</label>
+        <input id="trials-year" type="number" placeholder="year" min="1990" max="2035" style="width:5.5em">
+        <label><input id="trials-ongoing" type="checkbox"> Ongoing only</label>
       </div>
       <div class="count" id="trials-count" aria-live="polite"></div>
       <div id="trials-list"></div>
@@ -1086,13 +1117,13 @@ _TEMPLATE = """<!DOCTYPE html>
       <div class="tab-desc">Preprints (bioRxiv/medRxiv) &mdash; NOT peer-reviewed; interpret with caution.</div>
       <div class="caution-banner hard" id="preprints-note"></div>
       <div class="feed-toolbar" id="preprints-toolbar" style="display:none">
-        <input id="pp-q" type="search" placeholder="search title / authors..." oninput="renderPreprints()">
-        <select id="pp-mol" onchange="renderPreprints()"><option value="">All bioactives</option></select>
-        <select id="pp-sort" onchange="renderPreprints()">
+        <input id="pp-q" type="search" placeholder="search title / authors...">
+        <select id="pp-mol"><option value="">All bioactives</option></select>
+        <select id="pp-sort">
           <option value="date">Date (newest)</option>
           <option value="date-asc">Date (oldest)</option>
         </select>
-        <input id="pp-year" type="number" placeholder="year" min="1990" max="2035" style="width:5.5em" oninput="renderPreprints()">
+        <input id="pp-year" type="number" placeholder="year" min="1990" max="2035" style="width:5.5em">
       </div>
       <div class="count" id="preprints-count" aria-live="polite"></div>
       <div id="preprints-list"></div>
@@ -1103,7 +1134,7 @@ _TEMPLATE = """<!DOCTYPE html>
   </section>
 </main>
 
-<div class="modal-bg" id="modal-bg" onclick="if(event.target===this)closeModal()">
+<div class="modal-bg" id="modal-bg">
   <div class="modal" id="modal" role="dialog" aria-modal="true"></div>
 </div>
 
@@ -3022,7 +3053,33 @@ _TEMPLATE = """<!DOCTYPE html>
       + "for exactly this reason. Populates after the preprints fetch runs.");
   }}
 
+  // All interactivity is wired here via addEventListener -- there are NO inline
+  // on*="" handlers in the markup, so the Content-Security-Policy can forbid inline
+  // script (script-src is hash-based, no 'unsafe-inline'). Runs once at startup.
+  function wireStaticEvents() {{
+    function on(id, ev, fn) {{ var e = document.getElementById(id); if (e) e.addEventListener(ev, fn); }}
+    ["evidence", "clinical", "trials", "preprints", "molecules", "experimental", "about"].forEach(function(t) {{
+      on("tab-" + t, "click", function() {{ showTab(t); }});
+    }});
+    on("q", "input", function() {{ qDebounced(); }});
+    ["year-mode", "sort", "rank-preset"].forEach(function(id) {{ on(id, "change", function() {{ applyFilters(); }}); }});
+    ["year-a", "year-b", "journal-sub", "min-cit"].forEach(function(id) {{ on(id, "input", function() {{ applyFilters(); }}); }});
+    on("clinical-only", "change", function() {{ applyFilters(); }});
+    on("reset-filters", "click", function() {{ resetFilters(); }});
+    on("filters-toggle", "click", function() {{ toggleFilters(); }});
+    on("triangle-toggle", "click", function() {{ toggleTriangle(); }});
+    on("load-more", "click", function() {{ loadMore(); }});
+    ["trials-q", "trials-year"].forEach(function(id) {{ on(id, "input", function() {{ renderTrials(); }}); }});
+    ["trials-mol", "trials-sort", "trials-ongoing"].forEach(function(id) {{ on(id, "change", function() {{ renderTrials(); }}); }});
+    ["pp-q", "pp-year"].forEach(function(id) {{ on(id, "input", function() {{ renderPreprints(); }}); }});
+    ["pp-mol", "pp-sort"].forEach(function(id) {{ on(id, "change", function() {{ renderPreprints(); }}); }});
+    var mb = document.getElementById("modal-bg");
+    if (mb) mb.addEventListener("click", function(e) {{ if (e.target === mb) closeModal(); }});
+    on("export-decisions", "click", function() {{ exportDecisions("json"); }});
+  }}
+
   function boot() {{
+    wireStaticEvents();
     buildFilters();
     if (INTERNAL) updateApSummary();
     renderCorpusStrip();

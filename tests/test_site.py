@@ -83,6 +83,18 @@ def run():
     check("CSP allows same-origin fetch of the feed", "connect-src 'self'" in html_text)
     check("CSP blocks framing (clickjacking)", "frame-ancestors 'none'" in html_text)
     check("referrer policy set", 'name="referrer"' in html_text and "no-referrer" in html_text)
+    # Hardened CSP: hash-based script-src, no 'unsafe-inline', no inline handlers.
+    import hashlib as _hl, base64 as _b64, re as _re
+    _csp = _re.search(r'Content-Security-Policy" content="([^"]*)"', html_text).group(1)
+    _ssrc = [p for p in _csp.split(";") if "script-src" in p][0]
+    check("script-src drops 'unsafe-inline'", "unsafe-inline" not in _ssrc)
+    check("script-src uses a sha256 hash", "sha256-" in _ssrc)
+    _i = html_text.rfind("<script>")
+    _content = html_text[_i + len("<script>"):html_text.index("</script>", _i)]
+    _calc = "'sha256-" + _b64.b64encode(_hl.sha256(_content.encode("utf-8")).digest()).decode() + "'"
+    check("CSP hash matches the executable script", _calc in _csp)
+    check("no inline event handlers in markup",
+          all(h not in html_text for h in ('onclick="', 'oninput="', 'onchange="', 'onkeydown="')))
 
     # Evidence-density badge: the molecule card renders a density tier + counts.
     check("density badge markup present", "mol-density" in html_text and "tier-" in html_text)
@@ -439,7 +451,7 @@ def run():
             html_empty = fh.read()
         check("tab hidden by default (style display:none)",
               'id="tab-experimental"' in html_empty
-              and 'style="display:none" onclick="showTab(\'experimental\')"' in html_empty)
+              and 'role="tab" aria-selected="false" style="display:none">Experimental' in html_empty)
         # No candidate payload -> empty experimental array inlined.
         check("empty experimental array inlined", '"experimental":[]' in html_empty)
 
@@ -530,7 +542,7 @@ def run():
         check("clinical view switches base to human-only",
               'currentView === "clinical" ? RECORDS.filter(isHuman) : RECORDS' in clin_html)
         check("Clinical tab wires to clinical view",
-              "showTab('clinical')" in clin_html)
+              'on("tab-" + t, "click"' in clin_html and 'showTab(t)' in clin_html)
 
     # 16) Trials + preprints feeds load from their sibling JSON, are empty-safe,
     #     thread corpus_stats through, and keep the security invariants with
@@ -619,8 +631,8 @@ def run():
             feed3 = fh.read()
         check("Trials registry tab present", "Trials registry" in feed3)
         check("Preprints tab present", ">Preprints<" in feed3)
-        check("trials tab wires to trials view", "showTab('trials')" in feed3)
-        check("preprints tab wires to preprints view", "showTab('preprints')" in feed3)
+        check("trials tab wires to trials view", 'on("tab-" + t, "click"' in feed3 and "trials" in feed3)
+        check("preprints tab wires to preprints view", "renderPreprints()" in feed3 and "preprints" in feed3)
         check("trials subtitle mentions ClinicalTrials.gov, not results",
               "ClinicalTrials.gov" in feed3 and "not published results" in feed3)
         check("preprints subtitle: NOT peer-reviewed",
@@ -862,12 +874,12 @@ def run():
     # (facet selects) stay immediate.
     check("debounce helper present", "function debounce(fn, wait)" in tri_html)
     check("q input routes through qDebounced (150ms)",
-          'oninput="qDebounced()"' in tri_html
+          'on("q", "input", function() {{ qDebounced(); }})'.replace("{{", "{").replace("}}", "}") in tri_html
           and "debounce(function() {" in tri_html and ", 150)" in tri_html)
-    check("q input no longer calls applyFilters() inline",
-          'id="q"' in tri_html and 'id="q" type="search" placeholder="title, bioactive, facets, summary..." oninput="applyFilters()"' not in tri_html)
-    check("facet selects stay immediate (year-mode still calls applyFilters)",
-          'id="year-mode" onchange="applyFilters()"' in tri_html)
+    check("no inline event handlers remain (CSP hash-based script-src)",
+          all(h not in tri_html for h in ('onclick="', 'oninput="', 'onchange="')))
+    check("facet selects wired to applyFilters via addEventListener",
+          '"year-mode", "sort", "rank-preset"' in tri_html and "applyFilters()" in tri_html)
 
     # A11y (task 3): cards are keyboard-operable (tabindex/role/aria-label + keydown),
     # the modal is a real dialog, focus is managed, the count region is a live region,
