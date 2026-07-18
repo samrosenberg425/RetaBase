@@ -1111,12 +1111,25 @@ _TEMPLATE = """<!DOCTYPE html>
 
   function rid(r) {{ return (r.pmid || "") + "|" + (r.molecule_id || "") + "|" + (r.title || "").slice(0,40); }}
 
+  // splitVals is called O(records x facets) times per filter change, so its result
+  // is memoized per (record, field). Record values never change after load, so the
+  // cache is always valid; this removes the dominant string-splitting cost that
+  // made unchecking a filter freeze the tab. WeakMap keeps records un-polluted and
+  // lets them be GC'd normally.
+  var _svCache = new WeakMap();
   function splitVals(rec, field) {{
+    var c = _svCache.get(rec);
+    if (!c) {{ c = {{}}; _svCache.set(rec, c); }}
+    if (field in c) return c[field];
     var v = rec[field] || "";
+    var out;
     if (MULTI.has(field)) {{
-      return v.split(";").map(function(s) {{ return s.trim(); }}).filter(Boolean);
+      out = v.split(";").map(function(s) {{ return s.trim(); }}).filter(Boolean);
+    }} else {{
+      out = v ? [v.trim()] : [];
     }}
-    return v ? [v.trim()] : [];
+    c[field] = out;
+    return out;
   }}
 
   function num(v) {{ var n = parseFloat(v); return isNaN(n) ? 0 : n; }}
@@ -1175,13 +1188,9 @@ _TEMPLATE = """<!DOCTYPE html>
   }}
   // Passes every active NON-search filter; skipField lets a facet ignore itself
   // during cross-filter counting.
-  function recordPasses(rec, filters, extra, skipField) {{
-    for (var field in filters) {{
-      if (field === skipField) continue;
-      var sel = filters[field];
-      if (!sel || (!(sel.inc && sel.inc.length) && !(sel.exc && sel.exc.length))) continue;
-      if (!domainPasses(rec, field, sel)) return false;
-    }}
+  // Non-domain filters (year / journal substring / min citations / clinical-only).
+  // Factored out so the cross-filter counter can gate on them once per record.
+  function extrasPass(rec, extra) {{
     if (!yearPasses(rec, extra.year)) return false;
     if (extra.journalSub && (rec.journal || "").toLowerCase().indexOf(extra.journalSub) === -1) return false;
     if (extra.minCit) {{
@@ -1191,6 +1200,15 @@ _TEMPLATE = """<!DOCTYPE html>
     if (extra.clinicalOnly && !isClinical(rec)) return false;
     return true;
   }}
+  function recordPasses(rec, filters, extra, skipField) {{
+    for (var field in filters) {{
+      if (field === skipField) continue;
+      var sel = filters[field];
+      if (!sel || (!(sel.inc && sel.inc.length) && !(sel.exc && sel.exc.length))) continue;
+      if (!domainPasses(rec, field, sel)) return false;
+    }}
+    return extrasPass(rec, extra);
+  }}
 
   // ---- cross-filter facet counting -------------------------------------------
   // For each facet field, a value's count (a PAPER count) = number of records in
@@ -1198,17 +1216,42 @@ _TEMPLATE = """<!DOCTYPE html>
   // year/journal/citation filters and the search term, and carry that value. A
   // facet never constrains its own option list, so users can still add sibling
   // include values. Mirrors _cross_filter_counts in the Python module.
+  // Cross-filter facet counts. A value counts toward facet F if the record passes
+  // every OTHER active domain (+ the extras + search) and carries that value.
+  // Rather than re-testing "all domains except F" for every F (O(facets^2) per
+  // record), we count how many ACTIVE domains each record fails:
+  //   0 failed -> record passes with any single facet skipped -> counts everywhere;
+  //   1 failed (X) -> it only passes when X is the skipped facet -> counts toward X;
+  //   >=2 failed -> counts toward nothing.
+  // This is O(facets) per record and, with memoized splitVals, keeps unchecking a
+  // filter instant even on the full corpus.
   function crossFilterCounts(base, filters, extra, q) {{
     var out = {{}};
-    FILTERS.forEach(function(f) {{ out[f.field] = {{}}; }});
+    var active = [];
+    FILTERS.forEach(function(f) {{
+      out[f.field] = {{}};
+      var sel = filters[f.field];
+      if (sel && ((sel.inc && sel.inc.length) || (sel.exc && sel.exc.length))) active.push(f.field);
+    }});
+    function tally(rec, field) {{
+      splitVals(rec, field).forEach(function(v) {{ out[field][v] = (out[field][v] || 0) + 1; }});
+    }}
     base.forEach(function(rec) {{
       if (q && !matchesQuery(rec, q)) return;
-      FILTERS.forEach(function(f) {{
-        if (!recordPasses(rec, filters, extra, f.field)) return;
-        splitVals(rec, f.field).forEach(function(v) {{
-          out[f.field][v] = (out[f.field][v] || 0) + 1;
-        }});
-      }});
+      if (!extrasPass(rec, extra)) return;
+      var failed = null, failCount = 0;
+      for (var i = 0; i < active.length; i++) {{
+        if (!domainPasses(rec, active[i], filters[active[i]])) {{
+          failCount++;
+          if (failCount > 1) break;
+          failed = active[i];
+        }}
+      }}
+      if (failCount === 0) {{
+        FILTERS.forEach(function(f) {{ tally(rec, f.field); }});
+      }} else if (failCount === 1) {{
+        tally(rec, failed);
+      }}
     }});
     return out;
   }}
@@ -1736,12 +1779,12 @@ _TEMPLATE = """<!DOCTYPE html>
         incBox.addEventListener("change", function() {{
           toggle(sel.inc, v, incBox.checked);
           if (incBox.checked) toggle(sel.exc, v, false);  // inc + exc mutually exclusive
-          applyFilters();
+          applyFiltersDebounced();
         }});
         excBox.addEventListener("change", function() {{
           toggle(sel.exc, v, excBox.checked);
           if (excBox.checked) toggle(sel.inc, v, false);
-          applyFilters();
+          applyFiltersDebounced();
         }});
         chk.appendChild(incWrap); chk.appendChild(excWrap);
         row.appendChild(name); row.appendChild(papers); row.appendChild(chk);
@@ -2272,6 +2315,10 @@ _TEMPLATE = """<!DOCTYPE html>
   }}
   var qDebounced = debounce(function() {{ applyFilters(); }}, 150);
   window.qDebounced = qDebounced;
+  // Coalesce rapid filter toggles (checking/unchecking several boxes quickly)
+  // into a single recompute so the panel doesn't rebuild on every click.
+  var applyFiltersDebounced = debounce(function() {{ applyFilters(); }}, 120);
+  window.applyFiltersDebounced = applyFiltersDebounced;
 
   function applyFilters() {{
     var base = baseRecords();
