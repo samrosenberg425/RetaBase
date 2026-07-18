@@ -122,6 +122,15 @@ def run():
     check("mobile stacks molecule grid to one column", "grid-template-columns: 1fr" in fetch_html)
     check("modal has a real focus trap", "_modalFocusables" in fetch_html and "Focus trap" in fetch_html)
     check("modal hides background from assistive tech", 'setAttribute("aria-hidden", "true")' in fetch_html)
+    # Second-pass a11y/mobile fixes from the agent audit.
+    check("skip target is focusable", 'id="main-content" tabindex="-1"' in fetch_html)
+    check("evidence-map scrolls on narrow screens", "overflow-x: auto" in fetch_html)
+    check("inc/exc filter toggles meet 44px on mobile", "min-height: 44px; align-items: center" in fetch_html)
+    check("filter tags are keyboard-operable", 't.setAttribute("role", "button")' in fetch_html
+          and 'ev.key === "Enter"' in fetch_html)
+    check("trials/preprints counts are live regions",
+          'id="trials-count" aria-live' in fetch_html and 'id="preprints-count" aria-live' in fetch_html)
+    check("hiding triangle dismisses its tooltip", "must also dismiss any lingering dot tooltip" in fetch_html)
 
     # Reproducibility/provenance stamp (dims #8/#11).
     check("provenance fields survive corpus-stats allowlist",

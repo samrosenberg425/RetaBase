@@ -797,7 +797,7 @@ _TEMPLATE = """<!DOCTYPE html>
   /* single-molecule "Evidence map": use case x evidence-class count matrix */
   .evmap {{
     margin: 8px 0; padding: 10px 12px; background: var(--panel2);
-    border: 1px solid var(--border); border-radius: 8px;
+    border: 1px solid var(--border); border-radius: 8px; overflow-x: auto;
   }}
   .evmap h4 {{ margin: 0 0 3px; font-size: 13px; color: var(--text); }}
   .evmap .evcap {{ font-size: 11px; color: var(--muted); margin: 0 0 8px; font-style: italic; }}
@@ -933,7 +933,7 @@ _TEMPLATE = """<!DOCTYPE html>
       border-radius: 6px; padding: 9px 14px; font-size: 14px; cursor: pointer; }}
     /* Bigger touch targets + readable sizes on phones. */
     .fopt {{ padding: 7px 0; font-size: 13px; }}
-    .fopt .inc, .fopt .exc {{ padding: 4px 8px; }}
+    .fopt .inc, .fopt .exc {{ padding: 8px 10px; min-height: 44px; align-items: center; }}
     .tabs {{ gap: 6px; }}
     .tabs button {{ padding: 8px 12px; }}
     .mol-grid {{ grid-template-columns: 1fr; }}
@@ -977,7 +977,7 @@ _TEMPLATE = """<!DOCTYPE html>
     <span class="ap-summary" id="ap-summary"></span>{export_btn}
   </div>
 </header>
-<main id="main-content">
+<main id="main-content" tabindex="-1">
   <aside id="sidebar">
     <div class="fg">
       <label for="q">Search</label>
@@ -1079,7 +1079,7 @@ _TEMPLATE = """<!DOCTYPE html>
         <input id="trials-year" type="number" placeholder="year" min="1990" max="2035" style="width:5.5em" oninput="renderTrials()">
         <label><input id="trials-ongoing" type="checkbox" onchange="renderTrials()"> Ongoing only</label>
       </div>
-      <div class="count" id="trials-count"></div>
+      <div class="count" id="trials-count" aria-live="polite"></div>
       <div id="trials-list"></div>
     </div>
     <div id="preprints-view" style="display:none">
@@ -1094,7 +1094,7 @@ _TEMPLATE = """<!DOCTYPE html>
         </select>
         <input id="pp-year" type="number" placeholder="year" min="1990" max="2035" style="width:5.5em" oninput="renderPreprints()">
       </div>
-      <div class="count" id="preprints-count"></div>
+      <div class="count" id="preprints-count" aria-live="polite"></div>
       <div id="preprints-list"></div>
     </div>
     <div id="about-view" style="display:none">
@@ -1406,7 +1406,14 @@ _TEMPLATE = """<!DOCTYPE html>
         // Display the prettified label but filter on the raw value v.
         var t = el("span", "tag " + a.cls, pretty(v));
         t.title = a.label;
+        // Keyboard-operable: a filter shortcut, so make it focusable + Enter/Space.
+        t.setAttribute("tabindex", "0");
+        t.setAttribute("role", "button");
+        t.setAttribute("aria-label", a.label + ": " + pretty(v));
         t.addEventListener("click", function(ev) {{ ev.stopPropagation(); onClick(a.field, v); }});
+        t.addEventListener("keydown", function(ev) {{
+          if (ev.key === "Enter" || ev.key === " ") {{ ev.preventDefault(); ev.stopPropagation(); onClick(a.field, v); }}
+        }});
         tags.appendChild(t);
       }});
     }});
@@ -2267,6 +2274,8 @@ _TEMPLATE = """<!DOCTYPE html>
     document.getElementById("triangle-wrap").style.display = triangleOn ? "" : "none";
     var btn = document.getElementById("triangle-toggle");
     if (btn) btn.textContent = triangleOn ? "Hide triangle" : "Triangle view";
+    // Hiding the triangle must also dismiss any lingering dot tooltip.
+    var tip = document.getElementById("tri-tip"); if (tip) tip.style.display = "none";
     if (triangleOn) renderTriangle();
   }}
   window.toggleTriangle = toggleTriangle;

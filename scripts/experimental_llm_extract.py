@@ -60,8 +60,14 @@ def _load_payloads(conn: sqlite3.Connection, table: str) -> List[dict]:
     return out
 
 
-def sample_papers(db: str, limit: int, seed: int = 0) -> List[dict]:
-    """Return up to ``limit`` papers with title+abstract+molecule for comparison."""
+def sample_papers(db: str, limit: int, seed: int = 0, prefer_human: bool = True) -> List[dict]:
+    """Return up to ``limit`` papers with title+abstract+molecule for comparison.
+
+    By default biases toward human/clinical papers with substantive abstracts, so
+    the comparison lands on records that actually have dose/route/duration/N to
+    extract (random sampling otherwise hits off-topic, low-content papers where
+    both columns are empty and the comparison is uninformative).
+    """
     conn = sqlite3.connect(db)
     papers = {str(p.get("pmid", "")): p for p in _load_payloads(conn, "papers")}
     evidence = _load_payloads(conn, "evidence")
@@ -74,8 +80,8 @@ def sample_papers(db: str, limit: int, seed: int = 0) -> List[dict]:
             continue
         pap = papers.get(pmid, {})
         abstract = str(e.get("abstract", "") or pap.get("abstract", "") or "")
-        if not abstract:
-            continue  # nothing to extract from
+        if len(abstract) < 200:
+            continue  # too little to extract from
         seen.add(pmid)
         rows.append({
             "pmid": pmid,
@@ -85,7 +91,22 @@ def sample_papers(db: str, limit: int, seed: int = 0) -> List[dict]:
             "_evidence": e,
             "_paper": pap,
         })
-    random.Random(seed).shuffle(rows)
+    rng = random.Random(seed)
+    rng.shuffle(rows)
+    if prefer_human:
+        def _score(r):
+            e = r["_evidence"]
+            s = 0.0
+            if str(e.get("website_section", "")) == "Human evidence":
+                s += 3
+            if str(e.get("model_type", "")) == "human":
+                s += 2
+            if any(u in r["abstract"].lower() for u in (" mg", "µg", " mcg", "weeks", "n=", "randomi")):
+                s += 1  # has dose/duration/N-like content to compare on
+            if len(r["abstract"]) > 700:
+                s += 0.5
+            return s
+        rows.sort(key=_score, reverse=True)  # stable after shuffle -> random within a tier
     return rows[:limit]
 
 
@@ -182,6 +203,7 @@ def compare_paper(paper: dict, api: str, base_url: str, model: str,
         "pmid": paper["pmid"],
         "molecule_name": paper["molecule_name"],
         "title": paper["title"],
+        "abstract": paper.get("abstract", "")[:280],
         "rules": rules_map,
         "llm": {f: llm.get(f, "") for f in FIELDS},
         "llm_summary": llm.get("one_sentence_summary", ""),
@@ -191,24 +213,40 @@ def compare_paper(paper: dict, api: str, base_url: str, model: str,
     }
 
 
-def write_report(rows: List[dict], out: str) -> None:
+def write_report(rows: List[dict], out: str, mock: bool = False, model: str = "") -> None:
     def esc(s):
         return html.escape(str(s or ""))
+    n = len(rows)
     n_dis = sum(1 for r in rows if r["disagree"])
+    # Per-field agreement rate (how often rules and LLM produced the same value).
+    agree = {f: sum(1 for r in rows if f not in r["disagree"]) for f in FIELDS}
     parts = [
         "<!doctype html><meta charset=utf-8><title>LLM vs rules extraction</title>",
         "<style>body{font:14px system-ui;margin:24px;background:#0f1115;color:#e6e8ec}"
         "table{border-collapse:collapse;width:100%;margin:8px 0 28px}"
         "th,td{border:1px solid #2a2f3a;padding:6px 9px;text-align:left;vertical-align:top}"
-        "th{color:#9aa3b2}.d{background:#3a1d1d}.h{color:#5b9dff}small{color:#9aa3b2}</style>",
+        "th{color:#9aa3b2}.d{background:#3a1d1d}.h{color:#5b9dff}small{color:#9aa3b2}"
+        ".sum{background:#171a21;border:1px solid #2a2f3a;border-radius:8px;padding:12px 16px;margin:12px 0}"
+        ".warn{background:#3a2f10;border:1px solid #8a6d1a;border-radius:8px;padding:10px 14px;margin:12px 0}"
+        ".ab{color:#9aa3b2;font-size:12px;margin:4px 0 8px}</style>",
         "<h1>Experimental: LLM vs rules-based extraction</h1>",
-        f"<p><b>{len(rows)}</b> papers &middot; <b>{n_dis}</b> with at least one "
-        "field disagreement. This is a research comparison only &mdash; the LLM output "
-        "is <b>not</b> used anywhere on the live site.</p>",
     ]
+    if mock:
+        parts.append("<div class=warn><b>MOCK MODE</b> &mdash; the LLM column is a canned "
+                     "placeholder (no model was called). Run without <code>--mock</code> against "
+                     "a real Ollama model to populate it.</div>")
+    parts.append(f"<div class=sum><b>{n}</b> papers"
+                 + (f" &middot; model <code>{esc(model)}</code>" if model and not mock else "")
+                 + f" &middot; <b>{n_dis}</b> with at least one field disagreement."
+                 "<br>Per-field agreement (rules == LLM): "
+                 + " &middot; ".join(f"{esc(f)} <b>{(100*agree[f]//n) if n else 0}%</b>" for f in FIELDS)
+                 + "<br><small>Research comparison only &mdash; the LLM output is NOT used "
+                 "anywhere on the live site.</small></div>")
     for r in rows:
         parts.append(f"<h3 class=h>{esc(r['molecule_name'])} &middot; PMID {esc(r['pmid'])}</h3>")
         parts.append(f"<p>{esc(r['title'])}</p>")
+        if r.get("abstract"):
+            parts.append(f"<div class=ab>{esc(r['abstract'])}&hellip;</div>")
         if r["llm_summary"]:
             parts.append(f"<p><small>LLM summary:</small> {esc(r['llm_summary'])}</p>")
         parts.append("<table><tr><th>field</th><th>rules-based</th><th>LLM</th></tr>")
@@ -232,13 +270,16 @@ def main() -> None:
     ap.add_argument("--model", default="llama3.1")
     ap.add_argument("--out", default="exports/llm_compare.html")
     ap.add_argument("--mock", action="store_true", help="canned response; no model/network needed")
+    ap.add_argument("--any-papers", action="store_true",
+                    help="sample papers at random instead of biasing toward human/clinical ones")
     args = ap.parse_args()
 
     if not args.mock and not os.path.exists(args.db):
         print(f"No corpus DB at {args.db}", file=sys.stderr)
         sys.exit(1)
 
-    papers = sample_papers(args.db, args.limit, args.seed) if os.path.exists(args.db) else []
+    papers = (sample_papers(args.db, args.limit, args.seed, prefer_human=not args.any_papers)
+              if os.path.exists(args.db) else [])
     if not papers and args.mock:
         # allow a no-corpus smoke test of the plumbing
         papers = [{"pmid": "0", "molecule_name": "Demo", "title": "Demo paper",
@@ -260,7 +301,7 @@ def main() -> None:
     if not rows:
         print("No results produced (all LLM calls failed).", file=sys.stderr)
         sys.exit(1)
-    write_report(rows, args.out)
+    write_report(rows, args.out, mock=args.mock, model=args.model)
     n_dis = sum(1 for r in rows if r["disagree"])
     print(f"Compared {len(rows)} papers ({n_dis} with disagreements) -> {args.out}")
     print("NOTE: experimental only; LLM output is not used on the live site.")

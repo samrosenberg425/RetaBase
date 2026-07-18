@@ -318,7 +318,16 @@ def _corpus_stats(curated_rows: List[dict], papers: List[dict], evidence: List[d
         if y and 1900 < y < 2100:
             years.append(y)
 
-    filled = sum(1 for r in curated_rows if _int(r.get("citation_count")) > 0 or str(r.get("citation_count", "")).strip() not in {"", "0"})
+    def _cited(v) -> bool:
+        # A record counts as having a cited-by count only if it's a real positive
+        # number. (The old test also accepted any non-"0" string, so "0.0" and junk
+        # were wrongly counted as filled.)
+        try:
+            return float(str(v).strip() or 0) > 0
+        except (TypeError, ValueError):
+            return False
+
+    filled = sum(1 for r in curated_rows if _cited(r.get("citation_count")))
     total_curated = len(curated_rows)
     pct_citations = round(100.0 * filled / total_curated, 1) if total_curated else 0.0
 
@@ -620,8 +629,30 @@ def _molecule_index(rows: List[dict], pubchem_by_mol: Dict[str, str] | None = No
     by_mol = defaultdict(list)
     for r in rows:
         by_mol[str(r.get("molecule_id", ""))].append(r)
+
+    def _mtype(r) -> str:
+        # Prefer the disambiguated model_primary (what the rest of the pipeline
+        # trusts) over the raw model_type the disambiguation layer exists to correct.
+        return str(r.get("model_primary") or r.get("model_type") or "")
+
     out = []
     for mol_id, recs in sorted(by_mol.items()):
+        # Dedup (pmid, molecule) so a paper matched via multiple rules is counted
+        # ONCE (keeping the best-ranked instance). Without this, total_records /
+        # human_count / density_tier are inflated -- and they must match the deduped
+        # site feed. Records without a pmid can't be deduped, so keep them as-is.
+        best: Dict[str, dict] = {}
+        deduped: List[dict] = []
+        for r in recs:
+            pmid = str(r.get("pmid", ""))
+            if not pmid:
+                deduped.append(r)
+                continue
+            cur = best.get(pmid)
+            if cur is None or _int(r.get("rank_score")) > _int(cur.get("rank_score")):
+                best[pmid] = r
+        recs = deduped + list(best.values())
+
         name = next((r.get("molecule_name") for r in recs if r.get("molecule_name")), mol_id)
         statuses = Counter(r.get("publication_status") for r in recs)
         sections = Counter(r.get("website_section") for r in recs if r.get("website_section"))
@@ -630,9 +661,9 @@ def _molecule_index(rows: List[dict], pubchem_by_mol: Dict[str, str] | None = No
             for c in str(r.get("facet_indication", "")).split("; "):
                 if c:
                     conditions[c] += 1
-        human = sum(1 for r in recs if r.get("model_type") == "human")
-        preclin = sum(1 for r in recs if r.get("model_type") in {"animal", "in vitro"})
-        reviews = sum(1 for r in recs if r.get("model_type") == "review")
+        human = sum(1 for r in recs if _mtype(r) == "human")
+        preclin = sum(1 for r in recs if _mtype(r) in {"animal", "in vitro"})
+        reviews = sum(1 for r in recs if _mtype(r) == "review")
         max_rel = max((_int(r.get("reliability_score")) for r in recs), default=0)
         out.append(
             {
@@ -701,10 +732,7 @@ def _write_schema(out_dir: str, curated_cols: List[str], required) -> None:
             "molecule_index": {"primary_key": "molecule_id", "purpose": "Per-molecule rollup for profile pages."},
         },
         "facet_groups": list(FACET_GROUPS),
-        "publication_statuses": [
-            "auto_published", "review_candidate", "held_low_evidence",
-            "held_missing_fields", "held_out_of_scope",
-        ],
+        "publication_statuses": ["featured", "listed", "review", "excluded_noise"],
     }
     with open(os.path.join(out_dir, "schema.json"), "w", encoding="utf-8") as fh:
         json.dump(schema, fh, indent=2)
@@ -734,7 +762,7 @@ def _field_descriptions() -> Dict[str, str]:
         "reliability_score": "0-100 composite evidence strength (see reliability_components).",
         "reliability_tier": "high/moderate/limited/low/non_efficacy bucket of reliability_score.",
         "reliability_components": "JSON breakdown of points per scoring component.",
-        "publication_status": "auto_published | review_candidate | held_* decision.",
+        "publication_status": "featured | listed | review | excluded_noise decision.",
         "website_section": "Public profile section this record would appear in.",
         "auto_publish_eligible": "True if strong+complete enough to publish without review.",
         "review_reason": "Why the record is queued rather than auto-published.",

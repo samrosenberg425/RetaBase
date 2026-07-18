@@ -132,16 +132,17 @@ def _make_curated_dir(tmpdir, stats):
     fields = [
         "evidence_id", "reliability_score", "reliability_tier", "publication_status",
         "required_fields_present", "website_section", "facet_species", "auto_publish_eligible",
+        "rank_score", "pmid", "molecule_id",
     ]
     rows = [
         {"evidence_id": "e1", "reliability_score": "80", "reliability_tier": "high",
          "publication_status": "featured", "required_fields_present": "True",
          "website_section": "Human evidence", "facet_species": "human",
-         "auto_publish_eligible": "True"},
+         "auto_publish_eligible": "True", "rank_score": "90", "pmid": "1", "molecule_id": "m1"},
         {"evidence_id": "e2", "reliability_score": "70", "reliability_tier": "moderate",
          "publication_status": "listed", "required_fields_present": "True",
          "website_section": "", "facet_species": "mouse",
-         "auto_publish_eligible": "False"},
+         "auto_publish_eligible": "False", "rank_score": "60", "pmid": "2", "molecule_id": "m1"},
     ]
     with open(os.path.join(tmpdir, "curated_evidence.csv"), "w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=fields)
@@ -235,6 +236,52 @@ def run_pipeline_robustness_tests():
     for key in ("build_sha", "corpus_fingerprint", "zenodo_doi", "dropped_payload_rows"):
         check(f"corpus_stats has {key}", key in stats)
     check("fingerprint is a short hex", len(stats["corpus_fingerprint"]) == 12)
+
+    # pct_citations_filled counts only real positive counts ("0.0"/junk are NOT filled).
+    cstats = bcd._corpus_stats(
+        [{"citation_count": "0.0", "pub_year": 2020}, {"citation_count": "5", "pub_year": 2021},
+         {"citation_count": "", "pub_year": 2022}], [{"pmid": "1"}], [{"pmid": "1"}])
+    check("pct_citations excludes '0.0'/blank", cstats["pct_citations_filled"] == 33.3)
+
+    # molecule_index dedups (pmid,molecule) and counts human via model_primary.
+    mrecs = [
+        {"molecule_id": "m", "molecule_name": "M", "pmid": "1", "model_primary": "human",
+         "model_type": "animal", "rank_score": 10, "publication_status": "featured"},
+        {"molecule_id": "m", "molecule_name": "M", "pmid": "1", "model_primary": "human",
+         "model_type": "animal", "rank_score": 50, "publication_status": "featured"},
+        {"molecule_id": "m", "molecule_name": "M", "pmid": "2", "model_primary": "human",
+         "model_type": "animal", "rank_score": 30, "publication_status": "listed"},
+    ]
+    mi = bcd._molecule_index(mrecs, pubchem_by_mol={})[0]
+    check("molecule_index dedups (pmid,molecule)", mi["total_records"] == 2)
+    check("molecule_index human via model_primary", mi["human_count"] == 2)
+
+
+def run_validation_gate_tests():
+    # rank_score out of range FAILs validation.
+    with tempfile.TemporaryDirectory() as d:
+        _make_curated_dir(d, {"total_papers": 100, "molecules_with_data": 20, "featured": 10, "listed": 30})
+        # corrupt one rank_score
+        import csv as _csv
+        p = os.path.join(d, "curated_evidence.csv")
+        rows = list(_csv.DictReader(open(p, encoding="utf-8")))
+        rows[0]["rank_score"] = "250"
+        with open(p, "w", newline="", encoding="utf-8") as fh:
+            w = _csv.DictWriter(fh, fieldnames=list(rows[0].keys())); w.writeheader(); w.writerows(rows)
+        _rep, code = vc.validate(d)
+        check("rank_score out-of-range FAILs", code != 0)
+
+    # Heavy payload-drop drift FAILs; a valid build passes.
+    with tempfile.TemporaryDirectory() as d:
+        _make_curated_dir(d, {"total_papers": 100, "molecules_with_data": 20, "featured": 10,
+                              "listed": 30, "total_evidence": 1000, "dropped_payload_rows": 500})
+        _rep, code = vc.validate(d)
+        check("heavy schema-drift FAILs", code != 0)
+    with tempfile.TemporaryDirectory() as d:
+        _make_curated_dir(d, {"total_papers": 100, "molecules_with_data": 20, "featured": 10,
+                              "listed": 30, "total_evidence": 1000, "dropped_payload_rows": 0})
+        _rep, code = vc.validate(d)
+        check("clean build passes drift check", code == 0)
 
 
 def run_density_tests():
@@ -582,6 +629,9 @@ def run():
 
     # --- pipeline robustness: schema-drift counter + provenance stamp ---
     run_pipeline_robustness_tests()
+
+    # --- validation gates: rank range + schema-drift enforcement ---
+    run_validation_gate_tests()
 
     # --- evidence-density tiers + density-aware cap ---
     run_density_tests()

@@ -247,6 +247,27 @@ def validate(
     dupes = {k: v for k, v in seen.items() if v > 1}
     rep.check("evidence_id unique", len(dupes) == 0, f"{len(dupes)} duplicate ids")
 
+    # 3a) rank_score is an int in [0,100] (it drives the primary sort). Hard gate.
+    bad_rank = 0
+    for r in rows:
+        n = _to_int(r.get("rank_score"))
+        if n is None or not (0 <= n <= 100):
+            bad_rank += 1
+    rep.check("rank_score in [0,100]", bad_rank == 0, f"{bad_rank} out-of-range")
+
+    # 3b) duplicate (pmid, molecule) pairs -- a paper matched via multiple rules.
+    # INFORMATIONAL (the curated CSV intentionally keeps the per-rule audit trail;
+    # the site feed and molecule counts dedup these), so we report, not fail.
+    pair_seen: Dict[tuple, int] = {}
+    for r in rows:
+        pmid = str(r.get("pmid", "") or "")
+        if pmid:
+            k = (pmid, str(r.get("molecule_id", "") or ""))
+            pair_seen[k] = pair_seen.get(k, 0) + 1
+    pair_dupes = sum(v - 1 for v in pair_seen.values() if v > 1)
+    rep.note(f"[INFO] duplicate (pmid,molecule) rows in curated export: {pair_dupes} "
+             f"(deduped in the site feed + molecule counts)")
+
     # 4) facet_species sanity.
     unknown_species = 0
     for r in rows:
@@ -295,6 +316,22 @@ def validate(
         if mp and mp != mt:
             changed += 1
     rep.note(f"[INFO] model_primary != model_type (disambiguation impact): {changed} of {total}")
+
+    # 5b) schema-drift canary: rows dropped at load because their JSON payload didn't
+    # parse. The builder records this in corpus_stats.json; enforce it here. FAIL only
+    # on meaningful drift (>1% of evidence, min 20 rows) so a single stray row warns
+    # rather than blocking a deploy.
+    canary_path = stats_path or os.path.join(curated_dir, "corpus_stats.json")
+    canary_stats = _load_stats(canary_path) or {}
+    dropped = _to_int(canary_stats.get("dropped_payload_rows")) or 0
+    total_ev = _to_int(canary_stats.get("total_evidence")) or 0
+    if dropped and total_ev and dropped > max(20, int(0.01 * total_ev)):
+        rep.check("payload schema drift", False,
+                  f"{dropped} rows dropped at load (>1% of {total_ev} -- likely schema change)")
+    elif dropped:
+        rep.note(f"[INFO] {dropped} payload row(s) dropped at load (schema-drift canary; within tolerance)")
+    else:
+        rep.note("[INFO] no payload rows dropped at load")
 
     # 6) corpus-collapse anomaly gates vs a known-good baseline corpus_stats.json.
     # corpus_stats.json is written by build_curated_database.py into the curated
