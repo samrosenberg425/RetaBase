@@ -134,9 +134,15 @@ def call_llm(prompt: str, api: str, base_url: str, model: str,
                 '"one_sentence_summary":"(mock) beneficial weight-loss result."}')
     import requests  # local import so --mock needs no dependency
     if api == "ollama":
+        # format:"json" makes Ollama constrain output to valid JSON -- this is the
+        # single biggest quality lift for small models (llama3.2:3b), which
+        # otherwise leave the structured fields blank. num_ctx raised so long
+        # abstracts aren't truncated by the default 2k window.
         r = requests.post(base_url.rstrip("/") + "/api/generate",
                           json={"model": model, "prompt": prompt, "stream": False,
-                                "options": {"temperature": 0}}, timeout=timeout)
+                                "format": "json",
+                                "options": {"temperature": 0, "num_ctx": 8192}},
+                          timeout=timeout)
         r.raise_for_status()
         return r.json().get("response", "")
     # OpenAI-compatible
@@ -146,6 +152,7 @@ def call_llm(prompt: str, api: str, base_url: str, model: str,
     r = requests.post(base_url.rstrip("/") + "/chat/completions",
                       headers=headers,
                       json={"model": model, "temperature": 0,
+                            "response_format": {"type": "json_object"},
                             "messages": [{"role": "user", "content": prompt}]},
                       timeout=timeout)
     r.raise_for_status()

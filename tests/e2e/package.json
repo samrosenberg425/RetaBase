@@ -1,0 +1,13 @@
+{
+  "name": "retabase-e2e",
+  "private": true,
+  "description": "Real-browser E2E tests for the RetaBase dashboard (Playwright).",
+  "scripts": {
+    "fixture": "python3 make_fixture.py",
+    "test": "playwright test",
+    "pretest": "python3 make_fixture.py"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.47.0"
+  }
+}
