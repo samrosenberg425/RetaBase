@@ -41,6 +41,7 @@ from typing import Dict, List, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from retarats_pipeline.curation.extractors import refine_extraction  # noqa: E402
+from retarats_pipeline.enrichment import context as ctxmod  # noqa: E402
 
 FIELDS = ["dose", "route", "duration", "sample_size", "outcome_direction"]
 
@@ -121,9 +122,44 @@ _PROMPT = (
 )
 
 
+# A review / meta-analysis reports a DIFFERENT kind of data than a primary study:
+# there is no single administered dose or cohort, there is a set of included studies.
+# Asking for "the dose" of a meta-analysis invites a misleading answer, so synthesis
+# papers get their own prompt and their own adoption rules.
+_PROMPT_SYNTHESIS = (
+    "You are extracting structured facts from a SYSTEMATIC REVIEW or META-ANALYSIS "
+    "about \"{mol}\". This is NOT a single study: do not report one dose or one cohort. "
+    "Return ONLY a JSON object with these keys: included_studies (number of studies/"
+    "trials included, digits only), pooled_sample_size (total participants across "
+    "included studies, digits only), dose (the RANGE of {mol} doses across included "
+    "studies, e.g. \"5-15 mg\", or \"\" if not stated), route, duration (range across "
+    "studies), outcome_direction (one of beneficial/harmful/neutral/unclear), "
+    "one_sentence_summary. Use \"\" for anything not stated. Copy values verbatim from "
+    "the text; do not infer.\n\n"
+    "TITLE: {title}\nABSTRACT: {abstract}\n\nJSON:"
+)
+
+_SYNTH_RE = re.compile(r"meta-?analys|systematic review|pooled analysis|scoping review|"
+                       r"narrative review|umbrella review", re.I)
+
+
+def is_synthesis(paper: dict) -> bool:
+    """True when the record is a review / meta-analysis rather than a primary study."""
+    ev = paper.get("_evidence", {}) or {}
+    if str(ev.get("evidence_class", "")).strip() == "evidence_synthesis":
+        return True
+    if str(ev.get("model_type", "")).strip() == "review":
+        return True
+    if str(ev.get("model_primary", "")).strip() == "review":
+        return True
+    blob = " ".join([str(ev.get("primary_study_type", "") or ""), str(paper.get("title", "") or "")])
+    return bool(_SYNTH_RE.search(blob))
+
+
 def build_prompt(paper: dict) -> str:
-    return _PROMPT.format(mol=paper["molecule_name"] or "the compound",
-                          title=paper["title"][:400], abstract=paper["abstract"][:3500])
+    tmpl = _PROMPT_SYNTHESIS if is_synthesis(paper) else _PROMPT
+    return tmpl.format(mol=paper["molecule_name"] or "the compound",
+                       title=paper["title"][:400], abstract=paper["abstract"][:3500])
 
 
 def call_llm(prompt: str, api: str, base_url: str, model: str,
@@ -241,7 +277,7 @@ def _split_sentences(text: str) -> List[str]:
     return [s for s in re.split(r"(?<=[.!?])\s+", str(text or "")) if s.strip()]
 
 
-def ground_status(value: str, abstract: str, molecule: str) -> Optional[str]:
+def ground_status(value: str, abstract: str, molecule) -> Optional[str]:
     """attributed | unattributed | ungrounded (None when there's no value).
 
     Groundedness alone is NOT enough: a comparator's dose, or a number belonging to a
@@ -253,13 +289,15 @@ def ground_status(value: str, abstract: str, molecule: str) -> Optional[str]:
     if not v:
         return None
     nums = re.findall(r"\d+(?:\.\d+)?", v)
-    mol = _norm(molecule)
+    # molecule may be a single name or a list of aliases (PubTator synonyms/brands).
+    names = molecule if isinstance(molecule, (list, tuple)) else [molecule]
+    mols = [m for m in (_norm(x) for x in names) if m]
     hit = False
     for s in _split_sentences(abstract):
         ns = _norm(s)
         if v in ns or (nums and all(n in ns for n in nums)):
             hit = True
-            if mol and mol in ns:
+            if any(m in ns for m in mols):
                 return "attributed"
     return "unattributed" if hit else "ungrounded"
 
@@ -283,9 +321,15 @@ def classify_field(rules_v: str, llm_v: str, abstract: str, molecule: str = "") 
 
 
 def compare_paper(paper: dict, api: str, base_url: str, model: str,
-                  api_key: Optional[str], mock: bool) -> dict:
+                  api_key: Optional[str], mock: bool, ctx: Optional[dict] = None) -> dict:
     rules = refine_extraction(paper["_evidence"], paper["_paper"])
-    raw = call_llm(build_prompt(paper), api, base_url, model, api_key, mock)
+    # When richer context is available (OA Methods text), the model reads THAT rather
+    # than the abstract alone -- most "both missed it" cases are simply information
+    # that never appears in the abstract.
+    prompt_paper = dict(paper)
+    if ctx:
+        prompt_paper["abstract"] = ctxmod.context_text(ctx)
+    raw = call_llm(build_prompt(prompt_paper), api, base_url, model, api_key, mock)
     llm = parse_llm_json(raw)
     rules_map = {
         "dose": rules.get("refined_dose", ""),
@@ -294,8 +338,10 @@ def compare_paper(paper: dict, api: str, base_url: str, model: str,
         "sample_size": rules.get("refined_sample_size", ""),
         "outcome_direction": rules.get("refined_outcome_direction", ""),
     }
-    status = {f: classify_field(rules_map[f], llm.get(f, ""), paper.get("abstract", ""),
-                                paper.get("molecule_name", "")) for f in FIELDS}
+    # Ground against the RICHEST available text and the fullest alias set.
+    src_text = ctxmod.context_text(ctx) if ctx else paper.get("abstract", "")
+    mol_names = ctxmod.molecule_aliases(ctx) if ctx else [paper.get("molecule_name", "")]
+    status = {f: classify_field(rules_map[f], llm.get(f, ""), src_text, mol_names) for f in FIELDS}
     disagree = [f for f in FIELDS
                 if status[f] in ("differ", "llm_only_ungrounded", "llm_only_unattributed")]
     return {
@@ -310,6 +356,16 @@ def compare_paper(paper: dict, api: str, base_url: str, model: str,
         "status": status,
         "disagree": disagree,
         "raw": raw,
+        # Authoritative cross-checks (no model involved): structured CT.gov enrollment
+        # for trial-linked papers, and whether OA full text was actually used.
+        "trial": (ctx or {}).get("trial", {}),
+        "pmcid": (ctx or {}).get("pmcid", ""),
+        "chemicals": (ctx or {}).get("chemicals", [])[:8],
+        # Reviews/meta-analyses are judged on different fields (k studies + pooled N,
+        # dose as a RANGE) and are tallied separately in the trust breakdown.
+        "kind": "synthesis" if is_synthesis(paper) else "primary",
+        "included_studies": llm.get("included_studies", ""),
+        "pooled_sample_size": llm.get("pooled_sample_size", ""),
     }
 
 
@@ -346,7 +402,25 @@ def write_report(rows: List[dict], out: str, mock: bool = False, model: str = ""
                  "anywhere on the live site.</small></div>")
     # Trust breakdown: the number that actually matters is llm_only_GROUNDED (safe
     # gap-fill) vs llm_only_UNGROUNDED (likely hallucination) vs differ (conflict).
-    parts.append("<h2>Trust breakdown</h2><table><tr><th>field</th>"
+    prim = [r for r in rows if r.get("kind") != "synthesis"]
+    synth = [r for r in rows if r.get("kind") == "synthesis"]
+    parts.append(f"<p><small>{len(prim)} primary studies &middot; {len(synth)} reviews/"
+                 "meta-analyses (tallied separately &mdash; a synthesis has no single dose "
+                 "or cohort, so its dose/route/duration must not be adopted as study "
+                 "facts).</small></p>")
+    for label, subset in (("Primary studies", prim), ("Reviews / meta-analyses", synth)):
+        if not subset:
+            continue
+        sub = {f: {s: sum(1 for r in subset if r.get("status", {}).get(f) == s) for s in STATUSES}
+               for f in FIELDS}
+        parts.append(f"<h2>Trust breakdown &mdash; {esc(label)} (n={len(subset)})</h2>"
+                     "<table><tr><th>field</th>"
+                     + "".join(f"<th>{esc(s)}</th>" for s in STATUSES) + "</tr>")
+        for f in FIELDS:
+            parts.append(f"<tr><td>{esc(f)}</td>"
+                         + "".join(f"<td>{sub[f][s]}</td>" for s in STATUSES) + "</tr>")
+        parts.append("</table>")
+    parts.append("<h2>Trust breakdown &mdash; all papers</h2><table><tr><th>field</th>"
                  + "".join(f"<th>{esc(s)}</th>" for s in STATUSES) + "</tr>")
     for f in FIELDS:
         parts.append(f"<tr><td>{esc(f)}</td>"
@@ -371,8 +445,22 @@ def write_report(rows: List[dict], out: str, mock: bool = False, model: str = ""
                  "from the LLM regardless of its status above."
                  "</div>")
     for r in rows:
-        parts.append(f"<h3 class=h>{esc(r['molecule_name'])} &middot; PMID {esc(r['pmid'])}</h3>")
+        kind = r.get("kind", "primary")
+        badge = " &middot; <b>review/meta-analysis</b>" if kind == "synthesis" else ""
+        src = []
+        if r.get("pmcid"):
+            src.append("OA full text " + esc(r["pmcid"]))
+        if r.get("trial", {}).get("nct_id"):
+            t = r["trial"]
+            src.append("CT.gov " + esc(t.get("nct_id", "")) + " (enrolled "
+                       + esc(t.get("enrollment_count", "?")) + ")")
+        parts.append(f"<h3 class=h>{esc(r['molecule_name'])} &middot; PMID {esc(r['pmid'])}{badge}</h3>")
         parts.append(f"<p>{esc(r['title'])}</p>")
+        if src:
+            parts.append("<div class=ab>sources: " + " &middot; ".join(src) + "</div>")
+        if kind == "synthesis" and (r.get("included_studies") or r.get("pooled_sample_size")):
+            parts.append(f"<div class=ab>synthesis scale: {esc(r.get('included_studies'))} studies "
+                         f"&middot; pooled N {esc(r.get('pooled_sample_size'))}</div>")
         if r.get("abstract"):
             parts.append(f"<div class=ab>{esc(r['abstract'])}&hellip;</div>")
         if r["llm_summary"]:
@@ -401,6 +489,16 @@ def main() -> None:
     ap.add_argument("--mock", action="store_true", help="canned response; no model/network needed")
     ap.add_argument("--any-papers", action="store_true",
                     help="sample papers at random instead of biasing toward human/clinical ones")
+    # Richer inputs. Most "both extractors missed it" cases are information that is
+    # simply not in the abstract, so these matter more than the model choice.
+    ap.add_argument("--fulltext", action="store_true",
+                    help="fetch open-access Methods/Results from Europe PMC (network)")
+    ap.add_argument("--pubtator", action="store_true",
+                    help="fetch curated chemical entity spans from NCBI PubTator3 (network)")
+    ap.add_argument("--trials-db", default="data/retarats_trials.sqlite",
+                    help="local CT.gov mirror; gives structured enrollment for trial-linked papers")
+    ap.add_argument("--cache-dir", default=".cache/context",
+                    help="on-disk cache for fetched context so re-runs don't re-fetch")
     args = ap.parse_args()
 
     if not args.mock and not os.path.exists(args.db):
@@ -421,10 +519,18 @@ def main() -> None:
             print("LLM backend not ready:\n" + err, file=sys.stderr)
             sys.exit(2)
     api_key = os.environ.get("LLM_API_KEY")
+    trials_index = ctxmod.load_trial_index(args.trials_db)
+    if trials_index:
+        print(f"Trial links loaded for {len(trials_index)} PMIDs (structured CT.gov facts).")
     rows = []
     for i, p in enumerate(papers):
         try:
-            rows.append(compare_paper(p, args.api, args.base_url, args.model, api_key, args.mock))
+            ctx = ctxmod.build_context(
+                p["pmid"], p.get("molecule_name", ""), p.get("abstract", ""),
+                trials_index=trials_index, use_fulltext=args.fulltext,
+                use_pubtator=args.pubtator, cache_dir=args.cache_dir)
+            rows.append(compare_paper(p, args.api, args.base_url, args.model, api_key,
+                                      args.mock, ctx))
         except Exception as e:  # noqa: BLE001 -- one bad call shouldn't lose the whole run
             print(f"  paper {p.get('pmid','?')}: LLM call failed ({e}); skipping", file=sys.stderr)
     if not rows:
