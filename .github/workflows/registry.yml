@@ -12,6 +12,14 @@ on:
   schedule:
     - cron: "0 7 * * 1,4"   # twice weekly (Mon + Thu) 07:00 UTC, after the main update
   workflow_dispatch:
+    inputs:
+      refresh_trials:
+        description: >-
+          Re-fetch and OVERWRITE already-stored trials. Needed once after adding a
+          new stored field (e.g. the trial->publication result_pmids links), because
+          the normal run SKIPS NCTs it already has and would never backfill them.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -48,8 +56,11 @@ jobs:
       - name: Fetch ClinicalTrials.gov registry trials
         env:
           API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
+          # Only set on a manual run with refresh_trials=true; a scheduled run stays
+          # incremental (skips known NCTs) so we don't re-fetch 4k+ trials weekly.
+          REFRESH: ${{ github.event.inputs.refresh_trials == 'true' && '--refresh' || '' }}
         run: |
-          python3 scripts/run_trials_fetch.py --db data/retarats_trials.sqlite || true
+          python3 scripts/run_trials_fetch.py --db data/retarats_trials.sqlite $REFRESH || true
 
       - name: Fetch EuropePMC preprints
         env:
