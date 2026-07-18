@@ -76,8 +76,15 @@ RELIABILITY_FIELDS = _RELIABILITY_FIELDS
 FACET_WIDE_FIELDS = [f"facet_{g}" for g in FACET_GROUPS] + ["facet_all", "facet_count"]
 
 
+# Records rows dropped during load because their JSON payload didn't parse. Kept
+# module-level so the build can report schema drift instead of silently swallowing
+# it (a bad column/format change would otherwise vanish without a trace).
+_LOAD_DROPPED: Dict[str, int] = {}
+
+
 def load_payload_table(conn: sqlite3.Connection, table: str) -> List[dict]:
     rows: List[dict] = []
+    dropped = 0
     try:
         cur = conn.execute(f"select payload_json from {table}")
     except sqlite3.OperationalError:
@@ -86,7 +93,12 @@ def load_payload_table(conn: sqlite3.Connection, table: str) -> List[dict]:
         try:
             rows.append(json.loads(payload))
         except (TypeError, json.JSONDecodeError):
+            dropped += 1
             continue
+    if dropped:
+        _LOAD_DROPPED[table] = _LOAD_DROPPED.get(table, 0) + dropped
+        print(f"  WARNING: {table}: skipped {dropped} unparseable payload row(s) "
+              f"(possible schema drift)", file=sys.stderr)
     return rows
 
 
@@ -326,14 +338,36 @@ def _corpus_stats(curated_rows: List[dict], papers: List[dict], evidence: List[d
     featured = sum(1 for r in curated_rows if r.get("publication_status") == "featured")
     listed = sum(1 for r in curated_rows if r.get("publication_status") == "listed")
 
+    # Reproducibility/provenance stamp. A given deployed site can then be tied to an
+    # exact corpus state: `corpus_fingerprint` is a deterministic hash of the corpus
+    # composition (counts + per-molecule tallies + year span), so two builds from
+    # the same corpus share it and any change is visible; `build_sha` is the commit
+    # that produced the build (from CI), and `zenodo_doi` is the concept DOI.
+    import hashlib as _hl
+    from collections import Counter as _Counter
+    _mc = _Counter(str(r.get("molecule_id", "")) for r in curated_rows if r.get("molecule_id"))
+    _sig = "|".join([
+        str(len(papers)), str(len(evidence)), str(molecules_with_data),
+        str(min(years) if years else ""), str(max(years) if years else ""),
+        ";".join(f"{k}:{_mc[k]}" for k in sorted(_mc)),
+    ])
+    corpus_fingerprint = _hl.sha256(_sig.encode("utf-8")).hexdigest()[:12]
+    build_sha = (os.environ.get("GITHUB_SHA") or "").strip()[:7] or "local"
+
     return {
         "generated_utc": _dt.datetime.utcnow().isoformat() + "Z",
+        "build_sha": build_sha,
+        "corpus_fingerprint": corpus_fingerprint,
+        "zenodo_doi": "10.5281/zenodo.21207064",
         "total_papers": len(papers),
         "total_evidence": len(evidence),
         "molecules_with_data": molecules_with_data,
         "year_min": min(years) if years else None,
         "year_max": max(years) if years else None,
         "pct_citations_filled": pct_citations,
+        # Rows dropped at load because their JSON payload didn't parse (schema drift
+        # canary). 0 in a healthy build; surfaced so validate_curated / CI can see it.
+        "dropped_payload_rows": sum(_LOAD_DROPPED.values()),
         # Data-health coverage percentages (share of curated records with each
         # signal filled). pct_with_citation reuses pct_citations_filled above.
         "pct_with_abstract": pct_with_abstract,

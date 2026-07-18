@@ -111,6 +111,12 @@ def run():
           "@media (max-width: 760px)" in fetch_html and "aside.filters-open" in fetch_html)
     check("mobile stacks molecule grid to one column", "grid-template-columns: 1fr" in fetch_html)
 
+    # Reproducibility/provenance stamp (dims #8/#11).
+    check("provenance fields survive corpus-stats allowlist",
+          all(f in site.CORPUS_STATS_FIELDS for f in ("build_sha", "corpus_fingerprint", "zenodo_doi")))
+    check("version stamp rendered in corpus strip", 'corpus_fingerprint' in fetch_html and '"Version"' in fetch_html)
+    check("about has cite/DOI block", "How to cite" in fetch_html and "doi.org/" in fetch_html)
+
     # 3) Missing columns / empty inputs don't crash.
     empty = site.SiteData(records=[], molecules=[])
     check("empty site data renders", isinstance(site._safe_json_block({"records": []}), str))

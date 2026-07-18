@@ -172,6 +172,8 @@ PREPRINT_FIELDS = [
 CORPUS_STATS_FIELDS = [
     "generated_utc", "total_papers", "total_evidence", "molecules_with_data",
     "year_min", "year_max", "pct_citations_filled", "featured", "listed",
+    # Reproducibility/provenance stamp shown in the footer + About.
+    "build_sha", "corpus_fingerprint", "zenodo_doi",
     # Data-health coverage percentages (share of curated records with each signal
     # filled). Surfaced as a compact "Data health" line in the corpus strip.
     "pct_with_abstract", "pct_with_doi", "pct_with_icite",
@@ -2744,6 +2746,13 @@ _TEMPLATE = """<!DOCTYPE html>
     healthPart("cited-by data", CORPUS.pct_citations_filled);
     healthPart("iCite", CORPUS.pct_with_icite);
     if (health.length) parts.push(["Data health", health.join(" \\u00b7 ")]);
+    // Reproducibility stamp: a corpus fingerprint (+ CI build sha) that ties this
+    // page to an exact corpus state, so a citation can name the version it saw.
+    if (CORPUS.corpus_fingerprint) {{
+      var ver = "corpus " + CORPUS.corpus_fingerprint;
+      if (CORPUS.build_sha && CORPUS.build_sha !== "local") ver += " \\u00b7 build " + CORPUS.build_sha;
+      parts.push(["Version", ver]);
+    }}
     var upd = String(CORPUS.generated_utc || "").slice(0, 10);
     if (upd) parts.push([null, "updated " + upd]);
     parts.forEach(function(pr, i) {{
@@ -2845,6 +2854,24 @@ _TEMPLATE = """<!DOCTYPE html>
       + "combined rank used for best-first ordering. The tabs let you browse the full indexed "
       + "set for the tracked bioactives, restrict to human/clinical data, list the bioactives, "
       + "or view candidate compounds.");
+
+    h3("Version, citation & reproducibility");
+    var vparts = [];
+    if (CORPUS.corpus_fingerprint) vparts.push("corpus fingerprint " + CORPUS.corpus_fingerprint);
+    if (CORPUS.build_sha && CORPUS.build_sha !== "local") vparts.push("build " + CORPUS.build_sha);
+    if (CORPUS.generated_utc) vparts.push("generated " + String(CORPUS.generated_utc).slice(0, 10));
+    if (vparts.length)
+      p("This deployed build: " + vparts.join(" \\u00b7 ") + ". The corpus fingerprint is a "
+        + "deterministic hash of the exact corpus composition, so a citation can name the "
+        + "version it saw and two builds from the same corpus share it.");
+    p("The full SQLite corpus is snapshotted weekly (compressed + SHA-256) as a GitHub "
+      + "Release asset, so a given fingerprint can be reconstructed from the matching snapshot.");
+    if (CORPUS.zenodo_doi) {{
+      var cite = el("p", null, "How to cite: RetaBase, DOI ");
+      cite.appendChild(safeLink(CORPUS.zenodo_doi, "https://doi.org/" + encodeURIComponent(CORPUS.zenodo_doi)));
+      cite.appendChild(document.createTextNode(" (see CITATION.cff in the repository)."));
+      root.appendChild(cite);
+    }}
 
     h3("Automated rigor signals \\u2014 within-class study quality (0\\u2013100)");
     p("The automated rigor score is a set of RULE-BASED signals extracted from the "

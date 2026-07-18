@@ -210,6 +210,25 @@ def run_rigor_negation_tests():
     check("in vivo genuine controls credited", invivo.get("controls") == 8)
 
 
+def run_pipeline_robustness_tests():
+    import sqlite3
+    bcd._LOAD_DROPPED.clear()
+    conn = sqlite3.connect(":memory:")
+    conn.execute("create table evidence(payload_json text)")
+    conn.executemany("insert into evidence values(?)",
+                     [('{"a":1}',), ("NOT JSON",), ('{"b":2}',)])
+    rows = bcd.load_payload_table(conn, "evidence")
+    check("valid payload rows parsed", len(rows) == 2)
+    check("unparseable rows counted (schema-drift canary)", bcd._LOAD_DROPPED.get("evidence") == 1)
+    conn.close()
+
+    # corpus_stats carries the provenance stamp + dropped-row canary.
+    stats = bcd._corpus_stats([{"molecule_id": "m", "pub_year": 2020}], [{"pmid": "1"}], [{"pmid": "1"}])
+    for key in ("build_sha", "corpus_fingerprint", "zenodo_doi", "dropped_payload_rows"):
+        check(f"corpus_stats has {key}", key in stats)
+    check("fingerprint is a short hex", len(stats["corpus_fingerprint"]) == 12)
+
+
 def run_density_tests():
     # _density_tier boundaries (precedence: sparse -> saturated -> moderate).
     check("density 99 total -> sparse", bcd._density_tier(99, 50) == "sparse")
@@ -552,6 +571,9 @@ def run():
 
     # --- negation-aware rigor scoring (trust risk #2) ---
     run_rigor_negation_tests()
+
+    # --- pipeline robustness: schema-drift counter + provenance stamp ---
+    run_pipeline_robustness_tests()
 
     # --- evidence-density tiers + density-aware cap ---
     run_density_tests()
