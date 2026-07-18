@@ -357,6 +357,7 @@ SITE_JSON_FIELDS = [
     "journal_reputation", "journal_tier",
     "rank_score", "rank_tier", "appraisal_summary", "appraisal_strengths", "appraisal_limitations",
     "refined_dose", "refined_route", "refined_duration", "refined_sample_size", "refined_outcome_direction",
+    "refined_extraction_scope",
     "facet_species", "facet_indication", "facet_endpoint", "facet_study_type",
     "facet_model_system", "facet_route",
     "facet_drug_class", "facet_population", "facet_sex", "facet_formulation", "facet_evidence_direction",

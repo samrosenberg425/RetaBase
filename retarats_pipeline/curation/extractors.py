@@ -259,10 +259,14 @@ def off_focus_reason(evidence: dict, paper: dict) -> str:
 # --- public field-level parsers --------------------------------------------
 
 
+def _dose_list(text: str) -> List[str]:
+    """Raw dose expressions in ``text`` (order-preserving, not de-duped)."""
+    return [re.sub(r"\s+", " ", m.group(0)).strip() for m in _DOSE_RE.finditer(text)]
+
+
 def parse_dose(text: str) -> str:
     """Return a semicolon list of distinct dose expressions found in ``text``."""
-    hits = [re.sub(r"\s+", " ", m.group(0)).strip() for m in _DOSE_RE.finditer(text)]
-    return "; ".join(_dedupe(hits)[:6])
+    return "; ".join(_dedupe(_dose_list(text))[:6])
 
 
 def parse_route(text: str) -> str:
@@ -485,6 +489,44 @@ def disambiguate_model(evidence: dict, paper: dict) -> Tuple[str, str, str, str]
 # --- top-level entry point --------------------------------------------------
 
 
+# --- molecule-scoped extraction --------------------------------------------
+# TRUST FIX: in comparator / combination papers the abstract names several drugs
+# and their doses. Extracting over the whole abstract would attach a comparator's
+# dose/route/duration to THIS record's molecule (e.g. a semaglutide dose showing
+# on a tirzepatide card). So when the abstract shows a comparison, we restrict
+# dose/route/duration to sentences that mention the record's OWN molecule; and if
+# even one such sentence still carries >=2 distinct doses (both drugs in a single
+# clause -> not attributable by rules alone), we decline to guess and mark the
+# dose "not localized". Single-drug papers are unaffected (whole-text, as before).
+# The chosen scope is reported in ``refined_extraction_scope`` for provenance.
+_COMPARATOR_CUE = re.compile(
+    r"\b(?:versus|vs\.?|compared\s+(?:with|to|against)|head[\s-]?to[\s-]?head|"
+    r"relative\s+to|non-?inferior(?:ity)?|superiority\s+(?:to|over)|"
+    r"in\s+combination\s+with|combined\s+with|co-?administ|as\s+an?\s+add-?on)\b",
+    re.IGNORECASE,
+)
+
+
+def _molecule_terms(evidence: dict, paper: dict) -> List[str]:
+    """Lowercase name / id / synonym anchors for the record's molecule (len >= 3)."""
+    raw = [
+        str(evidence.get("molecule_name", "") or ""),
+        str(evidence.get("molecule_id", "") or "").replace("_", " "),
+    ]
+    syn = evidence.get("molecule_synonyms") or paper.get("molecule_synonyms") or ""
+    if isinstance(syn, (list, tuple)):
+        raw.extend(str(s) for s in syn)
+    else:
+        raw.extend(str(syn).split(";"))
+    terms = {t.strip().lower() for t in raw if len(t.strip()) >= 3}
+    return sorted(terms)
+
+
+def _mentions(sentence: str, terms: List[str]) -> bool:
+    s = sentence.lower()
+    return any(t in s for t in terms)
+
+
 def refine_extraction(evidence: dict, paper: dict) -> dict:
     """Return additive refined-extraction + model-disambiguation fields.
 
@@ -493,10 +535,31 @@ def refine_extraction(evidence: dict, paper: dict) -> dict:
     Fall back to ``""`` (empty) when a value cannot be parsed.
     """
     text = _text_blob(evidence, paper)
+    terms = _molecule_terms(evidence, paper)
+    comparator = bool(terms) and bool(_COMPARATOR_CUE.search(text))
 
-    refined_dose = parse_dose(text)
-    refined_route = parse_route(text)
-    refined_duration = parse_duration(text)
+    if comparator:
+        local = [s for s in _sentences(text) if _mentions(s, terms)]
+        local_text = " ".join(local)
+        # If a single molecule-local clause still carries two+ distinct doses, the
+        # comparator's dose is entangled with ours -> don't guess.
+        ambiguous = any(len(set(_dose_list(s))) >= 2 for s in local)
+        if ambiguous:
+            refined_dose = ""
+            extraction_scope = "ambiguous_multidrug"
+        else:
+            refined_dose = parse_dose(local_text)
+            extraction_scope = "molecule_local"
+        refined_route = parse_route(local_text)
+        refined_duration = parse_duration(local_text)
+    else:
+        refined_dose = parse_dose(text)
+        refined_route = parse_route(text)
+        refined_duration = parse_duration(text)
+        extraction_scope = "document"
+
+    # Sample size is about participants (one cohort), not per-drug, so it stays
+    # document-wide regardless of scope.
     sample_display, sample_n = parse_sample_size(text)
     refined_outcome = classify_outcome(evidence, text)
 
@@ -509,6 +572,7 @@ def refine_extraction(evidence: dict, paper: dict) -> dict:
         "refined_sample_size": sample_display,
         "refined_n": sample_n if sample_n is not None else "",
         "refined_outcome_direction": refined_outcome,
+        "refined_extraction_scope": extraction_scope,
         "model_primary": model_primary,
         "model_flags": model_flags,
         "model_confidence": model_conf,
@@ -525,6 +589,7 @@ REFINED_FIELDS = [
     "refined_sample_size",
     "refined_n",
     "refined_outcome_direction",
+    "refined_extraction_scope",
     "model_primary",
     "model_flags",
     "model_confidence",

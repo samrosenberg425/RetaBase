@@ -184,7 +184,41 @@ def run():
         "model_disambiguation_reason",
     ]:
         check(f"refine_extraction returns {key}", key in refined)
+    check("refine_extraction returns refined_extraction_scope", "refined_extraction_scope" in refined)
     check("refine_extraction does not touch model_type", "model_type" not in refined)
+
+    # --- molecule-scoped extraction (trust risk #1: no comparator misattribution) ---
+    # Single-drug paper: whole-text extraction, scope "document".
+    r_single = refine_extraction(
+        {"molecule_name": "Retatrutide"},
+        {"title": "Retatrutide in obesity",
+         "abstract": "Participants received 5 mg once weekly for 24 weeks."})
+    check("single-drug dose extracted", r_single["refined_dose"] == "5 mg")
+    check("single-drug scope is document", r_single["refined_extraction_scope"] == "document")
+
+    # Comparator paper, doses in SEPARATE sentences: keep only this molecule's dose.
+    r_cmp = refine_extraction(
+        {"molecule_name": "Tirzepatide"},
+        {"title": "Tirzepatide versus semaglutide",
+         "abstract": "Tirzepatide 5 mg was compared with semaglutide. Semaglutide 1 mg was given weekly."})
+    check("comparator keeps this molecule's dose", "5 mg" in r_cmp["refined_dose"])
+    check("comparator drops the other drug's dose", "1 mg" not in r_cmp["refined_dose"])
+    check("comparator scope is molecule_local", r_cmp["refined_extraction_scope"] == "molecule_local")
+
+    # Comparator paper, both doses in ONE clause naming both drugs: omit, don't guess.
+    r_amb = refine_extraction(
+        {"molecule_name": "Tirzepatide"},
+        {"title": "Head-to-head trial",
+         "abstract": "Tirzepatide 5 mg versus semaglutide 1 mg were compared over 40 weeks."})
+    check("ambiguous multi-drug dose omitted", r_amb["refined_dose"] == "")
+    check("ambiguous scope flagged", r_amb["refined_extraction_scope"] == "ambiguous_multidrug")
+
+    # BMI middle-dot false positive stays gone under the new path.
+    r_bmi = refine_extraction(
+        {"molecule_name": "Amycretin"},
+        {"title": "Amycretin phase 1b/2a",
+         "abstract": "Adults with obesity (BMI 27.0-39.9 kg/m2) received amycretin escalated to 60 mg."})
+    check("BMI kg not a dose under scoping", "kg" not in r_bmi["refined_dose"] and r_bmi["refined_dose"] == "60 mg")
 
     print(f"\n{PASS} passed, {FAIL} failed")
     return 0 if FAIL == 0 else 1

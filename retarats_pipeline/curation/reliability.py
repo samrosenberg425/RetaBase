@@ -104,6 +104,53 @@ def _has(text: str, *terms: str) -> bool:
     return any(t in text for t in terms)
 
 
+# Negation / other-study attribution cues. If one of these sits just before a
+# design-rigor term, the paper is saying it did NOT use that method (or is citing
+# another study that did) -- so we must not credit it. Window is local to the term.
+_NEGATORS = (
+    "not ", "non-", "non ", "no ", "without", "lack", "absence of", "absent",
+    "unlike", "rather than", "instead of", "as opposed to", "failed to",
+    "was not", "were not", "wasn't", "weren't", "un-blinded", "unblinded",
+    "open-label", "open label",
+)
+
+
+def _has_method(text: str, *terms: str) -> bool:
+    """Like ``_has`` but ignores a locally negated / attributed occurrence.
+
+    A design term (randomized / double-blind / control) preceded within a short
+    window by a negation or contrast cue -- e.g. "an open-label study, unlike
+    double-blind trials" or "not randomized" -- is not credited, because it names a
+    method the study lacks or is merely citing. Any single non-negated occurrence
+    still earns the credit.
+    """
+    for t in terms:
+        start = 0
+        while True:
+            i = text.find(t, start)
+            if i == -1:
+                break
+            if not any(neg in text[max(0, i - 30):i] for neg in _NEGATORS):
+                return True
+            start = i + len(t)
+    return False
+
+
+def _methods_span(text: str) -> str:
+    """Methods/design section of a structured abstract, or '' if none is marked.
+
+    Restricting design-rigor keyword matching to this span stops background/title
+    mentions ("in contrast to randomized trials, we ...") from leaking rigor credit.
+    """
+    m = re.search(r"\b(?:methods?|design|study design|patients and methods|materials and methods)\b\s*:?", text)
+    if not m:
+        return ""
+    start = m.end()
+    r = re.search(r"\b(?:results?|findings?|conclusions?|interpretation|discussion)\b\s*:?", text[start:])
+    end = start + r.start() if r else len(text)
+    return text[start:end]
+
+
 def _count_present(text: str, groups: Tuple[Tuple[str, ...], ...]) -> int:
     return sum(1 for g in groups if _has(text, *g))
 
@@ -264,13 +311,17 @@ def _score_human(evidence: dict, cls: str, text: str) -> Tuple[int, Dict[str, in
         c["comparator"] = 8
     else:
         c["comparator"] = 0
-    if _has(text, "double-blind", "double blind"):
+    # Design-rigor credits are matched over the methods span (when present) and are
+    # negation-aware, so a study is not credited for blinding/randomization it
+    # explicitly lacks or merely cites in other trials.
+    dt = _methods_span(text) or text
+    if _has_method(dt, "double-blind", "double blind"):
         c["blinding"] = 8
-    elif _has(text, "single-blind", "single blind", "blinded"):
+    elif _has_method(dt, "single-blind", "single blind", "blinded"):
         c["blinding"] = 4
     else:
         c["blinding"] = 0
-    if cls != "human_clinical_controlled" and _has(text, "randomi"):
+    if cls != "human_clinical_controlled" and _has_method(dt, "randomi"):
         c["randomization"] = 6
     n = _sample_n(evidence)
     c["sample_size"] = _n_points(n, (1000, 300, 100, 30), (14, 11, 8, 4, 1))
@@ -298,11 +349,12 @@ def _score_synthesis(evidence: dict, text: str) -> Tuple[int, Dict[str, int]]:
 
 def _score_invivo(evidence: dict, text: str) -> Tuple[int, Dict[str, int]]:
     c: Dict[str, int] = {"design": 45}
-    if _has(text, "randomi"):
+    dt = _methods_span(text) or text
+    if _has_method(dt, "randomi"):
         c["randomization"] = 8
-    if _has(text, "blind", "masked"):
+    if _has_method(dt, "blind", "masked"):
         c["blinding"] = 8
-    if _has(text, "vehicle", "sham", "littermate", "control group", "untreated control"):
+    if _has_method(dt, "vehicle", "sham", "littermate", "control group", "untreated control"):
         c["controls"] = 8
     n = _sample_n(evidence)
     c["sample_size"] = _n_points(n, (40, 16, 8, 4), (8, 6, 4, 2, 1))
@@ -319,7 +371,8 @@ def _score_invivo(evidence: dict, text: str) -> Tuple[int, Dict[str, int]]:
 
 def _score_invitro(evidence: dict, text: str) -> Tuple[int, Dict[str, int]]:
     c: Dict[str, int] = {"design": 40}
-    if _has(text, "vehicle", "negative control", "untreated control", "scramble", "mock", "isotype"):
+    dt = _methods_span(text) or text
+    if _has_method(dt, "vehicle", "negative control", "untreated control", "scramble", "mock", "isotype"):
         c["controls"] = 12
     methods = (
         ("western", "immunoblot"), ("qpcr", "rt-pcr", "quantitative pcr"), ("immunofluor", "immunostain", "immunohisto"),

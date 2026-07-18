@@ -54,6 +54,7 @@ RECORD_FIELDS = [
     "reliability_components", "rank_components",
     "rank_score", "rank_tier", "appraisal_summary", "appraisal_strengths", "appraisal_limitations",
     "refined_dose", "refined_route", "refined_duration", "refined_sample_size", "refined_outcome_direction",
+    "refined_extraction_scope",
     "facet_species", "facet_indication", "facet_endpoint", "facet_study_type",
     "facet_model_system", "facet_route",
     "facet_drug_class", "facet_population", "facet_sex", "facet_formulation",
@@ -1611,6 +1612,14 @@ _TEMPLATE = """<!DOCTYPE html>
     kv(grid, "Duration", r.refined_duration);
     kv(grid, "Sample size", r.refined_sample_size);
     kv(grid, "Outcome", humanize(r.refined_outcome_direction));
+    // Provenance for the extracted dose/route/duration: in comparator papers these
+    // are restricted to sentences naming this molecule, or omitted when they can't
+    // be attributed -- so a comparator's dose never shows as this molecule's.
+    var xscope = String(r.refined_extraction_scope || "");
+    if (xscope === "ambiguous_multidrug")
+      kv(grid, "Dose/route note", "Multi-drug comparison \\u2014 dose could not be attributed to this molecule, so it is omitted.");
+    else if (xscope === "molecule_local")
+      kv(grid, "Dose/route note", "Comparison paper \\u2014 dose/route/duration restricted to sentences naming this molecule.");
     kv(grid, "Formal risk of bias", "not assessed (automated rigor signals only)");
     // NIH iCite metrics (fill in once the corpus is iCite-enriched; each row is
     // shown only when its value is present).

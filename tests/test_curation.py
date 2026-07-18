@@ -188,6 +188,28 @@ def run_anomaly_gate_tests():
         check("missing baseline file PASSES (zero)", code == 0)
 
 
+def run_rigor_negation_tests():
+    # Trust risk #2: rigor scoring must ignore negated / other-study design terms.
+    from retarats_pipeline.curation.reliability import _score_human, _score_invivo
+    genuine = _score_human({"comparator_or_control": "placebo"}, "human_clinical",
+                           "methods: a randomized, double-blind, placebo-controlled trial. results: improved.")[1]
+    check("genuine RCT credits blinding", genuine.get("blinding") == 8)
+    check("genuine RCT credits randomization", genuine.get("randomization") == 6)
+
+    open_label = _score_human({}, "human_clinical",
+                              "methods: an open-label study, unlike double-blind trials, enrolled adults. results: ok.")[1]
+    check("open-label citing double-blind earns NO blinding", open_label.get("blinding", 0) == 0)
+
+    negated = _score_human({}, "human_clinical",
+                           "methods: this was not randomized and not blinded. results: ok.")[1]
+    check("not-randomized earns no randomization", not negated.get("randomization"))
+    check("not-blinded earns no blinding", negated.get("blinding", 0) == 0)
+
+    invivo = _score_invivo({}, "methods: mice were randomized with a vehicle control group. results: survival improved.")[1]
+    check("in vivo genuine randomization credited", invivo.get("randomization") == 8)
+    check("in vivo genuine controls credited", invivo.get("controls") == 8)
+
+
 def run_density_tests():
     # _density_tier boundaries (precedence: sparse -> saturated -> moderate).
     check("density 99 total -> sparse", bcd._density_tier(99, 50) == "sparse")
@@ -513,6 +535,9 @@ def run():
 
     # --- validate_curated corpus-collapse anomaly gates ---
     run_anomaly_gate_tests()
+
+    # --- negation-aware rigor scoring (trust risk #2) ---
+    run_rigor_negation_tests()
 
     # --- evidence-density tiers + density-aware cap ---
     run_density_tests()
