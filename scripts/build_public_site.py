@@ -642,7 +642,7 @@ _TEMPLATE = """<!DOCTYPE html>
 <style>
   :root {{
     --bg: #0f1115; --panel: #171a21; --panel2: #1e222b; --border: #2a2f3a;
-    --text: #e6e8ec; --muted: #9aa3b2; --accent: #5b9dff; --accent2: #7ee3a7;
+    --text: #e6e8ec; --muted: #a7b0be; --accent: #5b9dff; --accent2: #7ee3a7;
     --tier-high: #7ee3a7; --tier-moderate: #ffd479; --tier-limited: #ff9e64;
     --tier-low: #ff6b6b; --tier-not_applicable: #9aa3b2;
     --ap-approve: #2f9e6b; --ap-reject: #d0455b;
@@ -698,6 +698,7 @@ _TEMPLATE = """<!DOCTYPE html>
     outline: 2px solid var(--accent); outline-offset: 2px;
   }}
   /* Translational-triangle dots: clickable, with a clear hover state. */
+  #triangle-svg {{ max-width: 100%; height: auto; }}
   .tri-dot {{ cursor: pointer; }}
   .tri-dot:hover {{ fill-opacity: 1; stroke: var(--accent); stroke-width: 1.5; }}
   /* Custom hover tooltip for triangle dots (a real text box; the native SVG
@@ -907,14 +908,45 @@ _TEMPLATE = """<!DOCTYPE html>
   .modal .comp span {{ font-size: 11px; background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 2px 7px; }}
   .modal h4 {{ margin: 16px 0 4px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }}
   code {{ background: var(--panel2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }}
-  @media (max-width: 720px) {{
+  /* Off-screen skip link, revealed on keyboard focus (a11y). */
+  .skip-link {{ position: absolute; left: -9999px; top: 0; z-index: 100; background: var(--accent);
+    color: #06101f; padding: 8px 14px; border-radius: 0 0 6px 0; font-weight: 600; }}
+  .skip-link:focus {{ left: 0; }}
+  /* Mobile-only "Filters" drawer toggle (hidden on desktop). */
+  .filters-toggle {{ display: none; }}
+  @media (max-width: 760px) {{
+    header {{ padding: 12px 14px; }}
+    header h1 {{ font-size: 18px; }}
     main {{ flex-direction: column; }}
-    aside {{ width: 100%; min-width: 0; height: auto; position: static; border-right: none; border-bottom: 1px solid var(--border); }}
-    section.content {{ height: auto; }}
+    /* Sidebar becomes a collapsible drawer: hidden until the user taps Filters,
+       so the evidence list is the first thing on screen. */
+    aside {{ width: auto; min-width: 0; height: auto; max-height: 72vh; position: static;
+      border-right: none; border-bottom: 1px solid var(--border); resize: none; display: none; }}
+    aside.filters-open {{ display: block; }}
+    section.content {{ height: auto; padding: 12px 14px; }}
+    .filters-toggle {{ display: inline-flex; align-items: center; gap: 6px; margin-bottom: 10px;
+      background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+      border-radius: 6px; padding: 9px 14px; font-size: 14px; cursor: pointer; }}
+    /* Bigger touch targets + readable sizes on phones. */
+    .fopt {{ padding: 7px 0; font-size: 13px; }}
+    .fopt .inc, .fopt .exc {{ padding: 4px 8px; }}
+    .tabs {{ gap: 6px; }}
+    .tabs button {{ padding: 8px 12px; }}
+    .mol-grid {{ grid-template-columns: 1fr; }}
+    .trial-grid, .modal .grid {{ grid-template-columns: 1fr; gap: 2px 0; }}
+    .trial-grid .k, .modal .grid .k {{ margin-top: 6px; font-weight: 600; }}
+    .modal {{ padding: 18px 16px; }}
+    .modal .close {{ padding: 8px 14px; font-size: 15px; }}
+    .card {{ padding: 12px 14px; }}
+    /* >=16px inputs stop iOS Safari from auto-zooming the page on focus. */
+    input, select, textarea {{ font-size: 16px; }}
+    /* Meet the 44px minimum tap-target guideline for primary controls. */
+    .tabs button, .filters-toggle, .reset, .close {{ min-height: 44px; }}
   }}
 </style>
 </head>
 <body>
+<a href="#main-content" class="skip-link">Skip to content</a>
 <header>
   <h1>{title}</h1>
   <p>{subtitle}</p>
@@ -929,19 +961,19 @@ _TEMPLATE = """<!DOCTYPE html>
     </ul>
   </details>
   <div class="corpus-strip" id="corpus-strip" style="display:none"></div>
-  <div class="tabs">
-    <button id="tab-evidence" class="active" onclick="showTab('evidence')">Evidence</button>
-    <button id="tab-clinical" onclick="showTab('clinical')">Clinical evidence</button>
-    <button id="tab-trials" onclick="showTab('trials')">Trials registry</button>
-    <button id="tab-preprints" onclick="showTab('preprints')">Preprints</button>
-    <button id="tab-molecules" onclick="showTab('molecules')">Bioactives</button>
-    <button id="tab-experimental" style="display:none" onclick="showTab('experimental')">Experimental</button>
-    <button id="tab-about" onclick="showTab('about')">About / Methods</button>
+  <div class="tabs" role="tablist" aria-label="Views">
+    <button id="tab-evidence" class="active" role="tab" aria-selected="true" onclick="showTab('evidence')">Evidence</button>
+    <button id="tab-clinical" role="tab" aria-selected="false" onclick="showTab('clinical')">Clinical evidence</button>
+    <button id="tab-trials" role="tab" aria-selected="false" onclick="showTab('trials')">Trials registry</button>
+    <button id="tab-preprints" role="tab" aria-selected="false" onclick="showTab('preprints')">Preprints</button>
+    <button id="tab-molecules" role="tab" aria-selected="false" onclick="showTab('molecules')">Bioactives</button>
+    <button id="tab-experimental" role="tab" aria-selected="false" style="display:none" onclick="showTab('experimental')">Experimental</button>
+    <button id="tab-about" role="tab" aria-selected="false" onclick="showTab('about')">About / Methods</button>
     <span class="spacer"></span>
     <span class="ap-summary" id="ap-summary"></span>{export_btn}
   </div>
 </header>
-<main>
+<main id="main-content">
   <aside id="sidebar">
     <div class="fg">
       <label for="q">Search</label>
@@ -976,6 +1008,7 @@ _TEMPLATE = """<!DOCTYPE html>
   </aside>
   <section class="content">
     <div id="browser-view">
+      <button class="filters-toggle" id="filters-toggle" aria-expanded="false" aria-controls="sidebar" onclick="toggleFilters()">&#9776; Filters</button>
       <div class="tab-desc" id="browser-desc"></div>
       <div class="count" id="records-count">
         <span id="showing" aria-live="polite"></span>
@@ -2706,7 +2739,9 @@ _TEMPLATE = """<!DOCTYPE html>
     }}
     healthPart("abstracts", CORPUS.pct_with_abstract);
     healthPart("DOIs", CORPUS.pct_with_doi);
-    healthPart("citations", CORPUS.pct_citations_filled);
+    // "cited-by data" (not "citations") so it isn't misread as an article's own
+    // reference count -- it's the share of records with a times-cited-by-others count.
+    healthPart("cited-by data", CORPUS.pct_citations_filled);
     healthPart("iCite", CORPUS.pct_with_icite);
     if (health.length) parts.push(["Data health", health.join(" \\u00b7 ")]);
     var upd = String(CORPUS.generated_utc || "").slice(0, 10);
@@ -2749,6 +2784,10 @@ _TEMPLATE = """<!DOCTYPE html>
     document.getElementById("tab-molecules").className = isMol ? "active" : "";
     document.getElementById("tab-experimental").className = isExp ? "active" : "";
     document.getElementById("tab-about").className = isAbout ? "active" : "";
+    ["evidence", "clinical", "trials", "preprints", "molecules", "experimental", "about"].forEach(function(t) {{
+      var b = document.getElementById("tab-" + t);
+      if (b) b.setAttribute("aria-selected", (t === name) ? "true" : "false");
+    }});
     currentTab = name;
     // Lazy-render hidden tabs on first open so they don't cost anything at load.
     if (isMol && !_rendered.molecules) {{ renderMolecules(); _rendered.molecules = true; }}
@@ -2763,6 +2802,16 @@ _TEMPLATE = """<!DOCTYPE html>
     }}
   }}
   window.showTab = showTab;
+
+  // Mobile filter drawer: the sidebar is hidden by CSS on small screens until the
+  // user taps "Filters". No effect on desktop (the toggle button is display:none).
+  function toggleFilters() {{
+    var side = document.getElementById("sidebar");
+    var btn = document.getElementById("filters-toggle");
+    var open = side.classList.toggle("filters-open");
+    if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
+  }}
+  window.toggleFilters = toggleFilters;
 
   // ---- About / Methods -------------------------------------------------------
   // Rendered from a small data structure via textContent (no innerHTML) so the

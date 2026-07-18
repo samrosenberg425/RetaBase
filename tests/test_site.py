@@ -100,6 +100,17 @@ def run():
     check("hidden tabs render lazily on first open", "_rendered.molecules" in fetch_html)
     check("side feeds refresh their tab when they arrive", 'currentTab === "trials"' in fetch_html)
 
+    # Mobile responsiveness + accessibility (dims #4/#7).
+    check("skip link + main landmark", 'class="skip-link"' in fetch_html and 'id="main-content"' in fetch_html)
+    check("tabs expose tablist/tab roles", 'role="tablist"' in fetch_html and fetch_html.count('role="tab"') >= 6)
+    check("active tab exposes aria-selected", 'aria-selected="true"' in fetch_html)
+    check("showTab keeps aria-selected in sync", 'setAttribute("aria-selected"' in fetch_html)
+    check("mobile filter drawer toggle present",
+          'class="filters-toggle"' in fetch_html and "function toggleFilters()" in fetch_html)
+    check("mobile breakpoint + collapsible sidebar",
+          "@media (max-width: 760px)" in fetch_html and "aside.filters-open" in fetch_html)
+    check("mobile stacks molecule grid to one column", "grid-template-columns: 1fr" in fetch_html)
+
     # 3) Missing columns / empty inputs don't crash.
     empty = site.SiteData(records=[], molecules=[])
     check("empty site data renders", isinstance(site._safe_json_block({"records": []}), str))
@@ -400,7 +411,8 @@ def run():
         with open(os.path.join(out, "index.html"), encoding="utf-8") as fh:
             html_empty = fh.read()
         check("tab hidden by default (style display:none)",
-              'id="tab-experimental" style="display:none"' in html_empty)
+              'id="tab-experimental"' in html_empty
+              and 'style="display:none" onclick="showTab(\'experimental\')"' in html_empty)
         # No candidate payload -> empty experimental array inlined.
         check("empty experimental array inlined", '"experimental":[]' in html_empty)
 
