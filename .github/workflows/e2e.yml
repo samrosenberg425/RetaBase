@@ -1,0 +1,41 @@
+name: E2E browser tests
+
+# Real-browser tests (Playwright + Chromium) that EXECUTE the dashboard's JS and
+# verify behavior -- filtering, card -> dialog, keyboard, tabs. Complements the
+# Python suite, which only asserts substrings in the generated HTML. Runs on
+# changes to the site generator or the E2E harness, and on demand. Independent of
+# the deploy pipeline, so a browser-test failure never blocks a publish.
+
+on:
+  push:
+    paths:
+      - "scripts/build_public_site.py"
+      - "tests/e2e/**"
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build the self-contained inline fixture
+        run: python3 tests/e2e/make_fixture.py
+
+      - name: Install Playwright + Chromium
+        working-directory: tests/e2e
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        working-directory: tests/e2e
+        run: npx playwright test

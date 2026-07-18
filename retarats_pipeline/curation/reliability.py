@@ -112,16 +112,24 @@ _NEGATORS = (
     "unlike", "rather than", "instead of", "as opposed to", "failed to",
     "was not", "were not", "wasn't", "weren't", "un-blinded", "unblinded",
     "open-label", "open label",
+    # contrast / other-study attribution: crediting a method the study only cites.
+    "in contrast to", "contrast to", "compared with", "compared to", "versus",
+    "relative to",
 )
+
+# Letters that, immediately before a term, mean it's part of a bigger word (e.g.
+# "blind" inside "unblinded", "randomi" inside "nonrandomized") -> not a match.
+_WORDCHAR = set("abcdefghijklmnopqrstuvwxyz0123456789")
 
 
 def _has_method(text: str, *terms: str) -> bool:
     """Like ``_has`` but ignores a locally negated / attributed occurrence.
 
-    A design term (randomized / double-blind / control) preceded within a short
-    window by a negation or contrast cue -- e.g. "an open-label study, unlike
-    double-blind trials" or "not randomized" -- is not credited, because it names a
-    method the study lacks or is merely citing. Any single non-negated occurrence
+    A design term (randomized / double-blind / control) is NOT credited when it is
+    (a) part of a larger word -- "unblinded"/"nonrandomized" must not credit
+    blinding/randomization -- or (b) preceded within a short window by a negation
+    or contrast cue ("an open-label study, unlike double-blind trials", "in
+    contrast to randomized trials", "not randomized"). Any single clean occurrence
     still earns the credit.
     """
     for t in terms:
@@ -130,7 +138,8 @@ def _has_method(text: str, *terms: str) -> bool:
             i = text.find(t, start)
             if i == -1:
                 break
-            if not any(neg in text[max(0, i - 30):i] for neg in _NEGATORS):
+            prev = text[i - 1] if i > 0 else ""
+            if prev not in _WORDCHAR and not any(neg in text[max(0, i - 30):i] for neg in _NEGATORS):
                 return True
             start = i + len(t)
     return False

@@ -640,6 +640,8 @@ _TEMPLATE = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">{preload_hint}
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
+<meta name="referrer" content="no-referrer">
 <title>{title}</title>
 <style>
   :root {{
@@ -1728,17 +1730,43 @@ _TEMPLATE = """<!DOCTYPE html>
     }}
 
     document.getElementById("modal-bg").className = "modal-bg open";
+    // Hide the rest of the page from AT while the dialog is open.
+    var mc = document.getElementById("main-content"); if (mc) mc.setAttribute("aria-hidden", "true");
+    var hdr = document.querySelector("header"); if (hdr) hdr.setAttribute("aria-hidden", "true");
     // Move focus into the dialog so keyboard users land inside it.
     close.focus();
   }}
+  function _modalFocusables() {{
+    var m = document.getElementById("modal");
+    if (!m) return [];
+    return Array.prototype.slice.call(m.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])'
+    )).filter(function(el2) {{ return el2.offsetParent !== null || el2 === document.activeElement; }});
+  }}
   function closeModal() {{
     document.getElementById("modal-bg").className = "modal-bg";
+    var mc = document.getElementById("main-content"); if (mc) mc.removeAttribute("aria-hidden");
+    var hdr = document.querySelector("header"); if (hdr) hdr.removeAttribute("aria-hidden");
     // Restore focus to whatever opened the modal (card, dot, etc.).
     if (modalOpener && typeof modalOpener.focus === "function") modalOpener.focus();
     modalOpener = null;
   }}
   window.closeModal = closeModal;
-  document.addEventListener("keydown", function(e) {{ if (e.key === "Escape") closeModal(); }});
+  function _modalOpen() {{ var b = document.getElementById("modal-bg"); return b && b.className.indexOf("open") !== -1; }}
+  document.addEventListener("keydown", function(e) {{
+    if (e.key === "Escape") {{ closeModal(); return; }}
+    // Focus trap: while the dialog is open, keep Tab inside it (wrap at the ends).
+    if (e.key === "Tab" && _modalOpen()) {{
+      var f = _modalFocusables();
+      if (!f.length) return;
+      var first = f[0], last = f[f.length - 1], act = document.activeElement;
+      if (e.shiftKey && (act === first || !document.getElementById("modal").contains(act))) {{
+        e.preventDefault(); last.focus();
+      }} else if (!e.shiftKey && act === last) {{
+        e.preventDefault(); first.focus();
+      }}
+    }}
+  }});
 
   // ---- include/exclude multi-select filter groups ----------------------------
   // SELECT[field] = {{inc:[...values], exc:[...values]}} holds the live selection.
@@ -3013,7 +3041,25 @@ _TEMPLATE = """<!DOCTYPE html>
     // refresh their own tab if it happens to be open.
     var loadingEl = document.getElementById("records-list");
     if (loadingEl) loadingEl.appendChild(el("div", "empty", "Loading evidence\\u2026"));
-    fetch("site_data.json").then(function(r) {{ return r.json(); }}).then(function(feed) {{
+    // Load the main feed with automatic retries: right after a deploy the page can
+    // arrive on the CDN a moment before site_data.json does, so a first miss is
+    // often transient. Check r.ok (a 404 returns an HTML error page that would
+    // otherwise throw a confusing JSON parse error) and retry a few times with
+    // backoff before giving up.
+    function loadMainFeed(attempt) {{
+      return fetch("site_data.json", {{cache: "no-cache"}}).then(function(r) {{
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      }}).catch(function(err) {{
+        if (attempt < 3) {{
+          var wait = 1200 * attempt;  // 1.2s, 2.4s
+          if (loadingEl) {{ loadingEl.textContent = ""; loadingEl.appendChild(el("div", "empty", "Loading evidence\\u2026 (retrying)")); }}
+          return new Promise(function(res) {{ setTimeout(res, wait); }}).then(function() {{ return loadMainFeed(attempt + 1); }});
+        }}
+        throw err;
+      }});
+    }}
+    loadMainFeed(1).then(function(feed) {{
       RECORDS = feed.records || [];
       MOLECULES = feed.molecules || [];
       // Prefer the feed's experimental list if present; else keep the inlined one.
@@ -3032,8 +3078,14 @@ _TEMPLATE = """<!DOCTYPE html>
     }}).catch(function() {{
       var rl = document.getElementById("records-list");
       if (rl) rl.textContent = "";
-      document.getElementById("records-list").appendChild(el("div", "empty",
-        "Could not load site_data.json (fetch mode requires it be served alongside this page)."));
+      var msg = el("div", "empty",
+        "Could not load site_data.json after several tries. If the site just updated, "
+        + "wait a moment and reload; otherwise the data file may not be published yet.");
+      document.getElementById("records-list").appendChild(msg);
+      var retry = el("button", "reset", "Reload");
+      retry.style.cssText = "width:auto;padding:8px 20px;margin-top:10px";
+      retry.addEventListener("click", function() {{ location.reload(); }});
+      document.getElementById("records-list").appendChild(retry);
       buildFilters(); if (INTERNAL) updateApSummary(); renderCorpusStrip();
     }});
   }} else {{

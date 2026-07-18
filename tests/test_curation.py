@@ -209,6 +209,14 @@ def run_rigor_negation_tests():
     check("in vivo genuine randomization credited", invivo.get("randomization") == 8)
     check("in vivo genuine controls credited", invivo.get("controls") == 8)
 
+    # _has_method must not credit a method that's part of a bigger word or cited.
+    from retarats_pipeline.curation.reliability import _has_method
+    check("'unblinded' does not credit blinding (word boundary)",
+          _has_method("this was an unblinded study", "blind", "blinded") is False)
+    check("'in contrast to randomized trials' does not credit randomization",
+          _has_method("in contrast to randomized trials, this cohort study", "randomi") is False)
+    check("genuine 'double-blind' still credits", _has_method("a double-blind design", "double-blind", "blind") is True)
+
 
 def run_pipeline_robustness_tests():
     import sqlite3

@@ -78,6 +78,11 @@ def run():
     check("no raw </script> breakout before injected markup", "</script><img" not in html_text)
     check("breakout sequence is neutralized", "<\\/script><img" in html_text)
     check("no javascript: href scheme emitted", "href=\"javascript:" not in html_text.lower())
+    # Defense-in-depth headers (dim #5): CSP + referrer policy.
+    check("CSP meta present", "Content-Security-Policy" in html_text)
+    check("CSP allows same-origin fetch of the feed", "connect-src 'self'" in html_text)
+    check("CSP blocks framing (clickjacking)", "frame-ancestors 'none'" in html_text)
+    check("referrer policy set", 'name="referrer"' in html_text and "no-referrer" in html_text)
 
     # Evidence-density badge: the molecule card renders a density tier + counts.
     check("density badge markup present", "mol-density" in html_text and "tier-" in html_text)
@@ -99,6 +104,11 @@ def run():
     check("boot does not block first paint on side feeds", "Promise.all" not in fetch_html)
     check("hidden tabs render lazily on first open", "_rendered.molecules" in fetch_html)
     check("side feeds refresh their tab when they arrive", 'currentTab === "trials"' in fetch_html)
+    check("main feed auto-retries on transient failure",
+          "function loadMainFeed" in fetch_html and "attempt < 3" in fetch_html)
+    check("feed load checks HTTP status (404 -> retry, not silent parse error)",
+          "if (!r.ok) throw" in fetch_html)
+    check("failure state offers a reload", "location.reload()" in fetch_html)
 
     # Mobile responsiveness + accessibility (dims #4/#7).
     check("skip link + main landmark", 'class="skip-link"' in fetch_html and 'id="main-content"' in fetch_html)
@@ -110,6 +120,8 @@ def run():
     check("mobile breakpoint + collapsible sidebar",
           "@media (max-width: 760px)" in fetch_html and "aside.filters-open" in fetch_html)
     check("mobile stacks molecule grid to one column", "grid-template-columns: 1fr" in fetch_html)
+    check("modal has a real focus trap", "_modalFocusables" in fetch_html and "Focus trap" in fetch_html)
+    check("modal hides background from assistive tech", 'setAttribute("aria-hidden", "true")' in fetch_html)
 
     # Reproducibility/provenance stamp (dims #8/#11).
     check("provenance fields survive corpus-stats allowlist",

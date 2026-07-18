@@ -54,14 +54,20 @@ _MISSING = {
 # The number also accepts a middle-dot decimal (U+00B7), which journals such as
 # The Lancet use in place of a period ("39·9", "1·25 mg") -- without this the
 # regex would split "39·9" and pick up the trailing "9 kg" as a phantom dose.
+# Molar amounts (nmol/mmol/...) ARE valid doses as a bare amount ("300 nmol
+# bolus"), but the SAME units with a volume denominator ("7.2 mmol/L", "140 mg/dL",
+# "5 mg/mL") are lab READOUTS / concentrations, not doses. So we keep the units but
+# reject a match whose denominator is a concentration volume (see the lookahead).
+# Per-body-weight ("/kg") stays a valid dose compound.
 _DOSE_UNIT = r"(?:mg|µg|μg|ug|mcg|ng|g|IU|U|nmol|pmol|µmol|umol|mmol|mol|mL|ml|L)"
 _DOSE_RE = re.compile(
     r"(?<![A-Za-z0-9.·])"
     r"\d+(?:[.·]\d+)?"
     r"\s*"
     rf"{_DOSE_UNIT}"
-    r"(?:\s*/\s*(?:kg|g|mL|ml|L|day|d|dose|wk|week))*"
-    r"(?!\s*/\s*m[²2])"   # reject BMI-style "kg/m2" / "kg/m²"
+    r"(?:\s*/\s*(?:kg|g|day|d|dose|wk|week))*"
+    # reject BMI "kg/m²" and concentration denominators "/L", "/dL", "/mL".
+    r"(?!\s*/\s*(?:m[²2]|d?[lL]|mL|ml))"
     r"(?![A-Za-z])",
     re.IGNORECASE,
 )
@@ -130,15 +136,20 @@ _BENEFICIAL = (
     "enhanced", "increased survival", "weight loss", "superior", "efficacious",
     "benefit", "beneficial", "significantly better",
 )
+# NOTE: bare "death"/"mortality" are intentionally NOT here -- they are
+# direction-ambiguous ("reduced mortality" is beneficial). Directional phrases
+# carry the harm signal instead.
 _HARMFUL = (
     "worsened", "aggravated", "exacerbated", "increased risk", "toxic",
-    "toxicity", "serious adverse", "death", "mortality", "harmful", "impaired",
-    "deleterious", "adverse outcome",
+    "toxicity", "serious adverse", "harmful", "impaired", "deleterious",
+    "adverse outcome", "increased mortality", "higher mortality",
+    "excess mortality", "increased death",
 )
 _NEUTRAL = (
     "no significant", "not significant", "no difference", "did not improve",
     "did not differ", "failed to", "no effect", "no clear", "unchanged",
-    "did not reduce", "no benefit",
+    "did not reduce", "no benefit", "no reduction", "no change",
+    "no improvement", "no association", "not associated",
 )
 
 # --- animal species (explicit non-human) ------------------------------------
@@ -322,46 +333,93 @@ def parse_sample_size(text: str) -> Tuple[str, Optional[int]]:
     # A "total"/"overall" cue means one of the numbers is the stated total, so we
     # must NOT sum (e.g. "60 mice total" alongside "20 mice per group").
     has_total_cue = bool(re.search(r"\b(?:total|overall|altogether|in all)\b", text, re.IGNORECASE))
+    # Only SUM several counts when there is an explicit multi-arm join cue. Without
+    # one, distinct counts are usually the SAME cohort reported at different stages
+    # ("n=50 enrolled ... n=48 analyzed") -> summing them (98) is wrong, so we take
+    # the max. This mirrors the audit's "prefer max unless an explicit join".
+    has_arm_cue = bool(re.search(
+        r"\b(?:per\s+group|per\s+arm|each\s+group|each\s+arm|in\s+each|"
+        r"randomi[sz]ed\s+to|allocated\s+to|assigned\s+to|vs\.?|versus|arms?|groups?)\b",
+        text, re.IGNORECASE))
+    # ...but a COHORT-FLOW cue means the counts are one cohort at different stages
+    # (enrolled/screened/analyzed/completed/withdrew/ITT), which must NOT be summed
+    # even if a word like "groups" also appears. Flow wins -> take the max.
+    # Cohort-STAGE words (no trailing \b, so "enroll" catches "enrolled" etc.).
+    # Deliberately excludes "randomized" -- a genuine 2-arm RCT ("randomized to
+    # drug n=50 or placebo n=48") SHOULD sum; these are same-cohort flow stages.
+    has_flow_cue = bool(re.search(
+        r"\b(?:enroll|screen|analy[sz]|complet|withdr[ae]w|"
+        r"discontinu|drop(?:ped)?\s*-?\s*out|lost\s+to\s+follow|per[- ]protocol|"
+        r"intention[- ]to[- ]treat|\bITT\b|evaluable|included\s+in\s+the\s+analysis)",
+        text, re.IGNORECASE))
+    allow_sum = has_arm_cue and not has_flow_cue
 
     if n_equals:
-        best, display = _resolve_counts(n_equals, prefix="n=", has_total_cue=has_total_cue)
+        best, display = _resolve_counts(n_equals, prefix="n=", has_total_cue=has_total_cue, allow_sum=allow_sum)
     elif noun_counts:
-        best, display = _resolve_counts(noun_counts, prefix="", has_total_cue=has_total_cue)
+        best, display = _resolve_counts(noun_counts, prefix="", has_total_cue=has_total_cue, allow_sum=allow_sum)
     else:
         return "", None
     return display, best
 
 
-def _resolve_counts(counts: List[int], prefix: str, has_total_cue: bool) -> Tuple[int, str]:
+def _resolve_counts(counts: List[int], prefix: str, has_total_cue: bool,
+                    allow_sum: bool = False) -> Tuple[int, str]:
     """Resolve several reported counts into a single best-effort N.
 
-    Correctness guard (reviewer findings #2/#3): a stated total must never be
-    summed with its own arms. We treat the largest value as the total (and do NOT
-    sum) when either:
+    Correctness guard: distinct counts are only SUMMED when the text shows an
+    explicit multi-arm join (``allow_sum``, e.g. "per group", "vs", "arms"). We
+    take the largest value as the total (and do NOT sum) when:
 
-    * the text carries a "total"/"overall" cue (e.g. "60 mice total, 20 per
-      group"), or
+    * there is no arm-join cue (``allow_sum`` False) -- distinct counts are then
+      usually the SAME cohort at different stages ("n=50 enrolled ... n=48
+      analyzed"), where summing to 98 would be wrong, or
+    * the text carries a "total"/"overall" cue, or
     * the largest value exactly equals the sum of the rest (the "n=100 = 50+50"
       total signature).
 
-    Otherwise the numbers look like independent arms with no stated total (e.g.
-    "n=50 and n=48", "40 vs 30 vs 30"), and we sum them — recording that we did.
+    Only with an arm-join cue and none of the above do we sum — recording that we did.
     """
     m = max(counts)
     others = list(counts)
     others.remove(m)
-    if not others or has_total_cue or m == sum(others):
+    if not others or has_total_cue or m == sum(others) or not allow_sum:
         return m, f"{prefix}{m}"
     arm_sum = sum(counts)
     arms = ", ".join(str(x) for x in counts)
     return arm_sum, f"{prefix}{arm_sum} (sum of arms {arms})"
 
 
+# Negation cues that flip an outcome term to "no effect" when they sit just before
+# it -- so "no reduction in mortality" / "did not improve" aren't read as signals.
+_OUTCOME_NEG = (
+    "no ", "not ", "n't", "without", "failed to", "absence of", "lack of",
+    "did not", "does not", "were not", "was not", "neither", "nor ", "non-",
+)
+
+
+def _has_unnegated(text: str, terms) -> bool:
+    """True if any term appears NOT locally preceded by a negation cue."""
+    for t in terms:
+        start = 0
+        while True:
+            i = text.find(t, start)
+            if i == -1:
+                break
+            if not any(neg in text[max(0, i - 20):i] for neg in _OUTCOME_NEG):
+                return True
+            start = i + len(t)
+    return False
+
+
 def classify_outcome(evidence: dict, text: str) -> str:
     """beneficial | harmful | neutral | unclear from efficacy/safety sentences.
 
     Improves on the upstream ``outcome_direction`` by reading the efficacy and
-    safety signal sentences plus abstract text.
+    safety signal sentences plus abstract text. Matching is negation-aware so a
+    negated cue ("no reduction in mortality", "did not improve") is not counted as
+    a positive/negative signal, and bare "mortality"/"death" (direction-ambiguous)
+    only signal harm via explicit directional phrases ("increased mortality").
     """
     eff = str(evidence.get("efficacy_signal", "") or "").lower()
     safe = str(evidence.get("safety_signal", "") or "").lower()
@@ -376,13 +434,13 @@ def classify_outcome(evidence: dict, text: str) -> str:
     if "neutral" in upstream or "no clear" in upstream:
         return "neutral"
 
+    # Explicit no-effect statements -> neutral.
     if any(t in blob for t in _NEUTRAL):
         return "neutral"
-    if any(t in safe for t in ("serious adverse", "toxicity", "death", "mortality")):
+    # Inherent-harm safety cues (negation-aware).
+    if _has_unnegated(safe, ("serious adverse", "toxicity")) or _has_unnegated(blob, _HARMFUL):
         return "harmful"
-    if any(t in blob for t in _HARMFUL):
-        return "harmful"
-    if any(t in blob for t in _BENEFICIAL):
+    if _has_unnegated(blob, _BENEFICIAL):
         return "beneficial"
     return "unclear"
 

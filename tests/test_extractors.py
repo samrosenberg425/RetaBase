@@ -102,6 +102,20 @@ def run():
     check("N sums arms", n3 == 98 and "sum of arms" in disp3)
     disp4, n4 = parse_sample_size("The compound was dosed at 10 mg/kg.")
     check("N absent -> empty", n4 is None and disp4 == "")
+    # Cohort-flow counts (same cohort at different stages) are NOT summed -> max.
+    disp5, n5 = parse_sample_size("We enrolled n=50 participants; n=48 were analyzed.")
+    check("enrolled/analyzed -> max, not summed", n5 == 50 and "sum of arms" not in disp5)
+    # A flow cue overrides a stray "groups"/"vs" token (audit finding).
+    _, n6 = parse_sample_size("We enrolled n=50 patients; n=48 completed. Two groups were compared.")
+    check("flow cue overrides group word -> max", n6 == 50)
+    # A genuine 2-arm RCT with no flow cue still sums.
+    _, n7 = parse_sample_size("Randomized to drug (n=50) or placebo (n=48).")
+    check("2-arm RCT (no flow cue) still sums", n7 == 98)
+    # Lab concentrations are not doses; bare molar amounts still are.
+    check("dose rejects mmol/L concentration", parse_dose("glucose was 7.2 mmol/L") == "")
+    check("dose rejects mg/dL concentration", parse_dose("LDL 140 mg/dL") == "")
+    check("dose rejects mg/mL concentration", parse_dose("formulated at 5 mg/mL") == "")
+    check("dose keeps bare molar amount", "300 nmol" in parse_dose("a 300 nmol bolus"))
 
     # --- outcome classification ---
     check(
@@ -118,6 +132,15 @@ def run():
         classify_outcome({"safety_signal": "Serious adverse events and increased mortality were noted."}, "")
         == "harmful",
     )
+    # Negation-aware: a negated harm cue is NOT harmful.
+    check("negated harm ('no reduction in mortality') is not harmful",
+          classify_outcome({"safety_signal": "There was no reduction in mortality."}, "") != "harmful")
+    check("'reduced mortality' is beneficial, not harmful",
+          classify_outcome({"efficacy_signal": "Treatment reduced mortality."}, "") == "beneficial")
+    check("'increased mortality' is harmful",
+          classify_outcome({"safety_signal": "Increased mortality was observed."}, "") == "harmful")
+    check("'no serious adverse events' is not harmful",
+          classify_outcome({"safety_signal": "No serious adverse events occurred."}, "") != "harmful")
 
     # --- disambiguation case 1: clinical study with cell mention => human ---
     ev_clin = {
@@ -186,6 +209,26 @@ def run():
         check(f"refine_extraction returns {key}", key in refined)
     check("refine_extraction returns refined_extraction_scope", "refined_extraction_scope" in refined)
     check("refine_extraction does not touch model_type", "model_type" not in refined)
+
+    # --- experimental LLM comparison tool (opt-in; offline-testable plumbing) ---
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location(
+        "experimental_llm_extract",
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                     "scripts", "experimental_llm_extract.py"))
+    _llm = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_llm)
+    check("llm json parser pulls object from noisy text",
+          _llm.parse_llm_json('pre {"dose":"5 mg","route":"oral"} post') == {"dose": "5 mg", "route": "oral"})
+    check("llm json parser tolerates no-JSON", _llm.parse_llm_json("no json") == {})
+    _demo = {"pmid": "1", "molecule_name": "Demo", "title": "t",
+             "abstract": "Demo 5 mg subcutaneously for 24 weeks; n=101; weight reduced.",
+             "_evidence": {"molecule_name": "Demo", "efficacy_signal": "weight reduced"},
+             "_paper": {"title": "t", "abstract": "Demo 5 mg subcutaneously for 24 weeks; n=101."}}
+    _cmp = _llm.compare_paper(_demo, "ollama", "http://x", "m", None, mock=True)
+    check("llm compare yields rules+llm field maps",
+          set(_cmp["rules"]) == set(_llm.FIELDS) and set(_cmp["llm"]) == set(_llm.FIELDS))
+    check("llm compare flags disagreements as a list", isinstance(_cmp["disagree"], list))
 
     # --- molecule-scoped extraction (trust risk #1: no comparator misattribution) ---
     # Single-drug paper: whole-text extraction, scope "document".
