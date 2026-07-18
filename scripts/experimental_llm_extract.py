@@ -163,6 +163,64 @@ def build_prompt(paper: dict) -> str:
                        title=paper["title"][:400], abstract=paper["abstract"][:3500])
 
 
+# --- batching -------------------------------------------------------------
+# Free tiers often cap REQUESTS PER DAY hard (Gemini: 20/day) while allowing a huge
+# token throughput (250K/min). One paper per request wastes almost all of that
+# budget, so we pack many papers into a single request and ask for one JSON object
+# per paper. 20 requests x 25 papers = 500 papers/day instead of 20.
+_BATCH_HEADER = (
+    "You are extracting structured facts from {n} biomedical {kind}. For EACH item "
+    "return one JSON object. Respond with ONLY a JSON object of the form "
+    "{{\"results\": [ ... ]}} where each element has keys: pmid, {fields}, "
+    "one_sentence_summary. Use \"\" for anything not stated. Copy values verbatim "
+    "from the text; do not infer. Attribute dose/route to that item's OWN molecule, "
+    "never to a comparator drug.\n\n"
+)
+_BATCH_FIELDS_PRIMARY = "dose, route, duration, sample_size, outcome_direction"
+_BATCH_FIELDS_SYNTH = ("included_studies, pooled_sample_size, dose (RANGE across included "
+                       "studies), route, duration, outcome_direction")
+
+
+def build_batch_prompt(papers: List[dict], synthesis: bool, per_paper_chars: int = 4000) -> str:
+    head = _BATCH_HEADER.format(
+        n=len(papers),
+        kind="systematic reviews / meta-analyses (NOT single studies: report the "
+             "number of included studies and pooled totals, and dose as a RANGE)"
+             if synthesis else "studies",
+        fields=_BATCH_FIELDS_SYNTH if synthesis else _BATCH_FIELDS_PRIMARY)
+    blocks = []
+    for p in papers:
+        blocks.append(
+            f"---\nPMID: {p['pmid']}\nMOLECULE: {p.get('molecule_name') or 'the compound'}\n"
+            f"TITLE: {str(p.get('title',''))[:300]}\n"
+            f"TEXT: {str(p.get('abstract',''))[:per_paper_chars]}\n")
+    return head + "\n".join(blocks) + "\nJSON:"
+
+
+def parse_batch(raw: str, papers: List[dict]) -> Dict[str, Dict[str, str]]:
+    """Map pmid -> field dict from a batched response (falls back to order)."""
+    out: Dict[str, Dict[str, str]] = {}
+    obj = parse_llm_json(raw) or {}
+    items = obj.get("results")
+    if not isinstance(items, list):
+        # Some models return a bare array or a pmid-keyed object.
+        m = re.search(r"\[.*\]", raw or "", re.DOTALL)
+        if m:
+            try:
+                items = json.loads(m.group(0))
+            except json.JSONDecodeError:
+                items = None
+        if not isinstance(items, list):
+            items = [obj.get(str(p["pmid"])) for p in papers] if obj else []
+    for i, item in enumerate(items or []):
+        if not isinstance(item, dict):
+            continue
+        pmid = str(item.get("pmid") or (papers[i]["pmid"] if i < len(papers) else "")).strip()
+        if pmid:
+            out[pmid] = {k: ("" if v is None else str(v)) for k, v in item.items()}
+    return out
+
+
 def call_llm(prompt: str, api: str, base_url: str, model: str,
              api_key: Optional[str], mock: bool, timeout: int = 120) -> str:
     if mock:
@@ -195,23 +253,38 @@ def call_llm(prompt: str, api: str, base_url: str, model: str,
     # aggressively (Gemini ~10-15 RPM), so back off and retry on 429/5xx instead of
     # dropping the paper.
     retry_codes = {429, 500, 502, 503, 504}
+    # Providers disagree on the model id form: the Gemini /models listing returns
+    # "models/gemini-2.5-flash" while its chat endpoint usually wants the bare
+    # "gemini-2.5-flash". A wrong one returns 404, so try both.
+    model_ids = [model]
+    if model.startswith("models/"):
+        model_ids.append(model.split("/", 1)[1])
+    else:
+        model_ids.append("models/" + model)
     r = None
-    for variant in ({**body, "response_format": {"type": "json_object"}}, body):
-        for attempt in range(1, 6):
-            r = requests.post(url, headers=headers, json=variant, timeout=timeout)
-            if r.status_code in retry_codes:
-                wait = 0.0
-                try:
-                    wait = float(r.headers.get("Retry-After") or 0)
-                except (TypeError, ValueError):
+    for mid in model_ids:
+        for variant in ({**body, "model": mid, "response_format": {"type": "json_object"}},
+                        {**body, "model": mid}):
+            for attempt in range(1, 6):
+                r = requests.post(url, headers=headers, json=variant, timeout=timeout)
+                if r.status_code in retry_codes:
                     wait = 0.0
-                time.sleep(wait or min(60.0, 5.0 * attempt))
-                continue
-            break
-        if r is not None and r.status_code < 400:
-            return r.json()["choices"][0]["message"]["content"]
+                    try:
+                        wait = float(r.headers.get("Retry-After") or 0)
+                    except (TypeError, ValueError):
+                        wait = 0.0
+                    time.sleep(wait or min(60.0, 5.0 * attempt))
+                    continue
+                break
+            if r is not None and r.status_code < 400:
+                return r.json()["choices"][0]["message"]["content"]
+            # A 404 means this model id is wrong -> try the other form, not the
+            # other body variant.
+            if r is not None and r.status_code == 404:
+                break
     if r is not None:
-        r.raise_for_status()
+        detail = (r.text or "")[:400].replace("\n", " ")
+        raise RuntimeError(f"LLM endpoint {r.status_code}: {detail}")
     raise RuntimeError("no response from LLM endpoint")
 
 
@@ -341,7 +414,8 @@ def classify_field(rules_v: str, llm_v: str, abstract: str, molecule: str = "") 
 
 
 def compare_paper(paper: dict, api: str, base_url: str, model: str,
-                  api_key: Optional[str], mock: bool, ctx: Optional[dict] = None) -> dict:
+                  api_key: Optional[str], mock: bool, ctx: Optional[dict] = None,
+                  llm_override: Optional[dict] = None) -> dict:
     rules = refine_extraction(paper["_evidence"], paper["_paper"])
     # When richer context is available (OA Methods text), the model reads THAT rather
     # than the abstract alone -- most "both missed it" cases are simply information
@@ -349,8 +423,11 @@ def compare_paper(paper: dict, api: str, base_url: str, model: str,
     prompt_paper = dict(paper)
     if ctx:
         prompt_paper["abstract"] = ctxmod.context_text(ctx)
-    raw = call_llm(build_prompt(prompt_paper), api, base_url, model, api_key, mock)
-    llm = parse_llm_json(raw)
+    if llm_override is not None:
+        raw, llm = "(batched)", llm_override
+    else:
+        raw = call_llm(build_prompt(prompt_paper), api, base_url, model, api_key, mock)
+        llm = parse_llm_json(raw)
     rules_map = {
         "dose": rules.get("refined_dose", ""),
         "route": rules.get("refined_route", ""),
@@ -521,7 +598,11 @@ def main() -> None:
                     help="on-disk cache for fetched context so re-runs don't re-fetch")
     ap.add_argument("--rpm", type=float, default=0,
                     help="throttle to at most N requests/minute (free tiers rate-limit; "
-                         "e.g. --rpm 10 for the Gemini free tier). 0 = no throttle.")
+                         "e.g. --rpm 4 for the Gemini free tier). 0 = no throttle.")
+    ap.add_argument("--batch", type=int, default=1,
+                    help="papers per LLM request. Free tiers cap requests/DAY (Gemini: 20) "
+                         "while allowing huge tokens/minute, so batching is how you get "
+                         "real volume: --batch 25 turns 20 requests into 500 papers.")
     args = ap.parse_args()
 
     if not args.mock and not os.path.exists(args.db):
@@ -547,24 +628,61 @@ def main() -> None:
         print(f"Trial links loaded for {len(trials_index)} PMIDs (structured CT.gov facts).")
     rows = []
     min_gap = 60.0 / args.rpm if args.rpm and args.rpm > 0 else 0.0
-    last_call = 0.0
-    for i, p in enumerate(papers):
+    last_call = [0.0]
+
+    def _throttle():
         if min_gap:
-            gap = min_gap - (time.time() - last_call)
+            gap = min_gap - (time.time() - last_call[0])
             if gap > 0:
                 time.sleep(gap)
-            last_call = time.time()
-        if i and i % 10 == 0:
-            print(f"  ...{i}/{len(papers)} papers", file=sys.stderr)
-        try:
-            ctx = ctxmod.build_context(
-                p["pmid"], p.get("molecule_name", ""), p.get("abstract", ""),
-                trials_index=trials_index, use_fulltext=args.fulltext,
-                use_pubtator=args.pubtator, cache_dir=args.cache_dir)
-            rows.append(compare_paper(p, args.api, args.base_url, args.model, api_key,
-                                      args.mock, ctx))
-        except Exception as e:  # noqa: BLE001 -- one bad call shouldn't lose the whole run
-            print(f"  paper {p.get('pmid','?')}: LLM call failed ({e}); skipping", file=sys.stderr)
+            last_call[0] = time.time()
+
+    # Build context once per paper (cached; independent of batching).
+    ctxs = {}
+    for p in papers:
+        ctxs[p["pmid"]] = ctxmod.build_context(
+            p["pmid"], p.get("molecule_name", ""), p.get("abstract", ""),
+            trials_index=trials_index, use_fulltext=args.fulltext,
+            use_pubtator=args.pubtator, cache_dir=args.cache_dir)
+
+    if args.batch > 1:
+        # Group by kind so reviews get the synthesis prompt, then chunk. One request
+        # carries many papers -- this is what makes a 20-requests/day tier usable.
+        groups = {True: [p for p in papers if is_synthesis(p)],
+                  False: [p for p in papers if not is_synthesis(p)]}
+        for synth, group in groups.items():
+            for start in range(0, len(group), args.batch):
+                chunk = group[start:start + args.batch]
+                prompt_chunk = []
+                for p in chunk:
+                    q = dict(p)
+                    q["abstract"] = ctxmod.context_text(ctxs[p["pmid"]])
+                    prompt_chunk.append(q)
+                _throttle()
+                try:
+                    raw = call_llm(build_batch_prompt(prompt_chunk, synth),
+                                   args.api, args.base_url, args.model, api_key, args.mock)
+                    parsed = parse_batch(raw, chunk)
+                except Exception as e:  # noqa: BLE001
+                    print(f"  batch of {len(chunk)} failed ({e}); skipping", file=sys.stderr)
+                    continue
+                for p in chunk:
+                    rows.append(compare_paper(p, args.api, args.base_url, args.model, api_key,
+                                              args.mock, ctxs[p["pmid"]],
+                                              llm_override=parsed.get(str(p["pmid"]), {})))
+                print(f"  batch done: {len(chunk)} papers ({len(rows)}/{len(papers)})",
+                      file=sys.stderr)
+    else:
+        for i, p in enumerate(papers):
+            _throttle()
+            if i and i % 10 == 0:
+                print(f"  ...{i}/{len(papers)} papers", file=sys.stderr)
+            try:
+                rows.append(compare_paper(p, args.api, args.base_url, args.model, api_key,
+                                          args.mock, ctxs[p["pmid"]]))
+            except Exception as e:  # noqa: BLE001 -- one bad call shouldn't lose the run
+                print(f"  paper {p.get('pmid','?')}: LLM call failed ({e}); skipping",
+                      file=sys.stderr)
     if not rows:
         print("No results produced (all LLM calls failed).", file=sys.stderr)
         sys.exit(1)
