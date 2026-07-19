@@ -1,0 +1,68 @@
+name: Full-text backfill (open access)
+
+# Fetches open-access Methods/Results (PMC BioC, Europe PMC fallback) onto corpus
+# papers so the RULES extractor can find doses/durations/sample sizes that abstracts
+# never state. An audit found ~96% of missing doses are absent from the abstract, so
+# this is the single highest-value enrichment for extraction quality.
+#
+# Resumable: each paper is attempted once and non-OA papers are recorded so they are
+# never retried. Serialized with the other corpus writers via the shared lock.
+
+on:
+  schedule:
+    - cron: "0 4 * * 2,6"   # Tue + Sat 04:00 UTC, off-peak vs the other jobs
+  workflow_dispatch:
+    inputs:
+      max_records:
+        description: "Papers to enrich this run"
+        type: string
+        default: "8000"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: retarats-corpus
+  cancel-in-progress: false
+
+jobs:
+  fulltext:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore corpus cache
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: retarats-corpus-${{ github.run_id }}
+          restore-keys: |
+            retarats-corpus-
+
+      # Cache the fetched full text separately so re-runs never re-download.
+      - name: Restore full-text cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/context
+          key: retarats-fulltext-${{ github.run_id }}
+          restore-keys: |
+            retarats-fulltext-
+
+      - name: Backfill open-access full text
+        env:
+          API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
+        run: |
+          python3 scripts/run_fulltext_backfill.py \
+            --db data/retarats_pubmed.sqlite \
+            --max-records ${{ github.event.inputs.max_records || 8000 }} || true
+
+      - name: Report extraction coverage after backfill
+        run: |
+          python3 scripts/audit_missing_fields.py --db data/retarats_pubmed.sqlite --sample 4000 || true

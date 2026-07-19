@@ -142,6 +142,24 @@ def run():
          "abstract": "We included 12 studies with 4,530 participants."})
     check("review routed to synthesis scale", "12 studies" in r_syn["refined_sample_size"])
 
+    # --- open-access full text feeds STRUCTURED extraction only ---
+    _ev = {"molecule_name": "Metformin"}
+    _abs = {"title": "Metformin in GA", "abstract": "We assessed oral metformin on geographic atrophy."}
+    check("no dose from abstract alone", refine_extraction(_ev, _abs)["refined_dose"] == "")
+    _ft = dict(_abs, fulltext_methods="Patients in the metformin arm were instructed to "
+                                      "increase the metformin dose to 1000 mg twice daily for 18 months.")
+    _r = refine_extraction(_ev, _ft)
+    check("dose recovered from full text", _r["refined_dose"] == "1000 mg twice daily")
+    check("duration recovered from full text", "18 months" in _r["refined_duration"])
+    # Full text must NOT feed model/outcome classification (it would destabilise them).
+    _noise = dict(_abs, fulltext_results="In mice, survival improved markedly.")
+    check("full text does not flip model classification",
+          refine_extraction(_noise and _ev, _noise)["model_primary"]
+          == refine_extraction(_ev, _abs)["model_primary"])
+    check("full text does not flip outcome direction",
+          refine_extraction(_ev, _noise)["refined_outcome_direction"]
+          == refine_extraction(_ev, _abs)["refined_outcome_direction"])
+
     # --- outcome classification ---
     check(
         "outcome beneficial",

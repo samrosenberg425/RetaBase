@@ -90,6 +90,62 @@ that also have trials for OTHER uses. Design notes:
     never be presented as a purchasing route or endorsement.
   - Every regulatory claim needs a source + retrieval date, since status changes.
 
+### REQUIRED safety framing (not optional — ship with the panel or not at all)
+
+Placement rule: the warning renders **inline with the data, at point of use**, not
+as a link to a page nobody opens. The access-pathway panel must not be renderable
+without it. No vendor names, no sourcing routes, no purchasing guidance, ever —
+documenting that a pathway exists is not describing how to use it.
+
+**Persistent banner on the regulatory/access panel:**
+
+> **Informational only — not medical advice, and not a recommendation.** This
+> section documents the regulatory status and the access routes that are *reported
+> to exist*, so readers can understand the landscape. Describing a pathway is not
+> endorsing it. RetaBase does not endorse compounded, grey-market, or research-only
+> sourcing, or the use of any substance outside an FDA-approved indication under a
+> qualified clinician's supervision. Decisions about any of these belong with a
+> clinician who knows your history and medications.
+
+**Per-pathway microcopy (renders beside the tag it describes):**
+
+- *FDA approved* — "Approved for the indications listed below. Approval for one use
+  is not approval for any other use."
+- *Physician-prescribed* — "Available only on prescription, under clinical
+  supervision."
+- *Clinical-trial only* — "Available only within a registered clinical trial, with
+  informed consent and monitoring. Trial participation is not the same as approved
+  treatment."
+- *Compounding pharmacy (503A/503B)* — "Compounded preparations are NOT FDA-approved
+  products. FDA has not evaluated them for safety, effectiveness, or manufacturing
+  quality, and some substances have been restricted for compounding."
+- *Research use only* — "Supplied for laboratory research only, not manufactured to
+  human-use standards, and not approved for human use in any indication."
+- *Grey market* — "No regulatory oversight of identity, purity, dose accuracy, or
+  sterility; contamination and mislabelling are documented in this supply channel.
+  Listed because it is reported to occur, not because it is advisable."
+
+**Longer statement for About/Methods:**
+
+> RetaBase exists to document what the published literature and public registries
+> say — including what people are reported to be doing — so that readers, clinicians
+> and researchers can see the evidence and the regulatory picture in one place. It
+> is not medical advice, creates no clinician–patient relationship, and is not a
+> guide to obtaining anything.
+>
+> We are explicitly against the use of these substances without a qualified
+> clinician. Many interact with prescription medicines, several have
+> contraindications that depend on individual history, and several are being studied
+> precisely because their risks are not yet characterised. An absence of reported
+> harms in this database is not evidence of safety — it frequently means nobody has
+> looked.
+>
+> Regulatory status varies by country and changes over time; every status shown
+> carries its source and the date it was retrieved, and may already be out of date.
+> Legality differs by jurisdiction and is the reader's responsibility. Nothing here
+> should be read as encouragement to obtain a substance through compounding,
+> research-chemical, or grey-market channels.
+
 **C. Rule gaps worth chasing** (from the same audit): ~401 records where a duration
 appears in the abstract but wasn't extracted, ~155 for dose. Small but real.
 

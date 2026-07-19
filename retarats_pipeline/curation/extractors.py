@@ -220,6 +220,23 @@ def _text_blob(evidence: dict, paper: dict) -> str:
     return " ".join(p for p in parts if p)
 
 
+def _extraction_blob(evidence: dict, paper: dict) -> str:
+    """Text used for STRUCTURED extraction (dose/route/duration/sample size).
+
+    Adds open-access Methods/Results when the corpus has them, because ~95% of
+    missing doses are simply absent from the abstract. Deliberately NOT used for
+    model disambiguation or outcome direction: full text mentions many species and
+    many findings in passing, which would destabilise those classifiers. Extraction
+    wants maximum recall over the methods; classification wants the tight abstract.
+    """
+    parts = [_text_blob(evidence, paper)]
+    for key in ("fulltext_methods", "fulltext_results"):
+        v = str(paper.get(key, "") or evidence.get(key, "") or "")
+        if v:
+            parts.append(v)
+    return " ".join(p for p in parts if p)
+
+
 def _mesh_blob(paper: dict) -> str:
     mesh = paper.get("mesh_terms", "")
     if isinstance(mesh, (list, tuple)):
@@ -740,16 +757,17 @@ def refine_extraction(evidence: dict, paper: dict) -> dict:
     ``model_type``) so this never collides with or overwrites existing fields.
     Fall back to ``""`` (empty) when a value cannot be parsed.
     """
-    text = _text_blob(evidence, paper)
+    text = _text_blob(evidence, paper)          # abstract: classification
+    ext = _extraction_blob(evidence, paper)      # + OA full text: structured fields
     terms = _molecule_terms(evidence, paper)
-    comparator = bool(terms) and bool(_COMPARATOR_CUE.search(text))
+    comparator = bool(terms) and bool(_COMPARATOR_CUE.search(ext))
 
     if comparator:
-        local = [s for s in _sentences(text) if _mentions(s, terms)]
+        local = [s for s in _sentences(ext) if _mentions(s, terms)]
         local_text = " ".join(local)
         # Preferred: a dose sitting immediately after this molecule's name is
         # unambiguously ITS dose, even in a sentence listing several drugs.
-        near = _doses_near_molecule(text, terms)
+        near = _doses_near_molecule(ext, terms)
         if near:
             refined_dose = "; ".join(near[:6])
             extraction_scope = "molecule_local"
@@ -766,9 +784,9 @@ def refine_extraction(evidence: dict, paper: dict) -> dict:
         refined_route = parse_route(local_text)
         refined_duration = parse_duration(local_text)
     else:
-        refined_dose = parse_dose(text)
-        refined_route = parse_route(text)
-        refined_duration = parse_duration(text)
+        refined_dose = parse_dose(ext)
+        refined_route = parse_route(ext)
+        refined_duration = parse_duration(ext)
         extraction_scope = "document"
 
     # Sample size is about participants (one cohort), not per-drug, so it stays
@@ -776,11 +794,11 @@ def refine_extraction(evidence: dict, paper: dict) -> dict:
     # scale is "k included studies + pooled participants", not a single cohort, so
     # those papers use the synthesis parser instead.
     if _is_synthesis_record(evidence, paper):
-        sample_display, sample_n = parse_synthesis_scale(text)
+        sample_display, sample_n = parse_synthesis_scale(ext)
         if not sample_display:  # nothing stated in review form -> fall back
-            sample_display, sample_n = parse_sample_size(text)
+            sample_display, sample_n = parse_sample_size(ext)
     else:
-        sample_display, sample_n = parse_sample_size(text)
+        sample_display, sample_n = parse_sample_size(ext)
     refined_outcome = classify_outcome(evidence, text)
 
     model_primary, model_flags, model_conf, model_reason = disambiguate_model(evidence, paper)
