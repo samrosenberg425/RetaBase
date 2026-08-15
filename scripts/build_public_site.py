@@ -789,6 +789,26 @@ _TEMPLATE = """<!DOCTYPE html>
   .mol-density.tier-sparse {{ border-color: var(--tier-limited); color: var(--tier-limited); }}
   .mol-density.tier-moderate {{ border-color: var(--border); }}
   .mol-density.tier-saturated {{ border-color: var(--accent); color: var(--accent); }}
+  /* regulatory / access status tags + panel (with mandatory safety framing) */
+  .reg-tags {{ display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 0; }}
+  .reg-tag {{ font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }}
+  .reg-tag.reg-approved {{ border-color: var(--ap-approve); color: var(--tier-high); }}
+  .reg-tag.reg-invest {{ border-color: var(--tier-moderate); color: var(--tier-moderate); }}
+  .reg-tag.reg-phase {{ border-color: var(--accent); color: var(--accent); }}
+  .reg-tag.reg-research, .reg-tag.reg-withdrawn {{ border-color: var(--tier-low); color: var(--tier-low); }}
+  .reg-tag.reg-supp {{ border-color: var(--t-sp); color: var(--t-sp); }}
+  .reg-panel {{ margin-top: 8px; font-size: 12px; }}
+  .reg-panel > summary {{ cursor: pointer; color: var(--accent); }}
+  .reg-banner {{ background: #3a2f10; border: 1px solid #8a6d1a; border-radius: 6px;
+    padding: 8px 10px; margin: 8px 0; color: var(--text); line-height: 1.4; }}
+  .reg-row {{ margin: 4px 0; }}
+  .reg-k {{ color: var(--muted); margin-right: 6px; text-transform: uppercase; letter-spacing: .03em; font-size: 11px; }}
+  .reg-v {{ color: var(--text); }}
+  .reg-note {{ color: var(--muted); font-style: italic; margin: 2px 0 6px; }}
+  .reg-path {{ margin: 6px 0; }}
+  .reg-path-name {{ font-weight: 600; display: block; }}
+  .reg-path-copy {{ color: var(--muted); }}
+  .reg-src {{ margin-top: 8px; color: var(--muted); font-size: 11px; }}
   .empty {{ color: var(--muted); padding: 30px; text-align: center; }}
   /* experimental (candidate) section */
   .exp-banner {{
@@ -2476,6 +2496,112 @@ _TEMPLATE = """<!DOCTYPE html>
   window.resetFilters = resetFilters;
   window.applyFilters = applyFilters;
 
+  // ---- regulatory / access status (with REQUIRED safety framing) --------------
+  // Copy is mandated verbatim in docs/BACKLOG.md. The panel MUST render the banner
+  // first and never exist without it; per-pathway microcopy renders beside each
+  // access route; approved uses and in-trials uses are kept explicitly separate.
+  var REG_BANNER = "Informational only \\u2014 not medical advice, and not a "
+    + "recommendation. This section documents the regulatory status and the access "
+    + "routes that are reported to exist, so readers can understand the landscape. "
+    + "Describing a pathway is not endorsing it. RetaBase does not endorse compounded, "
+    + "grey-market, or research-only sourcing, or the use of any substance outside an "
+    + "FDA-approved indication under a qualified clinician's supervision. Decisions "
+    + "about any of these belong with a clinician who knows your history and medications.";
+  var REG_PATHWAY_LABEL = {{
+    "physician-prescribed": "Physician-prescribed", "otc": "Over the counter",
+    "clinical-trial-only": "Clinical-trial only",
+    "compounding": "Compounding pharmacy (503A/503B)",
+    "research-only": "Research use only", "grey-market": "Grey market"
+  }};
+  var REG_PATHWAY_COPY = {{
+    "physician-prescribed": "Available only on prescription, under clinical supervision.",
+    "otc": "Available over the counter.",
+    "clinical-trial-only": "Available only within a registered clinical trial, with informed consent and monitoring. Trial participation is not the same as approved treatment.",
+    "compounding": "Compounded preparations are NOT FDA-approved products. FDA has not evaluated them for safety, effectiveness, or manufacturing quality, and some substances have been restricted for compounding.",
+    "research-only": "Supplied for laboratory research only, not manufactured to human-use standards, and not approved for human use in any indication.",
+    "grey-market": "No regulatory oversight of identity, purity, dose accuracy, or sterility; contamination and mislabelling are documented in this supply channel. Listed because it is reported to occur, not because it is advisable."
+  }};
+  function _normPathway(p) {{
+    var s = String(p || "").trim().toLowerCase();
+    if (s.indexOf("physician") !== -1 || s.indexOf("prescri") !== -1) return "physician-prescribed";
+    if (s === "otc" || s.indexOf("over the counter") !== -1) return "otc";
+    if (s.indexOf("clinical") !== -1 && s.indexOf("trial") !== -1) return "clinical-trial-only";
+    if (s.indexOf("compound") !== -1 || s.indexOf("503") !== -1) return "compounding";
+    if (s.indexOf("research") !== -1) return "research-only";
+    if (s.indexOf("grey") !== -1 || s.indexOf("gray") !== -1) return "grey-market";
+    return "";
+  }}
+  function _splitReg(v) {{ return String(v || "").split(";").map(function(x) {{ return x.trim(); }}).filter(Boolean); }}
+  function _truthyStr(v) {{ var s = String(v || "").toLowerCase(); return s === "true" || s === "1" || s === "yes"; }}
+
+  function regulatoryTags(m) {{
+    var tags = [];
+    var st = String(m.regulatory_status || "").toLowerCase();
+    if (st === "approved") {{
+      tags.push(el("span", "reg-tag reg-approved", _truthyStr(m.us_marketed) ? "FDA approved" : "Approved (ex-US)"));
+    }} else if (st === "investigational") {{
+      tags.push(el("span", "reg-tag reg-invest", "Investigational"));
+    }} else if (st === "supplement") {{
+      tags.push(el("span", "reg-tag reg-supp", "Supplement"));
+    }} else if (st === "research-only" || st === "research only") {{
+      tags.push(el("span", "reg-tag reg-research", "Research only"));
+    }} else if (st === "withdrawn") {{
+      tags.push(el("span", "reg-tag reg-withdrawn", "Withdrawn"));
+    }}
+    if (m.max_trial_phase) tags.push(el("span", "reg-tag reg-phase", m.max_trial_phase + " (trials)"));
+    return tags;
+  }}
+
+  function regulatoryPanel(m) {{
+    var hasReg = m.regulatory_status || m.fda_approved_indications || m.access_pathways
+                 || m.ex_us_status || m.reg_source;
+    var hasTrials = m.max_trial_phase || m.trial_stages_by_use;
+    if (!hasReg && !hasTrials) return null;
+    var d = el("details", "reg-panel");
+    d.appendChild(el("summary", null, "Regulatory & access status"));
+    // REQUIRED safety banner FIRST -- the panel must not exist without it.
+    d.appendChild(el("div", "reg-banner", REG_BANNER));
+    function row(label, val) {{
+      if (!val) return;
+      var r = el("div", "reg-row");
+      r.appendChild(el("span", "reg-k", label));
+      r.appendChild(el("span", "reg-v", val));
+      d.appendChild(r);
+    }}
+    // Approved uses -- kept explicitly SEPARATE from trials.
+    if (m.fda_approved_indications) {{
+      row("FDA-approved use(s)", m.fda_approved_indications);
+      d.appendChild(el("div", "reg-note", "Approval for one use is not approval for any other use."));
+    }}
+    if (m.ex_us_status) row("Outside the US", m.ex_us_status);
+    if (m.trial_stages_by_use || m.max_trial_phase) {{
+      row("In clinical trials for", m.trial_stages_by_use || m.max_trial_phase);
+      d.appendChild(el("div", "reg-note", "Being studied for a use is NOT approval for that use."));
+    }}
+    var paths = _splitReg(m.access_pathways);
+    if (paths.length) {{
+      d.appendChild(el("div", "reg-k", "Access routes reported"));
+      paths.forEach(function(p) {{
+        var key = _normPathway(p);
+        var wrap = el("div", "reg-path");
+        wrap.appendChild(el("span", "reg-path-name", REG_PATHWAY_LABEL[key] || p));
+        if (REG_PATHWAY_COPY[key]) wrap.appendChild(el("span", "reg-path-copy", REG_PATHWAY_COPY[key]));
+        d.appendChild(wrap);
+      }});
+    }}
+    if (m.reg_source) {{
+      var src = el("div", "reg-src");
+      src.appendChild(document.createTextNode("Source: "));
+      if (m.reg_source_url) src.appendChild(safeLink(m.reg_source, m.reg_source_url));
+      else src.appendChild(document.createTextNode(m.reg_source));
+      if (m.reg_retrieved_utc) src.appendChild(document.createTextNode(" (retrieved " + m.reg_retrieved_utc + ")"));
+      d.appendChild(src);
+    }}
+    // Clicking inside the panel must not trigger the card's evidence navigation.
+    d.addEventListener("click", function(e) {{ e.stopPropagation(); }});
+    return d;
+  }}
+
   function renderMolecules() {{
     var grid = document.getElementById("molecules-list");
     grid.textContent = "";
@@ -2500,6 +2626,13 @@ _TEMPLATE = """<!DOCTYPE html>
         dbadge.title = "Amount of literature only \\u2014 not a rating of study quality.";
         card.appendChild(dbadge);
       }}
+      // Regulatory / development-stage status tags (FDA approved / Phase N / etc.).
+      var rtags = regulatoryTags(m);
+      if (rtags.length) {{
+        var trow = el("div", "reg-tags");
+        rtags.forEach(function(t) {{ trow.appendChild(t); }});
+        card.appendChild(trow);
+      }}
       if (m.top_conditions) card.appendChild(el("div", "sl", m.top_conditions));
       // Optional "learn more" link to PubChem. Only rendered when the molecule
       // resolved to a CID (from scripts/enrich_pubchem.py); href built with the
@@ -2512,6 +2645,8 @@ _TEMPLATE = """<!DOCTYPE html>
         pc.addEventListener("click", function(e) {{ e.stopPropagation(); }});
         card.appendChild(pc);
       }}
+      var rpanel = regulatoryPanel(m);
+      if (rpanel) card.appendChild(rpanel);
       card.addEventListener("click", function() {{
         var name = m.molecule_name || "";
         showTab("evidence");
@@ -2911,6 +3046,23 @@ _TEMPLATE = """<!DOCTYPE html>
       + "combined rank used for best-first ordering. The tabs let you browse the full indexed "
       + "set for the tracked bioactives, restrict to human/clinical data, list the bioactives, "
       + "or view candidate compounds.");
+
+    h3("Regulatory information & safety");
+    p("RetaBase exists to document what the published literature and public registries "
+      + "say \\u2014 including what people are reported to be doing \\u2014 so that readers, "
+      + "clinicians and researchers can see the evidence and the regulatory picture in one "
+      + "place. It is not medical advice, creates no clinician\\u2013patient relationship, and "
+      + "is not a guide to obtaining anything.");
+    p("We are explicitly against the use of these substances without a qualified clinician. "
+      + "Many interact with prescription medicines, several have contraindications that depend "
+      + "on individual history, and several are being studied precisely because their risks are "
+      + "not yet characterised. An absence of reported harms in this database is not evidence of "
+      + "safety \\u2014 it frequently means nobody has looked.");
+    p("Regulatory status varies by country and changes over time; every status shown carries "
+      + "its source and the date it was retrieved, and may already be out of date. Legality "
+      + "differs by jurisdiction and is the reader's responsibility. Nothing here should be read "
+      + "as encouragement to obtain a substance through compounding, research-chemical, or "
+      + "grey-market channels.");
 
     h3("Version, citation & reproducibility");
     var vparts = [];

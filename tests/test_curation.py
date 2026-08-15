@@ -336,6 +336,30 @@ def run_regulatory_tests():
     check("trial fields blank when no trials", bcd._molecule_index(
           recs2, pubchem_by_mol={}, reg_by_mol={}, trials_by_mol={})[0]["max_trial_phase"] == "")
 
+    # Phase 2.3: enrichment script proposes rows safely.
+    import importlib.util as _ilu
+    _re_spec = _ilu.spec_from_file_location(
+        "run_regulatory_enrich",
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                     "scripts", "run_regulatory_enrich.py"))
+    _re = _ilu.module_from_spec(_re_spec)
+    _re_spec.loader.exec_module(_re)
+    _mock_approved = {"chembl": {"molecules": [{"max_phase": 4}]},
+                      "drugsfda": {"results": [{"application_number": "NDA1"}]},
+                      "label": {"results": [{"indications_and_usage": ["Indicated for X."]}]},
+                      "dailymed": {"metadata": {"total_elements": 2}}}
+    prop = _re.propose({"molecule_id": "x", "name": "metformin"}, _mock_approved)
+    check("enrichment proposes a status", prop["regulatory_status"] == "approved")
+    check("enrichment stamps a source + date", bool(prop["reg_source"]) and bool(prop["reg_retrieved_utc"]))
+    check("enrichment NEVER auto-infers grey-market/compounding",
+          "grey" not in prop["access_pathways"].lower() and "compound" not in prop["access_pathways"].lower())
+    _mock_invest = {"chembl": {"molecules": [{"max_phase": 2}]}, "drugsfda": {"results": []},
+                    "label": {"results": []}, "dailymed": {"metadata": {"total_elements": 0}}}
+    prop2 = _re.propose({"molecule_id": "y", "name": "retatrutide"}, _mock_invest)
+    check("investigational -> clinical-trial-only pathway",
+          prop2["regulatory_status"] == "investigational"
+          and prop2["access_pathways"] == "clinical-trial-only")
+
 
 def run_field_registry_tests():
     # The registry (Phase 1.1) must reproduce the CURRENT field allowlists exactly

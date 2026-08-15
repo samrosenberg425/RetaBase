@@ -3,21 +3,19 @@
 <!-- ============================================================= -->
 <!-- SESSION STATE — READ THIS FIRST, UPDATE IT LAST -->
 ## ▶ RESUME HERE
-- **Last done:** Phase 2.2 — trial-derived dev stage per indication
-  (`_load_trial_stages` from the CT.gov mirror; `max_trial_phase`, `trial_count`,
-  `ongoing_trial_count`, `trial_stages_by_use` on the molecule index + CSV + site
-  allowlist). Tested on synthetic data (real trials DB not in sandbox; populates on
-  the real build). This session also: count fix (#1), field registry 1.1/1.2/1.2c,
-  ranking current-year fix, regulatory 2.1.
-- **Next action:** Phase 2.4 — the Bioactives-card regulatory/access UI: a status
-  tag (FDA approved / Phase N / Research only) + expandable panel (approved
-  indications, ex-US status, access pathways, per-use trial stage). It reads the
-  molecule fields already populated in 2.1/2.2. Then 2.3 (API enrichment script to
-  fill config/regulatory.csv from openFDA/DailyMed/RxNorm/ChEMBL).
-- **2.5 IS A SHIP-BLOCKER for 2.4:** the panel must render the REQUIRED safety framing
-  (banner + per-pathway microcopy) inline — copy is verbatim in BACKLOG.md under
-  "REQUIRED safety framing". Do NOT ship the panel without it. Remember _TEMPLATE
-  brace-doubling ({{ }}) and that a successful `_render_html` proves brace balance.
+- **Last done:** PHASE 2 COMPLETE (the whole regulatory feature). This session:
+  count fix (#1), field registry 1.1/1.2/1.2c, ranking current-year fix, and all of
+  Phase 2 — 2.1 data plumbing, 2.2 trial-derived stages, 2.4 UI panel + tags, 2.5
+  mandatory safety framing (banner-first, per-pathway microcopy, approved-vs-trials
+  separated, About statement), 2.3 `scripts/run_regulatory_enrich.py` (safe-by-default:
+  proposals to `_suggested.csv`, `--emit` merges NEW rows only, grey-market/compounding
+  never auto-inferred). All green: curation 173, extractors 90, site 358, sources 53.
+- **Next action:** Phase 3.1 — move `JSON.parse(site_data.json)` into a Web Worker
+  (fetch mode) with a no-Worker fallback for inline/file:// mode; then 3.2 (filtering
+  in the Worker). Removes the ~7 s main-thread parse on the full corpus.
+- **Also queued:** Phase 6.1 (raise impact weight via iCite percentile), 6.2 (UX
+  "clinical" de-overload + intro), 6.3 (tablist arrow keys / de-nest interactives),
+  Phase 5.4 (manual-paper-add CSV), Phase 4 (theme/visual identity).
 - **Deferred (judgement):** Phase 1.3/1.4 (data-drive modal/cards) — core registry
   value already delivered; high-effort/low-marginal-value. Revisit only if needed.
 - **Uncommitted right now:** `scripts/build_public_site.py`, `scripts/build_curated_database.py`,
@@ -87,13 +85,15 @@ ChEMBL `max_phase` (global stage), CT.gov mirror (per-condition phase).
   the molecule index + CSV columns + site `MOLECULE_FIELDS`; 2 seed rows; tested.
 - [x] **2.2** Trial-derived dev stage per indication from the local mirror
   (`_load_trial_stages`; max phase overall + per condition + counts). Tested.
-- [ ] **2.3** Enrichment script hitting openFDA + DailyMed + RxNorm + ChEMBL, writing
-  regulatory fields onto the molecule index (audit-and-add, resumable, cached).
-- [ ] **2.4** UI: status tag(s) on each bioactive card + expandable panel (approved
-  indications, ex-US status, access pathways, per-use trial stage).
-- [ ] **2.5** REQUIRED safety framing (see BACKLOG "REQUIRED safety framing" block) —
-  inline with the data, per-pathway microcopy, no vendors/sourcing. Panel must not
-  render without it. This is a ship-blocker, not optional.
+- [x] **2.3** `scripts/run_regulatory_enrich.py` — ChEMBL max_phase + openFDA
+  (drugsfda + label) + DailyMed. Safe-by-default (proposals → `_suggested.csv`;
+  `--emit` merges NEW rows only, never clobbers curated without `--force`; grey-market/
+  compounding never auto-inferred). `--mock` for offline. Tested.
+- [x] **2.4** UI: status tags on each bioactive card + expandable `regulatoryPanel`
+  (approved indications, ex-US status, access pathways w/ microcopy, per-use trial stage).
+- [x] **2.5** REQUIRED safety framing — banner renders FIRST (panel can't exist
+  without it), per-pathway microcopy, approved-vs-in-trials separated, no vendors/
+  sourcing; longer statement added to About. Locked by 8 tests.
 Resume note: 2.1 alone (curated CSV) delivers value; API enrichment (2.3) can follow.
 
 ## PHASE 3 — Web Worker for parse + filter (audit #8)

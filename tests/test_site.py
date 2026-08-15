@@ -132,6 +132,29 @@ def run():
     check("mobile breakpoint + collapsible sidebar",
           "@media (max-width: 760px)" in fetch_html and "aside.filters-open" in fetch_html)
     check("mobile stacks molecule grid to one column", "grid-template-columns: 1fr" in fetch_html)
+    # Regulatory / access panel (Phase 2.4) + REQUIRED safety framing (2.5).
+    check("regulatory tags + panel present",
+          "function regulatoryTags" in fetch_html and "function regulatoryPanel" in fetch_html)
+    check("panel renders the mandatory safety banner FIRST",
+          "REG_BANNER" in fetch_html
+          and fetch_html.index('el("div", "reg-banner", REG_BANNER)') < fetch_html.index("Access routes reported"))
+    check("banner carries the non-endorsement language",
+          "Informational only" in fetch_html and "does not endorse compounded" in fetch_html
+          and "belong with a clinician" in fetch_html)
+    check("per-pathway microcopy present (grey market + compounding + research)",
+          "No regulatory oversight of identity" in fetch_html
+          and "Compounded preparations are NOT FDA-approved" in fetch_html
+          and "not manufactured to human-use standards" in fetch_html)
+    check("approved vs in-trials kept separate",
+          "Approval for one use is not approval for any other use" in fetch_html
+          and "Being studied for a use is NOT approval for that use" in fetch_html)
+    check("no vendor/sourcing/purchasing guidance leaked",
+          all(w not in fetch_html.lower() for w in ("buy from", "purchase from", "where to buy", "vendor list")))
+    check("About has the regulatory-safety statement",
+          "Regulatory information & safety" in fetch_html
+          and "explicitly against the use of these substances without a qualified clinician" in fetch_html)
+    check("regulatory panel uses safe rendering (no javascript href)",
+          'href="javascript:' not in fetch_html.lower())
     check("modal has a real focus trap", "_modalFocusables" in fetch_html and "Focus trap" in fetch_html)
     check("modal hides background from assistive tech", 'setAttribute("aria-hidden", "true")' in fetch_html)
     # Second-pass a11y/mobile fixes from the agent audit.
