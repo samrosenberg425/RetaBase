@@ -297,6 +297,46 @@ def run_validation_gate_tests():
         check("clean build passes drift check", code == 0)
 
 
+def run_regulatory_tests():
+    # Phase 2.1: regulatory fields flow from config → molecule index → site allowlist.
+    reg = {"metformin": {k: "" for k in bcd.REGULATORY_FIELDS}}
+    reg["metformin"].update({"regulatory_status": "approved",
+                             "fda_approved_indications": "type 2 diabetes mellitus",
+                             "us_marketed": "True", "access_pathways": "physician-prescribed"})
+    recs = [{"molecule_id": "metformin", "molecule_name": "Metformin", "pmid": "1",
+             "publication_status": "featured", "model_primary": "human"},
+            {"molecule_id": "selank", "molecule_name": "Selank", "pmid": "2",
+             "publication_status": "listed", "model_primary": "animal"}]
+    idx = {m["molecule_id"]: m for m in bcd._molecule_index(recs, pubchem_by_mol={}, reg_by_mol=reg)}
+    check("regulatory fields attached to molecule",
+          idx["metformin"]["regulatory_status"] == "approved"
+          and idx["metformin"]["access_pathways"] == "physician-prescribed")
+    check("molecules without a regulatory row get blanks",
+          idx["selank"]["regulatory_status"] == "" and idx["selank"]["us_marketed"] == "")
+    check("all regulatory fields present on every molecule",
+          all(k in idx["selank"] for k in bcd.REGULATORY_FIELDS))
+    # The shipped config parses and carries a source + retrieval date per row.
+    loaded = bcd._load_regulatory()
+    if loaded:
+        row = next(iter(loaded.values()))
+        check("regulatory rows carry a source", bool(row.get("reg_source")))
+        check("regulatory rows carry a retrieval date", bool(row.get("reg_retrieved_utc")))
+
+    # Phase 2.2: trial-derived development stage per indication.
+    check("phase parsing takes the max", bcd._phase_val("PHASE1|PHASE2") == 2
+          and bcd._phase_val("PHASE3") == 3 and bcd._phase_val("NA") == 0)
+    tr = {"tirzepatide": {"max_trial_phase": "Phase 3", "trial_count": "40",
+                          "ongoing_trial_count": "12",
+                          "trial_stages_by_use": "obesity: Phase 3; NASH: Phase 2"}}
+    recs2 = [{"molecule_id": "tirzepatide", "molecule_name": "Tirzepatide", "pmid": "9",
+              "publication_status": "featured", "model_primary": "human"}]
+    mi2 = bcd._molecule_index(recs2, pubchem_by_mol={}, reg_by_mol={}, trials_by_mol=tr)[0]
+    check("trial stage fields attached", mi2["max_trial_phase"] == "Phase 3"
+          and "obesity: Phase 3" in mi2["trial_stages_by_use"])
+    check("trial fields blank when no trials", bcd._molecule_index(
+          recs2, pubchem_by_mol={}, reg_by_mol={}, trials_by_mol={})[0]["max_trial_phase"] == "")
+
+
 def run_field_registry_tests():
     # The registry (Phase 1.1) must reproduce the CURRENT field allowlists exactly
     # before it is wired into the build. Set equality is the invariant (order of
@@ -682,6 +722,9 @@ def run():
 
     # --- field registry fidelity (Phase 1.1) ---
     run_field_registry_tests()
+
+    # --- regulatory data plumbing (Phase 2.1) ---
+    run_regulatory_tests()
 
     print(f"\n{PASS} passed, {FAIL} failed")
     return 0 if FAIL == 0 else 1

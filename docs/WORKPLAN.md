@@ -3,13 +3,23 @@
 <!-- ============================================================= -->
 <!-- SESSION STATE — READ THIS FIRST, UPDATE IT LAST -->
 ## ▶ RESUME HERE
-- **Last done:** Phase 1.1 + 1.2 — created `retarats_pipeline/curation/field_registry.py`
-  (single source of truth) with a fidelity-lock test; wired BOTH build scripts to
-  derive their lists from it (`SITE_JSON_FIELDS`, `RECORD_FIELDS`). Also the count-
-  labeling fix (#1). All green.
-- **Next action:** Phase 1.3 — drive the modal key/value grid from the registry
-  (`modal`/`label`/`group` flags). Then 1.4 (card pills), 1.5 (acceptance test).
-  (1.2c done: the two blank modal rows are fixed.)
+- **Last done:** Phase 2.2 — trial-derived dev stage per indication
+  (`_load_trial_stages` from the CT.gov mirror; `max_trial_phase`, `trial_count`,
+  `ongoing_trial_count`, `trial_stages_by_use` on the molecule index + CSV + site
+  allowlist). Tested on synthetic data (real trials DB not in sandbox; populates on
+  the real build). This session also: count fix (#1), field registry 1.1/1.2/1.2c,
+  ranking current-year fix, regulatory 2.1.
+- **Next action:** Phase 2.4 — the Bioactives-card regulatory/access UI: a status
+  tag (FDA approved / Phase N / Research only) + expandable panel (approved
+  indications, ex-US status, access pathways, per-use trial stage). It reads the
+  molecule fields already populated in 2.1/2.2. Then 2.3 (API enrichment script to
+  fill config/regulatory.csv from openFDA/DailyMed/RxNorm/ChEMBL).
+- **2.5 IS A SHIP-BLOCKER for 2.4:** the panel must render the REQUIRED safety framing
+  (banner + per-pathway microcopy) inline — copy is verbatim in BACKLOG.md under
+  "REQUIRED safety framing". Do NOT ship the panel without it. Remember _TEMPLATE
+  brace-doubling ({{ }}) and that a successful `_render_html` proves brace balance.
+- **Deferred (judgement):** Phase 1.3/1.4 (data-drive modal/cards) — core registry
+  value already delivered; high-effort/low-marginal-value. Revisit only if needed.
 - **Uncommitted right now:** `scripts/build_public_site.py`, `scripts/build_curated_database.py`,
   `retarats_pipeline/curation/field_registry.py`, `tests/test_curation.py`,
   `docs/*`. Commit locally (protocol below).
@@ -73,10 +83,10 @@ mandatory safety framing copy). Uses the Phase-1 registry so the new fields are 
 Free APIs: openFDA (drugsfda + label), DailyMed RESTful, RxNorm/RxNav (name→product),
 ChEMBL `max_phase` (global stage), CT.gov mirror (per-condition phase).
 
-- [ ] **2.1** `config/REGULATORY.csv` schema + loader (curated/manual first, with
-  `source` + `retrieved_utc` per row) so real info can go live immediately.
-- [ ] **2.2** Derive dev-stage-per-indication from the local trials mirror
-  (`phases` × `conditions` × status → max phase per use).
+- [x] **2.1** `config/regulatory.csv` schema + `_load_regulatory()` + 8 reg fields on
+  the molecule index + CSV columns + site `MOLECULE_FIELDS`; 2 seed rows; tested.
+- [x] **2.2** Trial-derived dev stage per indication from the local mirror
+  (`_load_trial_stages`; max phase overall + per condition + counts). Tested.
 - [ ] **2.3** Enrichment script hitting openFDA + DailyMed + RxNorm + ChEMBL, writing
   regulatory fields onto the molecule index (audit-and-add, resumable, cached).
 - [ ] **2.4** UI: status tag(s) on each bioactive card + expandable panel (approved

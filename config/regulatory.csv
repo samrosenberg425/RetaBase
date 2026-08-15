@@ -1,0 +1,3 @@
+molecule_id,regulatory_status,fda_approved_indications,us_marketed,ex_us_status,access_pathways,reg_source,reg_source_url,reg_retrieved_utc
+metformin,approved,type 2 diabetes mellitus,True,approved in EU; UK; Japan; and widely worldwide,physician-prescribed,FDA Drugs@FDA,https://www.accessdata.fda.gov/scripts/cder/daf/,2026-08-14
+dulaglutide,approved,type 2 diabetes mellitus; cardiovascular risk reduction in adults with type 2 diabetes,True,approved in EU; Japan; and widely worldwide,physician-prescribed,FDA Drugs@FDA,https://www.accessdata.fda.gov/scripts/cder/daf/,2026-08-14

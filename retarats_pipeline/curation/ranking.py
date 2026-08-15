@@ -66,7 +66,11 @@ _RELEVANCE_BY_ROLE = {
     "environmental_or_material_use": 10,
 }
 
-_CURRENT_YEAR = datetime.utcnow().year
+def _current_year() -> int:
+    # Computed per call, not bound at import: a long-lived process (or a build that
+    # spans midnight into a new year) would otherwise score recency against a stale
+    # year. Cheap, and keeps recency deterministic to the build's actual date.
+    return datetime.utcnow().year
 
 
 @dataclass
@@ -111,7 +115,7 @@ def _recency(evidence: dict) -> float:
     # on recency just for being old. Recency is only 10% of rank, so this nudges
     # rather than dominates.
     anchor = 1990
-    span = max(1, _CURRENT_YEAR - anchor)
+    span = max(1, _current_year() - anchor)
     if y <= anchor:
         return 25.0
     return max(0.0, min(100.0, 25.0 + (y - anchor) / span * 75.0))

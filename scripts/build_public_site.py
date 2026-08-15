@@ -111,6 +111,13 @@ MOLECULE_FIELDS = [
     # Optional PubChem CID (from scripts/enrich_pubchem.py via molecule_index).
     # Drives the "View on PubChem" link on the Bioactives card; "" when unknown.
     "pubchem_cid",
+    # Regulatory / access status (config/regulatory.csv). Blank until curated. The
+    # UI panel that renders these (Phase 2.4) must ship with the required safety
+    # framing; see docs/BACKLOG.md. "" on molecules with no regulatory row yet.
+    "regulatory_status", "fda_approved_indications", "us_marketed", "ex_us_status",
+    "access_pathways", "reg_source", "reg_source_url", "reg_retrieved_utc",
+    # Development stage per indication, derived from the local CT.gov trials mirror.
+    "max_trial_phase", "trial_count", "ongoing_trial_count", "trial_stages_by_use",
 ]
 
 # Candidate ("experimental") molecules proposed for future fetching. These carry

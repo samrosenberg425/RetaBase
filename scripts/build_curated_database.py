@@ -24,6 +24,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import sqlite3
 import sys
 from collections import Counter, defaultdict
@@ -292,7 +293,8 @@ def build(db_path: str, out_dir: str, limit: int = 0) -> dict:
         ["molecule_id", "molecule_name", "total_records", "record_count", "human_count",
          "density_tier", "auto_published", "listed",
          "review_candidates", "held", "human_evidence", "preclinical_evidence",
-         "reviews", "max_reliability", "top_conditions", "sections_present", "pubchem_cid"],
+         "reviews", "max_reliability", "top_conditions", "sections_present", "pubchem_cid"]
+        + REGULATORY_FIELDS + TRIAL_STAGE_FIELDS,
     )
 
     # --- schema files ---
@@ -616,9 +618,110 @@ def _load_pubchem_cids(path: str = PUBCHEM_CIDS_PATH) -> Dict[str, str]:
     return out
 
 
-def _molecule_index(rows: List[dict], pubchem_by_mol: Dict[str, str] | None = None) -> List[dict]:
+# Optional regulatory / access-status enrichment (Phase 2). Curated in
+# config/regulatory.csv now (each row carries its own source + retrieval date);
+# later augmented by an openFDA/DailyMed/RxNorm/ChEMBL enrichment script. Fully
+# optional: a missing file simply yields blank regulatory fields on every molecule.
+REGULATORY_PATH = os.path.join("config", "regulatory.csv")
+REGULATORY_FIELDS = [
+    "regulatory_status",          # approved | investigational | supplement | research-only | withdrawn
+    "fda_approved_indications",   # semicolon list; "" if none
+    "us_marketed",                # True | False | ""
+    "ex_us_status",               # e.g. "approved in EU, Japan"; "" if unknown
+    "access_pathways",            # semicolon list: physician-prescribed / OTC / compounding / clinical-trial-only / research-only / grey-market
+    "reg_source",                 # human-readable source name
+    "reg_source_url",             # link to the source
+    "reg_retrieved_utc",          # date the status was checked (status changes!)
+]
+
+
+def _load_regulatory(path: str = REGULATORY_PATH) -> Dict[str, Dict[str, str]]:
+    """Map molecule_id -> regulatory field dict. Missing file -> {} (blank fields)."""
+    out: Dict[str, Dict[str, str]] = {}
+    if not os.path.exists(path):
+        return out
+    try:
+        with open(path, newline="", encoding="utf-8") as fh:
+            for row in csv.DictReader(fh):
+                mid = str(row.get("molecule_id", "") or "").strip()
+                if mid:
+                    out[mid] = {k: str(row.get(k, "") or "").strip() for k in REGULATORY_FIELDS}
+    except (OSError, csv.Error):
+        return {}
+    return out
+
+
+# Development-stage-per-indication, derived from the LOCAL ClinicalTrials.gov mirror
+# (no network, no model): the trials the pipeline already stores carry molecule_id,
+# phases, conditions and status, so "Phase 3 for obesity, Phase 2 for NASH" falls
+# straight out. This is authoritative and distinct from the curated FDA-approval data
+# above — a drug can be approved for one use AND in trials for others.
+TRIALS_DB_PATH = os.path.join("data", "retarats_trials.sqlite")
+TRIAL_STAGE_FIELDS = ["max_trial_phase", "trial_count", "ongoing_trial_count",
+                      "trial_stages_by_use"]
+_PHASE_NUM = {"EARLY_PHASE1": 0.5, "PHASE1": 1, "PHASE2": 2, "PHASE3": 3, "PHASE4": 4}
+_PHASE_LABEL = {0.5: "Early Phase 1", 1: "Phase 1", 2: "Phase 2", 3: "Phase 3", 4: "Phase 4"}
+
+
+def _phase_val(s: str) -> float:
+    best = 0.0
+    for tok in re.split(r"[|,;/ ]+", str(s or "").upper()):
+        best = max(best, _PHASE_NUM.get(tok, 0.0))
+    return best
+
+
+def _load_trial_stages(path: str = TRIALS_DB_PATH) -> Dict[str, Dict[str, str]]:
+    """Map molecule_id -> {max_trial_phase, trial_count, ongoing_trial_count,
+    trial_stages_by_use}. Missing DB -> {} (blank fields)."""
+    if not os.path.exists(path):
+        return {}
+    try:
+        conn = sqlite3.connect(path)
+        cur = conn.execute("select payload_json from trials")
+    except sqlite3.OperationalError:
+        return {}
+    per: Dict[str, dict] = {}
+    for (payload,) in cur:
+        try:
+            t = json.loads(payload)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        mol = str(t.get("molecule_id", "") or "").strip()
+        if not mol:
+            continue
+        d = per.setdefault(mol, {"count": 0, "ongoing": 0, "cond": {}, "max": 0.0})
+        d["count"] += 1
+        if t.get("ongoing"):
+            d["ongoing"] += 1
+        pv = _phase_val(t.get("phases", ""))
+        d["max"] = max(d["max"], pv)
+        for c in str(t.get("conditions", "") or "").split(";"):
+            c = c.strip()
+            if c:
+                d["cond"][c] = max(d["cond"].get(c, 0.0), pv)
+    conn.close()
+    out: Dict[str, Dict[str, str]] = {}
+    for mol, d in per.items():
+        top = sorted(d["cond"].items(), key=lambda kv: (-kv[1], kv[0]))[:5]
+        stages = "; ".join(f"{c}: {_PHASE_LABEL[v]}" for c, v in top if v > 0)
+        out[mol] = {
+            "max_trial_phase": _PHASE_LABEL.get(d["max"], ""),
+            "trial_count": str(d["count"]),
+            "ongoing_trial_count": str(d["ongoing"]),
+            "trial_stages_by_use": stages,
+        }
+    return out
+
+
+def _molecule_index(rows: List[dict], pubchem_by_mol: Dict[str, str] | None = None,
+                    reg_by_mol: Dict[str, Dict[str, str]] | None = None,
+                    trials_by_mol: Dict[str, Dict[str, str]] | None = None) -> List[dict]:
     if pubchem_by_mol is None:
         pubchem_by_mol = _load_pubchem_cids()
+    if reg_by_mol is None:
+        reg_by_mol = _load_regulatory()
+    if trials_by_mol is None:
+        trials_by_mol = _load_trial_stages()
     by_mol = defaultdict(list)
     for r in rows:
         by_mol[str(r.get("molecule_id", ""))].append(r)
@@ -658,8 +761,8 @@ def _molecule_index(rows: List[dict], pubchem_by_mol: Dict[str, str] | None = No
         preclin = sum(1 for r in recs if _mtype(r) in {"animal", "in vitro"})
         reviews = sum(1 for r in recs if _mtype(r) == "review")
         max_rel = max((_int(r.get("reliability_score")) for r in recs), default=0)
-        out.append(
-            {
+        reg = reg_by_mol.get(mol_id, {})
+        entry = {
                 "molecule_id": mol_id,
                 "molecule_name": name,
                 "total_records": len(recs),
@@ -681,8 +784,16 @@ def _molecule_index(rows: List[dict], pubchem_by_mol: Dict[str, str] | None = No
                 # Optional PubChem CID for the "View on PubChem" link on the
                 # Bioactives page. "" when unknown or the enrichment file is absent.
                 "pubchem_cid": pubchem_by_mol.get(mol_id, ""),
-            }
-        )
+        }
+        # Regulatory / access status (curated in config/regulatory.csv). Blank on
+        # molecules with no row yet; populated by curation + later API enrichment.
+        for _k in REGULATORY_FIELDS:
+            entry[_k] = reg.get(_k, "")
+        # Trial-derived development stage per indication (from the local CT.gov mirror).
+        tr = trials_by_mol.get(mol_id, {})
+        for _k in TRIAL_STAGE_FIELDS:
+            entry[_k] = tr.get(_k, "")
+        out.append(entry)
     out.sort(key=lambda r: r["auto_published"], reverse=True)
     return out
 
