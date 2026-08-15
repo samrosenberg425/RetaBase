@@ -70,11 +70,12 @@ FIELDS: List[Field] = [
     _F("icite_nih_percentile"), _F("icite_apt"), _F("icite_is_clinical"),
     _F("icite_clinical_influence"), _F("icite_x_coord"), _F("icite_y_coord"),
     _F("icite_rcr"), _F("icite_human"), _F("icite_animal"), _F("icite_molecular"),
-    # DRIFT (documented): read by the UI but not currently in the feed, so their
-    # modal rows are always blank in fetch mode. Fix in a later phase by flipping
-    # site_json to True once the registry drives the feed.
-    _F("icite_field_citation_rate", site_json=False),
-    _F("icite_citation_count", site_json=False),
+    # Previously drifted (UI-read but not fed, so their modal rows were always blank).
+    # Fixed by adding them to the feed now that the registry drives it -- they are
+    # merged upstream (PAPER_MERGE_FIELDS) and read by the modal ("Field citation
+    # rate", "iCite citations"), so this populates those two rows.
+    _F("icite_field_citation_rate"),
+    _F("icite_citation_count"),
 ]
 
 

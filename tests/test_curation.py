@@ -312,18 +312,20 @@ def run_field_registry_tests():
     sys.modules["build_public_site"] = _bps
     _bps_spec.loader.exec_module(_bps)
 
-    check("registry site_json_fields == current SITE_JSON_FIELDS",
+    check("build feed list is registry-derived",
           set(fr.site_json_fields()) == set(bcd.SITE_JSON_FIELDS))
-    check("registry record_fields == current RECORD_FIELDS",
+    check("UI record list is registry-derived",
           set(fr.record_fields()) == set(_bps.RECORD_FIELDS))
     check("registry record_fields order matches current RECORD_FIELDS",
           fr.record_fields() == list(_bps.RECORD_FIELDS))
     check("registry has no duplicate keys",
           len([f.key for f in fr.FIELDS]) == len({f.key for f in fr.FIELDS}))
-    # The documented drift: exactly these two are UI-read but not fed.
-    check("known feed drift captured",
-          set(fr.record_fields()) - set(fr.site_json_fields())
-          == {"icite_field_citation_rate", "icite_citation_count"})
+    # 1.2c: the former drift is fixed -- every UI-read field is now also in the feed,
+    # so no record field is left permanently blank.
+    check("no feed drift (every UI field is fed)",
+          set(fr.record_fields()) - set(fr.site_json_fields()) == set())
+    check("field-citation-rate + iCite-citations now in the feed",
+          {"icite_field_citation_rate", "icite_citation_count"} <= set(fr.site_json_fields()))
 
 
 def run_density_tests():

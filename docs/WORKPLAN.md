@@ -8,10 +8,8 @@
   derive their lists from it (`SITE_JSON_FIELDS`, `RECORD_FIELDS`). Also the count-
   labeling fix (#1). All green.
 - **Next action:** Phase 1.3 — drive the modal key/value grid from the registry
-  (`modal`/`label`/`group` flags). Then 1.4 (card pills). QUICK WIN available first:
-  flip `icite_field_citation_rate` + `icite_citation_count` to `site_json=True` in the
-  registry — that alone fixes the two always-blank modal rows (documented drift), and
-  is a one-line change that demonstrates the registry's payoff. Do it as its own commit.
+  (`modal`/`label`/`group` flags). Then 1.4 (card pills), 1.5 (acceptance test).
+  (1.2c done: the two blank modal rows are fixed.)
 - **Uncommitted right now:** `scripts/build_public_site.py`, `scripts/build_curated_database.py`,
   `retarats_pipeline/curation/field_registry.py`, `tests/test_curation.py`,
   `docs/*`. Commit locally (protocol below).
@@ -61,8 +59,8 @@ reprocessing data.
   `site_json_fields()`. Fidelity-lock test in test_curation (`run_field_registry_tests`).
 - [x] **1.2** `SITE_JSON_FIELDS` (build_curated) and `RECORD_FIELDS` (build_public_site)
   now DERIVE from the registry. Set-equal to the historical lists (locked by test).
-- [ ] **1.2c (quick win)** flip the two drift fields to `site_json=True` so their
-  modal rows stop being blank. One-line change; commit separately.
+- [x] **1.2c** flipped the two drift fields to `site_json=True`; feed now 65 fields,
+  the "Field citation rate" + "iCite citations" modal rows populate on next build.
 - [ ] **1.3** Drive the modal key/value grid from the registry (`modal`/`label`/`group`).
 - [ ] **1.4** Drive the card preview pills from the registry (`card`).
 - [ ] **1.5** Acceptance test: "adding one registry entry surfaces it in JSON + modal
