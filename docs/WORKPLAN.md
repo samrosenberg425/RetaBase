@@ -3,14 +3,19 @@
 <!-- ============================================================= -->
 <!-- SESSION STATE — READ THIS FIRST, UPDATE IT LAST -->
 ## ▶ RESUME HERE
-- **Last done:** count-labeling fix (#1) — subtitle + gen line now say "evidence
-  records" not "papers"; all suites green. Audit + this plan written.
-- **Next action:** Phase 1.1 — create the `FIELD_REGISTRY` module (additive; nothing
-  wired in yet) + a test asserting it reproduces the current `SITE_JSON_FIELDS` and
-  `RECORD_FIELDS` exactly. Then 1.2–1.5.
-- **Uncommitted right now:** `scripts/build_public_site.py` (count fix),
-  `docs/SITE_AUDIT_2026-08.md`, `docs/WORKPLAN.md`. Commit locally (see protocol below).
-- **Working state:** green — test_curation 155, test_extractors 90, test_site 350,
+- **Last done:** Phase 1.1 + 1.2 — created `retarats_pipeline/curation/field_registry.py`
+  (single source of truth) with a fidelity-lock test; wired BOTH build scripts to
+  derive their lists from it (`SITE_JSON_FIELDS`, `RECORD_FIELDS`). Also the count-
+  labeling fix (#1). All green.
+- **Next action:** Phase 1.3 — drive the modal key/value grid from the registry
+  (`modal`/`label`/`group` flags). Then 1.4 (card pills). QUICK WIN available first:
+  flip `icite_field_citation_rate` + `icite_citation_count` to `site_json=True` in the
+  registry — that alone fixes the two always-blank modal rows (documented drift), and
+  is a one-line change that demonstrates the registry's payoff. Do it as its own commit.
+- **Uncommitted right now:** `scripts/build_public_site.py`, `scripts/build_curated_database.py`,
+  `retarats_pipeline/curation/field_registry.py`, `tests/test_curation.py`,
+  `docs/*`. Commit locally (protocol below).
+- **Working state:** green — test_curation 160, test_extractors 90, test_site 350,
   test_sources 53; validate_config OK; 9 workflows parse.
 
 ### Handoff protocol (how to continue in a fresh session without losing anything)
@@ -51,15 +56,17 @@ A registry makes "add a field" a one-line change. This is a BUILD-CODE change, N
 corpus rebuild — the existing corpus keeps working unchanged. Nothing here requires
 reprocessing data.
 
-- [ ] **1.1** Define `FIELD_REGISTRY` in one module: a list of descriptors
-  `{key, label, group, show_on_card, show_in_modal, formatter, allowlist}`.
-- [ ] **1.2** Derive `SITE_JSON_FIELDS` (build_curated) and `RECORD_FIELDS`
-  (build_public_site) FROM the registry instead of hand-maintained lists. Keep output
-  byte-identical (assert against current lists in a test) so nothing changes yet.
-- [ ] **1.3** Drive the modal key/value grid from the registry (`show_in_modal`).
-- [ ] **1.4** Drive the card preview pills from the registry (`show_on_card`).
-- [ ] **1.5** Add a test: "adding a registry entry surfaces it in JSON + modal with no
-  other edits." This is the acceptance criterion for the whole phase.
+- [x] **1.1** `retarats_pipeline/curation/field_registry.py` — descriptors with
+  `site_json`/`record`/`modal`/`card`/`group`/`label` flags + `record_fields()` /
+  `site_json_fields()`. Fidelity-lock test in test_curation (`run_field_registry_tests`).
+- [x] **1.2** `SITE_JSON_FIELDS` (build_curated) and `RECORD_FIELDS` (build_public_site)
+  now DERIVE from the registry. Set-equal to the historical lists (locked by test).
+- [ ] **1.2c (quick win)** flip the two drift fields to `site_json=True` so their
+  modal rows stop being blank. One-line change; commit separately.
+- [ ] **1.3** Drive the modal key/value grid from the registry (`modal`/`label`/`group`).
+- [ ] **1.4** Drive the card preview pills from the registry (`card`).
+- [ ] **1.5** Acceptance test: "adding one registry entry surfaces it in JSON + modal
+  with no other edits."
 Resume note: safe to stop after any sub-item; each keeps the build green.
 
 ## PHASE 2 — Regulatory / access-pathway feature (audit #14, HIGH PRIORITY)

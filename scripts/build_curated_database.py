@@ -388,31 +388,11 @@ def _corpus_stats(curated_rows: List[dict], papers: List[dict], evidence: List[d
 
 
 # Compact field set the browsable site needs (keeps site_data.json small).
-SITE_JSON_FIELDS = [
-    "molecule_id", "molecule_name", "pmid", "doi", "title", "journal", "pub_year",
-    "authors_short", "first_author", "author_count", "citation_count",
-    "icite_rcr", "icite_nih_percentile", "icite_apt",
-    "icite_human", "icite_animal", "icite_molecular",
-    "icite_x_coord", "icite_y_coord", "icite_is_clinical", "icite_clinical_influence",
-    "website_section", "evidence_class", "evidence_class_label", "publication_status",
-    "reliability_score", "reliability_tier", "evidence_directness", "directness_tier",
-    "reliability_components", "rank_components",
-    "journal_reputation", "journal_tier",
-    "rank_score", "rank_tier", "appraisal_summary", "appraisal_strengths", "appraisal_limitations",
-    "refined_dose", "refined_route", "refined_duration", "refined_sample_size", "refined_outcome_direction",
-    "refined_extraction_scope",
-    "facet_species", "facet_indication", "facet_endpoint", "facet_study_type",
-    "facet_model_system", "facet_route",
-    "facet_drug_class", "facet_population", "facet_sex", "facet_formulation", "facet_evidence_direction",
-    # NIH iCite-derived facets (impact tier + clinical-article flag) so the site can
-    # offer them as filters. Absent on un-enriched papers -> empty string.
-    "facet_evidence_impact", "facet_clinical_article",
-    "facet_research_article", "facet_translational_compartment",
-    # Retraction / correction flags (from PubMed pubtypes) + the filterable
-    # publication_flag facet. Blank/False on ordinary papers.
-    "is_retracted", "is_corrected", "facet_publication_flag",
-    "facet_all",
-]
+# DERIVED from the single field registry (Phase 1.2) rather than hand-maintained, so
+# adding a field is one registry entry. A test locks that this equals the historical
+# list. To add a feed field: add it to field_registry.FIELDS with site_json=True.
+from retarats_pipeline.curation.field_registry import site_json_fields as _site_json_fields  # noqa: E402
+SITE_JSON_FIELDS = _site_json_fields()
 
 
 def _load_experimental(path: str = os.path.join("config", "EXPERIMENTAL_MOLECULES.csv")) -> List[dict]:

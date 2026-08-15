@@ -43,43 +43,14 @@ from dataclasses import dataclass, field
 from typing import Dict, List
 
 
-# Fields we pull into the inline JSON when falling back to public_records.csv.
-# When site_data.json is present we take its fields verbatim (superset of these).
-RECORD_FIELDS = [
-    "molecule_id", "molecule_name", "pmid", "doi", "title", "journal", "pub_year",
-    "website_section", "evidence_class", "evidence_class_label", "publication_status",
-    "authors_short", "first_author", "author_count", "citation_count",
-    "journal_reputation", "journal_tier",
-    "reliability_score", "reliability_tier", "evidence_directness", "directness_tier",
-    "reliability_components", "rank_components",
-    "rank_score", "rank_tier", "appraisal_summary", "appraisal_strengths", "appraisal_limitations",
-    "refined_dose", "refined_route", "refined_duration", "refined_sample_size", "refined_outcome_direction",
-    "refined_extraction_scope",
-    "facet_species", "facet_indication", "facet_endpoint", "facet_study_type",
-    "facet_model_system", "facet_route",
-    "facet_drug_class", "facet_population", "facet_sex", "facet_formulation",
-    "facet_evidence_direction",
-    # NIH iCite-derived facets: impact tier (from nih_percentile) + clinical-article
-    # flag. Carried through so they can be offered as sidebar filters. "" when absent.
-    "facet_evidence_impact", "facet_clinical_article",
-    "facet_research_article", "facet_translational_compartment",
-    # Retraction / correction flags (from PubMed pubtypes) drive a caution badge;
-    # facet_publication_flag makes them filterable. Blank/False on ordinary papers.
-    "is_retracted", "is_corrected", "facet_publication_flag",
-    "facet_all",
-    # NIH iCite metrics (merged per-record upstream by build_curated_database.py).
-    # Carried through so the UI can sort by impact percentile / translational
-    # potential (APT) and offer a clinical-only toggle. Absent -> empty string.
-    "icite_nih_percentile", "icite_apt", "icite_is_clinical",
-    # More NIH iCite signals: clinical_influence = how many CLINICAL articles cite
-    # this paper (sortable + shown as a badge); x/y_coord = the paper's position on
-    # iCite's "triangle of biomedicine" (Human / Animal / Molecular-Cellular corners),
-    # used by the translational-triangle view. Absent -> empty string.
-    "icite_clinical_influence", "icite_x_coord", "icite_y_coord",
-    # Remaining iCite values surfaced in the paper detail view. Absent -> "".
-    "icite_rcr", "icite_human", "icite_animal", "icite_molecular",
-    "icite_field_citation_rate", "icite_citation_count",
-]
+# Fields the UI reads off each record (anything else is stripped). DERIVED from the
+# single field registry (Phase 1.2) so it can't drift from the feed's field set; a
+# test locks that this equals the historical list. To add a field the UI should read,
+# add it to field_registry.FIELDS. `sys.path` is nudged so this works whether the
+# script is run from the repo root or imported by the test harness.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from retarats_pipeline.curation.field_registry import record_fields as _record_fields  # noqa: E402
+RECORD_FIELDS = _record_fields()
 
 # Facet dropdown filters shown in the sidebar: (record field, human label).
 # facet_* fields are semicolon-joined multi-values; the UI splits on "; ".

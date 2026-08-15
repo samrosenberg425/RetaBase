@@ -297,6 +297,35 @@ def run_validation_gate_tests():
         check("clean build passes drift check", code == 0)
 
 
+def run_field_registry_tests():
+    # The registry (Phase 1.1) must reproduce the CURRENT field allowlists exactly
+    # before it is wired into the build. Set equality is the invariant (order of
+    # these lists is functionally irrelevant); this locks fidelity so 1.2 can swap
+    # the hand-maintained lists for registry-derived ones with zero behaviour change.
+    from retarats_pipeline.curation import field_registry as fr
+    import importlib.util as _ilu
+    _bps_spec = _ilu.spec_from_file_location(
+        "build_public_site",
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                     "scripts", "build_public_site.py"))
+    _bps = _ilu.module_from_spec(_bps_spec)
+    sys.modules["build_public_site"] = _bps
+    _bps_spec.loader.exec_module(_bps)
+
+    check("registry site_json_fields == current SITE_JSON_FIELDS",
+          set(fr.site_json_fields()) == set(bcd.SITE_JSON_FIELDS))
+    check("registry record_fields == current RECORD_FIELDS",
+          set(fr.record_fields()) == set(_bps.RECORD_FIELDS))
+    check("registry record_fields order matches current RECORD_FIELDS",
+          fr.record_fields() == list(_bps.RECORD_FIELDS))
+    check("registry has no duplicate keys",
+          len([f.key for f in fr.FIELDS]) == len({f.key for f in fr.FIELDS}))
+    # The documented drift: exactly these two are UI-read but not fed.
+    check("known feed drift captured",
+          set(fr.record_fields()) - set(fr.site_json_fields())
+          == {"icite_field_citation_rate", "icite_citation_count"})
+
+
 def run_density_tests():
     # _density_tier boundaries (precedence: sparse -> saturated -> moderate).
     check("density 99 total -> sparse", bcd._density_tier(99, 50) == "sparse")
@@ -648,6 +677,9 @@ def run():
 
     # --- evidence-density tiers + density-aware cap ---
     run_density_tests()
+
+    # --- field registry fidelity (Phase 1.1) ---
+    run_field_registry_tests()
 
     print(f"\n{PASS} passed, {FAIL} failed")
     return 0 if FAIL == 0 else 1
