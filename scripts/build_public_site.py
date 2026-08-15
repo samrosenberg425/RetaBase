@@ -606,9 +606,12 @@ def _render_html(json_block: str, record_count: int, molecule_count: int,
             f" (top {record_count} of {total_records} by rank inlined; "
             "rebuild with --mode fetch to browse all)"
         )
+    # "evidence records" not "papers": a paper that is evidence for several bioactives
+    # contributes one record per bioactive, so this count exceeds the distinct-paper
+    # total (shown separately in the corpus strip). Say what we actually count.
     subtitle = html.escape(
         f"Transparent, rule-based evidence on retatrutide & related bioactives "
-        f"— {total_records} papers across {molecule_count} bioactives, offline & auditable"
+        f"— {total_records} evidence records across {molecule_count} bioactives, offline & auditable"
     ) + note
     # Curator approval controls (public build omits them entirely).
     export_btn = (
@@ -985,7 +988,7 @@ _TEMPLATE = """<!DOCTYPE html>
 <header>
   <h1>{title}</h1>
   <p>{subtitle}</p>
-  <p class="gen">Generated {generated} &middot; {record_count} papers inlined &middot; {molecule_count} bioactives</p>
+  <p class="gen">Generated {generated} &middot; {record_count} evidence records inlined &middot; {molecule_count} bioactives</p>
   <details class="explainer">
     <summary>How to read this</summary>
     <ul>
