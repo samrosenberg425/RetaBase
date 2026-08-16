@@ -129,6 +129,13 @@ def run():
           "worker timeout" in fetch_html and "setTimeout(function() { finish(false" in fetch_html)
     check("failure state offers a reload", "location.reload()" in fetch_html)
 
+    # Phase 6.2: de-overload "clinical" (human views say "human"; iCite filter labelled).
+    check("human-only tab renamed to 'Human data'", ">Human data<" in fetch_html)
+    check("human-first preset renamed", "Human-evidence first" in fetch_html
+          and "Clinical answer" not in fetch_html)
+    check("iCite clinical filter is labelled as iCite", "iCite clinical articles only" in fetch_html)
+    check("evidence view has a first-time on-ramp", "New here?" in fetch_html)
+
     # Mobile responsiveness + accessibility (dims #4/#7).
     check("skip link + main landmark", 'class="skip-link"' in fetch_html and 'id="main-content"' in fetch_html)
     check("tabs expose tablist/tab roles", 'role="tablist"' in fetch_html and fetch_html.count('role="tab"') >= 6)
@@ -509,7 +516,7 @@ def run():
         check("brand: no user-facing 'Retarats' text", "Retarats" not in brand_html)
         check("Bioactives tab present (renamed Molecules)",
               ">Bioactives<" in brand_html)
-        check("Clinical evidence tab present", "Clinical evidence" in brand_html)
+        check("Human data (human-only) tab present", ">Human data<" in brand_html)
         check("About / Methods tab present", "About / Methods" in brand_html)
         # About page carries the actual rank formula.
         check("About page carries the current rank formula",
@@ -971,7 +978,7 @@ def run():
     # Ranking presets: the control and all option labels.
     check("rank-preset control present", 'id="rank-preset"' in rig_html)
     check("preset Default (blended rank)", "Default (blended rank)" in rig_html)
-    check("preset Clinical answer", "Clinical answer" in rig_html)
+    check("preset Human-evidence first", "Human-evidence first" in rig_html)
     check("preset Best synthesis", "Best synthesis" in rig_html)
     check("preset Landmark", ">Landmark<" in rig_html)
     check("preset Latest", ">Latest<" in rig_html)

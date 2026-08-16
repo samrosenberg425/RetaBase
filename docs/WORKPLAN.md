@@ -9,10 +9,15 @@
   count fix, field registry 1.1/1.2/1.2c, ranking fix, PHASE 2 complete, Phase 3.1
   (Web Worker feed parse w/ fallback), Phase 6.1 (impact weight 0.05→0.10). All green:
   site 364, curation 177, extractors 90, sources 53.
-- **Next action:** Phase 6.2 — UX: de-overload "clinical" (tab / filter / preset /
-  sort / pill all say some form of "clinical"); rename to distinct labels + add a
-  one-line "what am I looking at" intro on the evidence view. Then 5.4 (manual-paper-
-  add `config/manual_pmids.csv` honored by the fetch), Phase 4 (theme/visual identity).
+- **Also done:** Phase 6.2 ("clinical" de-overload + on-ramp) and Phase 5.4 (manual
+  paper add: `config/manual_pmids.csv` → `retarats_pipeline/manual_add.py` turns each
+  row into a synthetic `<pmid>[uid]` rule appended in `retarats_v2.py`, honouring
+  --molecule and skipping unknown molecule_ids). Both tested. curation 183, site 368.
+- **Next action:** Phase 4 — theme / visual identity (Sam: modern scientific-database
+  look, less generic; lower priority / possibly outsource). Suggested first step 4.1:
+  extract the CSS out of `_TEMPLATE` into its own block so a redesign is safe/isolated,
+  then 4.2 design tokens (palette, type, masthead, light+dark, logo placeholder).
+  Confirm with Sam whether to attempt via AI or hand off before doing 4.2.
 - **Deferred (judgement):** 6.3 de-nesting interactive links/tags out of `role=button`
   cards — real ARIA nit but a risky card restructure for modest payoff; revisit with
   Phase 4 (theme) since cards get touched then. Also Phase 3.2 (filter in worker) and
@@ -118,8 +123,9 @@ Resume note: token/CSS-only; revert is trivial if a look doesn't land.
 - [ ] **5.2** Cited-by refresh — already `citations.yml`; confirm it keeps counts fresh.
 - [ ] **5.3** Trial→paper linkage — exists; needs the one-time `registry.yml`
   `refresh_trials`, then stays current.
-- [ ] **5.4** Manual paper add — a `config/MANUAL_PMIDS.csv` (pmid, molecule_id, note)
-  that the fetch honors, so Sam can force-include a specific paper.
+- [x] **5.4** Manual paper add — `config/manual_pmids.csv` (molecule_id, pmid, note)
+  → `retarats_pipeline/manual_add.py` builds synthetic `<pmid>[uid]` rules appended in
+  `retarats_v2.py` (honours --molecule, skips unknown molecule_ids/bad pmids/dups). Tested.
 - [ ] **5.5** Preprint→published dedup (LOW priority) — when a preprint's DOI/title
   matches a later published paper, mark it superseded.
 
@@ -127,8 +133,9 @@ Resume note: token/CSS-only; revert is trivial if a look doesn't land.
 - [x] **6.1** Ranking (#3): impact weight 0.05→0.10, percentile-driven (time-
   normalized, so recent papers aren't buried); directness 0.33→0.30, relevance
   0.20→0.18; sum 1.0; About formula + description updated. Tested.
-- [ ] **6.2** UX (#6): de-overload "clinical" labels; add a one-line "what am I looking
-  at" intro; clarify evidence-records vs distinct-papers count.
+- [x] **6.2** UX (#6): "clinical" de-overloaded (Human data tab, Human-evidence first
+  preset, iCite clinical articles filter); "New here?" on-ramp on the evidence view;
+  About clarifies the Human-data-tab vs iCite-filter distinction. Tested.
 - [~] **6.3** A11y (#7): DONE — tablist roving tabindex + arrow/Home/End navigation.
   Remaining (deferred): de-nest links/tags from `role=button` cards (do with Phase 4).
 - [ ] **6.4** Pipeline (#4) + CI (#5): freshness alert if a fetch adds nothing for N

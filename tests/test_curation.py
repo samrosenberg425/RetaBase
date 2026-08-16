@@ -361,6 +361,27 @@ def run_regulatory_tests():
           and prop2["access_pathways"] == "clinical-trial-only")
 
 
+def run_manual_add_tests():
+    # Phase 5.4: manual paper add -> synthetic "<pmid>[uid]" rules.
+    from retarats_pipeline.manual_add import load_manual_rules
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "manual_pmids.csv")
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write("molecule_id,pmid,note\nretatrutide,40550231,key trial\n"
+                     "bogus,123,unknown mol\nretatrutide,abc,bad pmid\n"
+                     "retatrutide,40550231,dup\n")
+        rows = load_manual_rules(p, known_molecule_ids={"retatrutide", "metformin"})
+        check("manual add: only the valid/known/non-dup row kept", len(rows) == 1)
+        r = rows[0]
+        check("manual add: queries the exact PMID", r["query_string"] == "40550231[uid]")
+        check("manual add: curator-asserted strength kept", r["match_strength"] == "strong")
+        check("manual add: rule id + molecule set",
+              r["rule_id"] == "manual_40550231" and r["molecule_id"] == "retatrutide")
+        check("manual add: unknown molecule_id skipped",
+              all(x["molecule_id"] != "bogus" for x in rows))
+    check("manual add: missing file -> []", load_manual_rules("/no/such/file.csv") == [])
+
+
 def run_field_registry_tests():
     # The registry (Phase 1.1) must reproduce the CURRENT field allowlists exactly
     # before it is wired into the build. Set equality is the invariant (order of
@@ -754,6 +775,9 @@ def run():
 
     # --- evidence-density tiers + density-aware cap ---
     run_density_tests()
+
+    # --- manual paper add (Phase 5.4) ---
+    run_manual_add_tests()
 
     # --- field registry fidelity (Phase 1.1) ---
     run_field_registry_tests()

@@ -999,7 +999,7 @@ _TEMPLATE = """<!DOCTYPE html>
   <div class="corpus-strip" id="corpus-strip" style="display:none"></div>
   <div class="tabs" role="tablist" aria-label="Views">
     <button id="tab-evidence" class="active" role="tab" aria-selected="true" tabindex="0">Evidence</button>
-    <button id="tab-clinical" role="tab" aria-selected="false" tabindex="-1">Clinical evidence</button>
+    <button id="tab-clinical" role="tab" aria-selected="false" tabindex="-1">Human data</button>
     <button id="tab-trials" role="tab" aria-selected="false" tabindex="-1">Trials registry</button>
     <button id="tab-preprints" role="tab" aria-selected="false" tabindex="-1">Preprints</button>
     <button id="tab-molecules" role="tab" aria-selected="false" tabindex="-1">Bioactives</button>
@@ -1063,15 +1063,15 @@ _TEMPLATE = """<!DOCTYPE html>
         <label style="text-transform:none;display:inline-flex;gap:6px;align-items:center;color:var(--muted)">View
           <select id="rank-preset">
             <option value="default">Default (blended rank)</option>
-            <option value="clinical">Clinical answer</option>
+            <option value="clinical">Human-evidence first</option>
             <option value="synthesis">Best synthesis</option>
             <option value="landmark">Landmark</option>
             <option value="latest">Latest</option>
             <option value="mechanism">Mechanism</option>
           </select>
         </label>
-        <label style="text-transform:none;display:inline-flex;gap:6px;align-items:center;color:var(--muted)">
-          <input id="clinical-only" type="checkbox" style="width:auto"> Clinical articles only
+        <label title="Keeps only papers NIH iCite flags as clinical articles. This is iCite's own classifier, separate from the Human data tab (which uses the evidence class)." style="text-transform:none;display:inline-flex;gap:6px;align-items:center;color:var(--muted)">
+          <input id="clinical-only" type="checkbox" style="width:auto"> iCite clinical articles only
         </label>
         <button id="triangle-toggle" class="reset" style="width:auto;padding:4px 10px">Triangle view</button>
       </div>
@@ -1967,8 +1967,8 @@ _TEMPLATE = """<!DOCTYPE html>
     var n = parseFloat(v);
     return isNaN(n) ? -1 : n;
   }}
-  // "Clinical answer" front-loads human evidence: any human evidence_class OR a
-  // record whose directness_tier is already "high".
+  // The "Human-evidence first" preset front-loads human evidence: any human
+  // evidence_class OR a record whose directness_tier is already "high".
   function isClinicalAnswer(r) {{
     return HUMAN_CLASSES.has(r.evidence_class || "") || r.directness_tier === "high";
   }}
@@ -2957,7 +2957,7 @@ _TEMPLATE = """<!DOCTYPE html>
 
   // One-line descriptor per browser view.
   var BROWSER_DESC = {{
-    evidence: "Every indexed paper for the bioactives RetaBase tracks (listed under the Bioactives tab) \\u2014 filter, sort, and inspect the evidence.",
+    evidence: "New here? Each card is one paper, scored on two independent axes \\u2014 how well it was conducted (rigor) and how directly it applies to humans (directness) \\u2014 and ranked best-first. Filter in the sidebar, sort above, and click any card for details.",
     clinical: "Human data only \\u2014 clinical trials, observational studies, and evidence syntheses (no animal / in-vitro / methods)."
   }};
 
@@ -3204,11 +3204,13 @@ _TEMPLATE = """<!DOCTYPE html>
       + "\\u201cjournal name includes\\u201d is a case-insensitive substring, and \\u201cmin "
       + "times cited\\u201d sets a floor on how often the paper has been cited by others.");
 
-    h3("Clinical evidence view");
-    p("The Clinical evidence tab restricts to human data: papers whose evidence class is "
+    h3("Human data view");
+    p("The Human data tab restricts to human evidence: papers whose evidence class is "
       + "a human clinical (controlled or interventional), human observational, or evidence "
       + "synthesis class, or whose section is Human evidence or Reviews and overviews. It "
-      + "reuses the same browser and filters, pre-filtered to those records.");
+      + "reuses the same browser and filters, pre-filtered to those records. This is "
+      + "distinct from the \\u201ciCite clinical articles only\\u201d filter, which uses NIH "
+      + "iCite\\u2019s separate clinical-article classifier rather than our evidence class.");
 
     h3("Trials registry (NOT results)");
     p("The Trials registry tab lists studies from ClinicalTrials.gov. These are study "

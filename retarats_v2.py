@@ -50,6 +50,19 @@ def main() -> None:
     if args.max_rules:
         rules = rules.head(args.max_rules).copy()
 
+    # Force-included papers (config/manual_pmids.csv) become synthetic "<pmid>[uid]"
+    # rules so the normal fetch path picks them up. Appended AFTER the filters, but
+    # still honouring --molecule; unknown molecule_ids are skipped by the loader.
+    from retarats_pipeline.manual_add import load_manual_rules
+    manual = load_manual_rules(known_molecule_ids=set(molecules))
+    if args.molecule:
+        manual = [m for m in manual if m["molecule_id"] == args.molecule]
+    if manual:
+        import pandas as _pd
+        rules = _pd.concat([rules, _pd.DataFrame(manual).reindex(columns=rules.columns)],
+                           ignore_index=True)
+        print(f"Added {len(manual)} manual paper(s) from config/manual_pmids.csv", flush=True)
+
     state = PipelineState(args.state_db)
     sinks = build_sinks(args.sinks, local_db=args.local_db, google_sheet_name=args.output_google_sheet)
     sinks.upsert_molecules(molecules.values())
