@@ -998,13 +998,13 @@ _TEMPLATE = """<!DOCTYPE html>
   </details>
   <div class="corpus-strip" id="corpus-strip" style="display:none"></div>
   <div class="tabs" role="tablist" aria-label="Views">
-    <button id="tab-evidence" class="active" role="tab" aria-selected="true">Evidence</button>
-    <button id="tab-clinical" role="tab" aria-selected="false">Clinical evidence</button>
-    <button id="tab-trials" role="tab" aria-selected="false">Trials registry</button>
-    <button id="tab-preprints" role="tab" aria-selected="false">Preprints</button>
-    <button id="tab-molecules" role="tab" aria-selected="false">Bioactives</button>
-    <button id="tab-experimental" role="tab" aria-selected="false" style="display:none">Experimental</button>
-    <button id="tab-about" role="tab" aria-selected="false">About / Methods</button>
+    <button id="tab-evidence" class="active" role="tab" aria-selected="true" tabindex="0">Evidence</button>
+    <button id="tab-clinical" role="tab" aria-selected="false" tabindex="-1">Clinical evidence</button>
+    <button id="tab-trials" role="tab" aria-selected="false" tabindex="-1">Trials registry</button>
+    <button id="tab-preprints" role="tab" aria-selected="false" tabindex="-1">Preprints</button>
+    <button id="tab-molecules" role="tab" aria-selected="false" tabindex="-1">Bioactives</button>
+    <button id="tab-experimental" role="tab" aria-selected="false" style="display:none" tabindex="-1">Experimental</button>
+    <button id="tab-about" role="tab" aria-selected="false" tabindex="-1">About / Methods</button>
     <span class="spacer"></span>
     <span class="ap-summary" id="ap-summary"></span>{export_btn}
   </div>
@@ -2987,7 +2987,11 @@ _TEMPLATE = """<!DOCTYPE html>
     document.getElementById("tab-about").className = isAbout ? "active" : "";
     ["evidence", "clinical", "trials", "preprints", "molecules", "experimental", "about"].forEach(function(t) {{
       var b = document.getElementById("tab-" + t);
-      if (b) b.setAttribute("aria-selected", (t === name) ? "true" : "false");
+      if (b) {{
+        b.setAttribute("aria-selected", (t === name) ? "true" : "false");
+        // Roving tabindex (WAI tablist): only the active tab is in the Tab order.
+        b.setAttribute("tabindex", (t === name) ? "0" : "-1");
+      }}
     }});
     currentTab = name;
     // Lazy-render hidden tabs on first open so they don't cost anything at load.
@@ -3165,11 +3169,11 @@ _TEMPLATE = """<!DOCTYPE html>
       "Quality \\u2014 the automated rigor score above (within-class study quality).",
       "Relevance \\u2014 topical fit to the bioactive and its core indications/endpoints.",
       "Recency \\u2014 how recent the publication year is.",
-      "Impact \\u2014 log-scaled times-cited count, i.e. how often the paper has been cited by OTHER papers (so a few extra citations matter more at the low end than the high end). This is not about whether the paper has a reference list.",
+      "Impact \\u2014 how much OTHER papers cite this one, preferring NIH iCite's field- and time-normalized percentile (so a recent paper is judged against peers of the same age, not buried for being new); it falls back to the Relative Citation Ratio, then a log-scaled raw count only when iCite has not scored the paper. Not about whether the paper has a reference list.",
       "Venue \\u2014 journal reputation / tier."
     ]);
-    formula("rank_score = 0.33\\u00b7directness + 0.28\\u00b7quality + 0.20\\u00b7relevance "
-      + "+ 0.10\\u00b7recency + 0.05\\u00b7impact + 0.04\\u00b7venue");
+    formula("rank_score = 0.30\\u00b7directness + 0.28\\u00b7quality + 0.18\\u00b7relevance "
+      + "+ 0.10\\u00b7recency + 0.10\\u00b7impact + 0.04\\u00b7venue");
     p("Every component and the final weighted score are shown per paper in the "
       + "\\u201cRank breakdown\\u201d of its detail view, so any ordering can be traced back "
       + "to its inputs.");
@@ -3226,9 +3230,34 @@ _TEMPLATE = """<!DOCTYPE html>
   // script (script-src is hash-based, no 'unsafe-inline'). Runs once at startup.
   function wireStaticEvents() {{
     function on(id, ev, fn) {{ var e = document.getElementById(id); if (e) e.addEventListener(ev, fn); }}
+    var TAB_IDS = ["tab-evidence", "tab-clinical", "tab-trials", "tab-preprints",
+                   "tab-molecules", "tab-experimental", "tab-about"];
     ["evidence", "clinical", "trials", "preprints", "molecules", "experimental", "about"].forEach(function(t) {{
       on("tab-" + t, "click", function() {{ showTab(t); }});
     }});
+    // WAI tablist keyboard model: Left/Right (Home/End) move between VISIBLE tabs and
+    // activate them; roving tabindex means Tab enters the tablist once, then arrows
+    // navigate within it.
+    var tablist = document.querySelector('.tabs[role="tablist"]');
+    if (tablist) {{
+      tablist.addEventListener("keydown", function(e) {{
+        if (e.key !== "ArrowRight" && e.key !== "ArrowLeft"
+            && e.key !== "Home" && e.key !== "End") return;
+        var tabs = TAB_IDS.map(function(id) {{ return document.getElementById(id); }})
+          .filter(function(b) {{ return b && b.offsetParent !== null; }});
+        if (!tabs.length) return;
+        var cur = tabs.indexOf(document.activeElement);
+        if (cur === -1) cur = 0;
+        var next = cur;
+        if (e.key === "ArrowRight") next = (cur + 1) % tabs.length;
+        else if (e.key === "ArrowLeft") next = (cur - 1 + tabs.length) % tabs.length;
+        else if (e.key === "Home") next = 0;
+        else if (e.key === "End") next = tabs.length - 1;
+        e.preventDefault();
+        tabs[next].focus();
+        tabs[next].click();
+      }});
+    }}
     on("q", "input", function() {{ qDebounced(); }});
     ["year-mode", "sort", "rank-preset"].forEach(function(id) {{ on(id, "change", function() {{ applyFilters(); }}); }});
     ["year-a", "year-b", "journal-sub", "min-cit"].forEach(function(id) {{ on(id, "input", function() {{ applyFilters(); }}); }});
@@ -3293,7 +3322,48 @@ _TEMPLATE = """<!DOCTYPE html>
         throw err;
       }});
     }}
-    loadMainFeed(1).then(function(feed) {{
+    // PERF (Phase 3.1): parse the large feed OFF the main thread in a Web Worker so
+    // first paint / interactivity aren't blocked by JSON.parse on the full corpus.
+    // Progressive enhancement: ANY failure (no Worker support, construction error,
+    // fetch/parse error, or a watchdog timeout) rejects and we fall back to the
+    // main-thread loadMainFeed path -- so worst case is exactly today's behaviour.
+    function loadFeedViaWorker() {{
+      return new Promise(function(resolve, reject) {{
+        if (typeof window.Worker !== "function" || typeof Blob !== "function"
+            || typeof URL === "undefined" || !URL.createObjectURL) {{
+          reject(new Error("no worker support")); return;
+        }}
+        var body = "onmessage=function(e){{"
+          + "fetch(e.data,{{cache:'no-cache'}}).then(function(r){{"
+          + "if(!r.ok)throw new Error('HTTP '+r.status);return r.json();"
+          + "}}).then(function(d){{postMessage({{ok:true,data:d}});}})"
+          + ".catch(function(err){{postMessage({{ok:false,error:String(err)}});}});"
+          + "}};";
+        var worker, url, done = false;
+        try {{
+          url = URL.createObjectURL(new Blob([body], {{type: "application/javascript"}}));
+          worker = new Worker(url);
+        }} catch (ex) {{ reject(ex); return; }}
+        function finish(isResolve, arg) {{
+          if (done) return; done = true;
+          try {{ worker.terminate(); }} catch (e) {{}}
+          try {{ URL.revokeObjectURL(url); }} catch (e) {{}}
+          (isResolve ? resolve : reject)(arg);
+        }}
+        var watchdog = setTimeout(function() {{ finish(false, new Error("worker timeout")); }}, 30000);
+        worker.onmessage = function(e) {{
+          clearTimeout(watchdog);
+          if (e.data && e.data.ok) finish(true, e.data.data);
+          else finish(false, new Error((e.data && e.data.error) || "worker parse failed"));
+        }};
+        worker.onerror = function(ev) {{
+          clearTimeout(watchdog);
+          finish(false, new Error((ev && ev.message) || "worker error"));
+        }};
+        worker.postMessage("site_data.json");
+      }});
+    }}
+    loadFeedViaWorker().catch(function() {{ return loadMainFeed(1); }}).then(function(feed) {{
       RECORDS = feed.records || [];
       MOLECULES = feed.molecules || [];
       // Prefer the feed's experimental list if present; else keep the inlined one.

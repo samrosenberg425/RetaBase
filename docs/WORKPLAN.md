@@ -3,21 +3,20 @@
 <!-- ============================================================= -->
 <!-- SESSION STATE — READ THIS FIRST, UPDATE IT LAST -->
 ## ▶ RESUME HERE
-- **Last done:** PHASE 2 COMPLETE (the whole regulatory feature). This session:
-  count fix (#1), field registry 1.1/1.2/1.2c, ranking current-year fix, and all of
-  Phase 2 — 2.1 data plumbing, 2.2 trial-derived stages, 2.4 UI panel + tags, 2.5
-  mandatory safety framing (banner-first, per-pathway microcopy, approved-vs-trials
-  separated, About statement), 2.3 `scripts/run_regulatory_enrich.py` (safe-by-default:
-  proposals to `_suggested.csv`, `--emit` merges NEW rows only, grey-market/compounding
-  never auto-inferred). All green: curation 173, extractors 90, site 358, sources 53.
-- **Next action:** Phase 3.1 — move `JSON.parse(site_data.json)` into a Web Worker
-  (fetch mode) with a no-Worker fallback for inline/file:// mode; then 3.2 (filtering
-  in the Worker). Removes the ~7 s main-thread parse on the full corpus.
-- **Also queued:** Phase 6.1 (raise impact weight via iCite percentile), 6.2 (UX
-  "clinical" de-overload + intro), 6.3 (tablist arrow keys / de-nest interactives),
-  Phase 5.4 (manual-paper-add CSV), Phase 4 (theme/visual identity).
-- **Deferred (judgement):** Phase 1.3/1.4 (data-drive modal/cards) — core registry
-  value already delivered; high-effort/low-marginal-value. Revisit only if needed.
+- **Last done:** Phase 6.3 (keyboard part) — WAI tablist model: roving tabindex
+  (active tab=0, others=-1, synced in showTab) + Left/Right/Home/End arrow navigation
+  that focuses and activates the adjacent VISIBLE tab. node-checked. This session also:
+  count fix, field registry 1.1/1.2/1.2c, ranking fix, PHASE 2 complete, Phase 3.1
+  (Web Worker feed parse w/ fallback), Phase 6.1 (impact weight 0.05→0.10). All green:
+  site 364, curation 177, extractors 90, sources 53.
+- **Next action:** Phase 6.2 — UX: de-overload "clinical" (tab / filter / preset /
+  sort / pill all say some form of "clinical"); rename to distinct labels + add a
+  one-line "what am I looking at" intro on the evidence view. Then 5.4 (manual-paper-
+  add `config/manual_pmids.csv` honored by the fetch), Phase 4 (theme/visual identity).
+- **Deferred (judgement):** 6.3 de-nesting interactive links/tags out of `role=button`
+  cards — real ARIA nit but a risky card restructure for modest payoff; revisit with
+  Phase 4 (theme) since cards get touched then. Also Phase 3.2 (filter in worker) and
+  1.3/1.4 (data-drive modal/cards) — deferred earlier, low marginal value.
 - **Uncommitted right now:** `scripts/build_public_site.py`, `scripts/build_curated_database.py`,
   `retarats_pipeline/curation/field_registry.py`, `tests/test_curation.py`,
   `docs/*`. Commit locally (protocol below).
@@ -98,11 +97,11 @@ Resume note: 2.1 alone (curated CSV) delivers value; API enrichment (2.3) can fo
 
 ## PHASE 3 — Web Worker for parse + filter (audit #8)
 Removes the ~7 s main-thread parse on the full corpus. Free to implement.
-- [ ] **3.1** Move `JSON.parse(site_data.json)` into a Worker (fetch mode); post
-  arrays back; keep a no-Worker fallback for inline/file:// mode.
-- [ ] **3.2** Move `crossFilterCounts` + `base.filter` into the Worker; render stays on
-  the main thread. Keep the 300-card cap.
-Resume note: 3.1 is shippable alone; 3.2 is the bigger win.
+- [x] **3.1** Feed fetch+parse moved into a Web Worker (`loadFeedViaWorker`) with a
+  watchdog + full fallback to `loadMainFeed`. node-checked worker body + main logic.
+- [~] **3.2** DEFERRED — filtering in the worker is large/risky (RECORDS + SELECT state
+  duplication) and marginal after the O(F)/memoize/debounce/300-cap work already done.
+Resume note: 3.1 delivered the main win (off-thread parse).
 
 ## PHASE 4 — Visual identity / theme (audit #13)
 Goal: modern scientific-database look (think PubMed/Europe PMC/ChEMBL with a cleaner,
@@ -125,13 +124,13 @@ Resume note: token/CSS-only; revert is trivial if a look doesn't land.
   matches a later published paper, mark it superseded.
 
 ## PHASE 6 — Smaller fixes (from the audit)
-- [ ] **6.1** Ranking (#3): raise impact weight (0.05 → ~0.10) but drive it from the
-  TIME-NORMALIZED iCite percentile, not raw counts, so recent papers aren't buried.
-  Re-normalize the blend to sum to 1.0; keep component transparency.
+- [x] **6.1** Ranking (#3): impact weight 0.05→0.10, percentile-driven (time-
+  normalized, so recent papers aren't buried); directness 0.33→0.30, relevance
+  0.20→0.18; sum 1.0; About formula + description updated. Tested.
 - [ ] **6.2** UX (#6): de-overload "clinical" labels; add a one-line "what am I looking
   at" intro; clarify evidence-records vs distinct-papers count.
-- [ ] **6.3** A11y (#7): tablist arrow-key roving, `role=tabpanel`/`aria-labelledby`,
-  de-nest links/tags from `role=button` cards.
+- [~] **6.3** A11y (#7): DONE — tablist roving tabindex + arrow/Home/End navigation.
+  Remaining (deferred): de-nest links/tags from `role=button` cards (do with Phase 4).
 - [ ] **6.4** Pipeline (#4) + CI (#5): freshness alert if a fetch adds nothing for N
   days; assert restored-cache paper count ≥ baseline; pin deps by hash.
 - [ ] **6.5** Duration rule gap (#2): ~400 records have a duration in the abstract that

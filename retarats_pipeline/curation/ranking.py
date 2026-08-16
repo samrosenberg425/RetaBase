@@ -41,12 +41,19 @@ from typing import Dict
 
 from .journal import journal_reputation
 
+# Impact was raised 0.05 -> 0.10 (citations are one of the few quick signals of
+# whether a paper is noteworthy). It is safe to weight higher because `_impact`
+# prefers the iCite NIH percentile, which is field- AND time-normalized -- so a
+# recent paper with few raw citations is judged against its peers of the same age,
+# not buried. The extra 0.05 is taken from directness and relevance, NOT recency
+# (recency is what protects new work), keeping directness the dominant axis and the
+# blend summing to 1.0.
 RANK_WEIGHTS = {
-    "directness": 0.33,
+    "directness": 0.30,
     "quality": 0.28,
-    "relevance": 0.20,
+    "relevance": 0.18,
     "recency": 0.10,
-    "impact": 0.05,
+    "impact": 0.10,
     "venue": 0.04,
 }
 

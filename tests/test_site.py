@@ -120,6 +120,13 @@ def run():
           "function loadMainFeed" in fetch_html and "attempt < 3" in fetch_html)
     check("feed load checks HTTP status (404 -> retry, not silent parse error)",
           "if (!r.ok) throw" in fetch_html)
+    # Phase 3.1: parse off the main thread in a Web Worker, with a safe fallback.
+    check("feed parsed off-main-thread via Web Worker",
+          "function loadFeedViaWorker" in fetch_html and "new Worker(url)" in fetch_html)
+    check("worker path falls back to the main-thread loader on any failure",
+          "loadFeedViaWorker().catch(function() { return loadMainFeed(1); })" in fetch_html)
+    check("worker has a watchdog timeout so it can't hang the boot",
+          "worker timeout" in fetch_html and "setTimeout(function() { finish(false" in fetch_html)
     check("failure state offers a reload", "location.reload()" in fetch_html)
 
     # Mobile responsiveness + accessibility (dims #4/#7).
@@ -127,6 +134,15 @@ def run():
     check("tabs expose tablist/tab roles", 'role="tablist"' in fetch_html and fetch_html.count('role="tab"') >= 6)
     check("active tab exposes aria-selected", 'aria-selected="true"' in fetch_html)
     check("showTab keeps aria-selected in sync", 'setAttribute("aria-selected"' in fetch_html)
+    # Phase 6.3: WAI tablist keyboard model (roving tabindex + arrow navigation).
+    check("tabs use roving tabindex (active=0, others=-1)",
+          'aria-selected="true" tabindex="0"' in fetch_html
+          and 'aria-selected="false" tabindex="-1"' in fetch_html)
+    check("showTab moves the roving tabindex with selection",
+          'setAttribute("tabindex", (t === name) ? "0" : "-1")' in fetch_html)
+    check("tablist supports arrow/Home/End key navigation",
+          "ArrowRight" in fetch_html and "ArrowLeft" in fetch_html
+          and '"Home"' in fetch_html and "tabs[next].click()" in fetch_html)
     check("mobile filter drawer toggle present",
           'class="filters-toggle"' in fetch_html and "function toggleFilters()" in fetch_html)
     check("mobile breakpoint + collapsible sidebar",
@@ -474,7 +490,7 @@ def run():
             html_empty = fh.read()
         check("tab hidden by default (style display:none)",
               'id="tab-experimental"' in html_empty
-              and 'role="tab" aria-selected="false" style="display:none">Experimental' in html_empty)
+              and 'style="display:none" tabindex="-1">Experimental' in html_empty)
         # No candidate payload -> empty experimental array inlined.
         check("empty experimental array inlined", '"experimental":[]' in html_empty)
 
@@ -496,8 +512,9 @@ def run():
         check("Clinical evidence tab present", "Clinical evidence" in brand_html)
         check("About / Methods tab present", "About / Methods" in brand_html)
         # About page carries the actual rank formula.
-        check("About page carries rank formula (0.33 directness)",
-              "0.33" in brand_html and "directness" in brand_html)
+        check("About page carries the current rank formula",
+              "rank_score = 0.30" in brand_html and "0.10" in brand_html
+              and "directness" in brand_html and "impact" in brand_html)
 
     # 14) --internal toggles the curator approval UI. Public build (default) omits
     #     the approve/reject/notes + export-decisions markup entirely; the internal

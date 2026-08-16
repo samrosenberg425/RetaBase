@@ -532,6 +532,17 @@ def run():
     check("rank weights sum to 1.0", abs(sum(RANK_WEIGHTS.values()) - 1.0) < 1e-9)
     check("directness+quality dominant", RANK_WEIGHTS["directness"] + RANK_WEIGHTS["quality"] >= 0.55)
     check("venue axis present and small", 0 < RANK_WEIGHTS["venue"] <= 0.10)
+    # 6.1: impact raised, but still below the directness/quality/relevance axes.
+    check("impact weight raised to ~0.10", RANK_WEIGHTS["impact"] >= 0.10)
+    check("impact stays a supporting, not dominant, axis",
+          RANK_WEIGHTS["impact"] < RANK_WEIGHTS["relevance"] < RANK_WEIGHTS["quality"])
+    # _impact prefers the time-normalized iCite percentile so recency isn't punished:
+    # a recent paper with a high percentile but few raw citations scores high.
+    from retarats_pipeline.curation.ranking import _impact
+    check("impact uses iCite percentile (time-normalized), not raw count",
+          _impact({"icite_nih_percentile": "92", "citation_count": "3"}) == 92.0)
+    check("impact falls back to raw count only without iCite",
+          _impact({"citation_count": "3"}) > 0 and _impact({}) == 0.0)
     base_ev = human_rct(); base_ev.update(assess_reliability(base_ev, paper).to_dict())
     hi = dict(base_ev); hi["journal"] = "New England Journal of Medicine"
     lo = dict(base_ev); lo["journal"] = "Journal of Obscure Peptide Studies"
