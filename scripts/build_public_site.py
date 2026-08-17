@@ -657,23 +657,28 @@ _TEMPLATE = """<!DOCTYPE html>
 <title>{title}</title>
 <style>
   :root {{
-    --bg: #0f1115; --panel: #171a21; --panel2: #1e222b; --border: #2a2f3a;
-    --text: #e6e8ec; --muted: #a7b0be; --accent: #5b9dff; --accent2: #7ee3a7;
-    --tier-high: #7ee3a7; --tier-moderate: #ffd479; --tier-limited: #ff9e64;
-    --tier-low: #ff6b6b; --tier-not_applicable: #9aa3b2;
-    --ap-approve: #2f9e6b; --ap-reject: #d0455b;
-    --t-sp: #5b9dff; --t-ind: #b98cff; --t-end: #7ee3a7; --t-st: #ffd479;
-    --t-ms: #64d3ff; --t-rt: #ff9e64;
-    --t-dc: #ff8fd1; --t-pop: #a0e88a; --t-sex: #ffc1a0; --t-frm: #8ad7ff;
-    --t-ed: #d7b3ff;
+    /* Light scientific theme (like PubMed / Europe PMC / ChEMBL) with a clinical
+       blue-teal accent. Tier/tag colours are tuned to read on a white surface. */
+    --bg: #f4f7fa; --panel: #ffffff; --panel2: #eef3f7; --border: #d3dde5;
+    --text: #14212b; --muted: #5b6b78; --accent: #0b6e99; --accent2: #0f9d76;
+    --accent-soft: #e6f2f8;
+    --tier-high: #157f4a; --tier-moderate: #b7791f; --tier-limited: #c2530a;
+    --tier-low: #c0392b; --tier-not_applicable: #64748b;
+    --ap-approve: #157f4a; --ap-reject: #c0392b;
+    --t-sp: #0b6e99; --t-ind: #7c3aed; --t-end: #0f766e; --t-st: #b7791f;
+    --t-ms: #0e7490; --t-rt: #c2530a;
+    --t-dc: #be185d; --t-pop: #4d7c0f; --t-sex: #b45309; --t-frm: #0369a1;
+    --t-ed: #6d28d9;
   }}
   * {{ box-sizing: border-box; }}
   body {{
     margin: 0; background: var(--bg); color: var(--text);
     font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }}
+  /* Masthead: a thin accent strip + accent product name, like a scientific portal. */
+  body {{ border-top: 3px solid var(--accent); }}
   header {{ padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--panel); }}
-  header h1 {{ margin: 0 0 4px; font-size: 20px; }}
+  header h1 {{ margin: 0 0 4px; font-size: 21px; letter-spacing: -0.01em; color: var(--accent); font-weight: 700; }}
   header p {{ margin: 0; color: var(--muted); font-size: 13px; }}
   header .gen {{ font-size: 12px; color: var(--muted); margin-top: 2px; }}
   .tabs {{ display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }}
@@ -681,11 +686,12 @@ _TEMPLATE = """<!DOCTYPE html>
     background: var(--panel2); color: var(--muted); border: 1px solid var(--border);
     padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px;
   }}
-  .tabs button.active {{ color: var(--text); border-color: var(--accent); }}
+  .tabs button:hover {{ color: var(--text); border-color: var(--accent); }}
+  .tabs button.active {{ color: #ffffff; background: var(--accent); border-color: var(--accent); font-weight: 600; }}
   .tabs .spacer {{ flex: 1; }}
   .tabs .ap-summary {{ font-size: 12px; color: var(--muted); }}
   .tabs .ap-summary b {{ color: var(--text); }}
-  .tabs .exp {{ background: var(--accent); color: #06101f; border: none; font-weight: 600; }}
+  .tabs .exp {{ background: var(--accent); color: #ffffff; border: none; font-weight: 600; }}
   main {{ display: flex; gap: 0; align-items: flex-start; }}
   aside {{
     width: 340px; min-width: 340px; padding: 16px; border-right: 1px solid var(--border);
@@ -705,9 +711,10 @@ _TEMPLATE = """<!DOCTYPE html>
   .count select {{ background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: 12px; }}
   .card {{
     background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
-    padding: 14px 16px; margin-bottom: 12px; cursor: pointer; transition: border-color .1s;
+    padding: 14px 16px; margin-bottom: 12px; cursor: pointer;
+    box-shadow: 0 1px 2px rgba(20, 40, 60, .05); transition: border-color .1s, box-shadow .1s;
   }}
-  .card:hover {{ border-color: var(--accent); }}
+  .card:hover {{ border-color: var(--accent); box-shadow: 0 2px 8px rgba(11, 110, 153, .12); }}
   /* Visible keyboard-focus ring for interactive elements (a11y). */
   .card:focus, .card:focus-visible, button:focus, button:focus-visible,
   a:focus, a:focus-visible, .tri-dot:focus, .tri-dot:focus-visible {{
@@ -730,7 +737,23 @@ _TEMPLATE = """<!DOCTYPE html>
   .pill {{ background: var(--panel2); border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; }}
   .pill.retracted {{ background: #7f1d1d; border-color: #ef4444; color: #fff; font-weight: 700; letter-spacing: .02em; }}
   /* reliability meter */
-  .meter-wrap {{ display: flex; align-items: center; gap: 8px; }}
+  .meter-wrap {{ display: flex; align-items: center; gap: 6px; cursor: help; }}
+  .meter-cap {{ font-size: 11px; color: var(--muted); font-weight: 600; }}
+  .info-dot {{ width: 15px; height: 15px; padding: 0; margin-left: 1px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--panel2); color: var(--muted);
+    font-size: 10px; line-height: 13px; font-weight: 700; text-align: center; cursor: pointer;
+    flex: 0 0 auto; }}
+  .info-dot:hover {{ border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }}
+  .info-dot:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 1px; }}
+  .info-pop {{ position: fixed; z-index: 60; max-width: 340px; padding: 12px 14px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(20,40,60,.20); font-size: 12px; color: var(--text); }}
+  .info-pop-h {{ font-weight: 700; color: var(--accent); font-size: 12px; margin-bottom: 9px;
+    letter-spacing: .01em; }}
+  .info-pop-row {{ margin: 0 0 9px; line-height: 1.5; }}
+  .info-pop-row b {{ color: var(--accent2); font-weight: 700; }}
+  .info-pop-foot {{ margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 11px; }}
   .meter {{ width: 84px; height: 8px; background: var(--panel2); border-radius: 999px; overflow: hidden; border: 1px solid var(--border); }}
   .meter > i {{ display: block; height: 100%; border-radius: 999px; }}
   .meter-lbl {{ font-size: 11px; font-weight: 600; }}
@@ -755,6 +778,14 @@ _TEMPLATE = """<!DOCTYPE html>
   .tag.sex {{ color: var(--t-sex); border-color: var(--t-sex); }}
   .tag.frm {{ color: var(--t-frm); border-color: var(--t-frm); }}
   .tag.ed {{ color: var(--t-ed); border-color: var(--t-ed); }}
+  .tag:hover {{ background: var(--accent-soft); }}
+  /* interactive polish: accent focus rings on inputs, hover cues on controls */
+  aside select:focus, aside input:focus, .count select:focus,
+  .feed-toolbar input:focus, .feed-toolbar select:focus {{
+    outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
+  }}
+  .reset:hover, .filters-toggle:hover {{ border-color: var(--accent); color: var(--accent); }}
+  select, input[type="search"], input[type="number"] {{ transition: border-color .1s, box-shadow .1s; }}
   /* authors line */
   .authors {{ font-size: 12px; color: var(--muted); margin: 0 0 8px; }}
   .authors a {{ color: var(--accent); text-decoration: none; }}
@@ -780,7 +811,7 @@ _TEMPLATE = """<!DOCTYPE html>
   .ap-btn.on-reject {{ background: var(--ap-reject); border-color: var(--ap-reject); color: #fff; }}
   .ap-note {{ flex: 1; }}
   .mol-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }}
-  .mol-card {{ background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; cursor: pointer; }}
+  .mol-card {{ background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; cursor: pointer; box-shadow: 0 1px 2px rgba(20, 40, 60, .05); transition: border-color .1s, box-shadow .1s; }}
   .mol-card:hover {{ border-color: var(--accent); }}
   .mol-card h3 {{ margin: 0 0 8px; font-size: 15px; }}
   .mol-stats {{ display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; color: var(--muted); }}
@@ -799,8 +830,8 @@ _TEMPLATE = """<!DOCTYPE html>
   .reg-tag.reg-supp {{ border-color: var(--t-sp); color: var(--t-sp); }}
   .reg-panel {{ margin-top: 8px; font-size: 12px; }}
   .reg-panel > summary {{ cursor: pointer; color: var(--accent); }}
-  .reg-banner {{ background: #3a2f10; border: 1px solid #8a6d1a; border-radius: 6px;
-    padding: 8px 10px; margin: 8px 0; color: var(--text); line-height: 1.4; }}
+  .reg-banner {{ background: #fff8e6; border: 1px solid #e2b93b; border-left: 4px solid #e2b93b;
+    border-radius: 6px; padding: 8px 10px; margin: 8px 0; color: #5a4a12; line-height: 1.4; }}
   .reg-row {{ margin: 4px 0; }}
   .reg-k {{ color: var(--muted); margin-right: 6px; text-transform: uppercase; letter-spacing: .03em; font-size: 11px; }}
   .reg-v {{ color: var(--text); }}
@@ -946,7 +977,7 @@ _TEMPLATE = """<!DOCTYPE html>
   code {{ background: var(--panel2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }}
   /* Off-screen skip link, revealed on keyboard focus (a11y). */
   .skip-link {{ position: absolute; left: -9999px; top: 0; z-index: 100; background: var(--accent);
-    color: #06101f; padding: 8px 14px; border-radius: 0 0 6px 0; font-weight: 600; }}
+    color: #ffffff; padding: 8px 14px; border-radius: 0 0 6px 0; font-weight: 600; }}
   .skip-link:focus {{ left: 0; }}
   /* Mobile-only "Filters" drawer toggle (hidden on desktop). */
   .filters-toggle {{ display: none; }}
@@ -990,7 +1021,7 @@ _TEMPLATE = """<!DOCTYPE html>
   <details class="explainer">
     <summary>How to read this</summary>
     <ul>
-      <li><b>Automated rigor</b> = rule-based signals of how well-conducted the study is <i>for its type</i> (within-class study quality, 0-100). Not a formal risk-of-bias assessment.</li>
+      <li><b>Automated rigor</b> (0-100) = rule-based signals of how well the study was conducted <i>for its own type</i>. Each study is scored against the standards for its evidence class &mdash; a trial against trial standards (randomization, blinding, controls, sample size), an animal or cell study against preclinical standards. So the score is <i>not comparable across classes</i> (a high-rigor cell study is not stronger evidence than a lower-rigor trial), and it does not measure human relevance (that is directness, below). Automated, not a formal risk-of-bias assessment.</li>
       <li><b>Directness</b> = how directly the evidence applies to humans (human RCT high &rarr; in-vitro low).</li>
       <li><b>Rank</b> = the combined best-first ordering (directness + quality + relevance + recency + impact + venue).</li>
       <li>Open <b>About / Methods</b> for the exact formulas. Every metric is rule-based and auditable.</li>
@@ -1410,8 +1441,84 @@ _TEMPLATE = """<!DOCTYPE html>
     return s === "true" || s === "1" || s === "yes";
   }}
 
+  // Shared "How to read these scores" popover, opened by the small "?" next to a
+  // card's Rigor label. One legend explains all three axes so the meaning lives in
+  // one place instead of a wall-of-text hover tooltip on every card.
+  var _infoPop = null;
+  function closeInfoPop() {{
+    if (_infoPop) {{
+      _infoPop.remove();
+      _infoPop = null;
+      document.removeEventListener("click", _infoPopOutside);
+      document.removeEventListener("keydown", _infoPopKey);
+    }}
+  }}
+  function _infoPopOutside(e) {{ if (_infoPop && !_infoPop.contains(e.target)) closeInfoPop(); }}
+  function _infoPopKey(e) {{ if (e.key === "Escape") closeInfoPop(); }}
+  function _scoreLegendRows() {{
+    return [
+      ["Rigor", "How well a study was conducted \\u2014 judged against the standards for its OWN evidence class. "
+        + "A trial is scored on trial standards (randomization, blinding, controls, sample size); an animal or "
+        + "cell study on preclinical standards. Because each type is graded on its own curve the number is NOT "
+        + "comparable across classes: a high-rigor cell study is not stronger evidence than a lower-rigor trial. "
+        + "Example: a small unblinded trial and a well-run mouse study can both score ~70 \\u2014 one is 70 for a "
+        + "trial, the other 70 for a mouse study."],
+      ["Directness", "How directly the finding applies to humans (human RCT high \\u2192 in-vitro low). "
+        + "This is the human-relevance axis that rigor deliberately ignores \\u2014 read the two together."],
+      ["Rank", "The best-first ordering of the feed: a blend of directness, rigor, topical relevance, recency, "
+        + "citation impact and journal venue."]
+    ];
+  }}
+  function openScoreLegend(anchor) {{
+    closeInfoPop();
+    var pop = el("div", "info-pop");
+    pop.setAttribute("role", "dialog");
+    pop.setAttribute("aria-label", "How to read these scores");
+    pop.appendChild(el("div", "info-pop-h", "How to read these scores"));
+    var rows = _scoreLegendRows();
+    for (var i = 0; i < rows.length; i++) {{
+      var row = el("div", "info-pop-row");
+      row.appendChild(el("b", null, rows[i][0]));
+      row.appendChild(document.createTextNode(" \\u2014 "));
+      row.appendChild(el("span", null, rows[i][1]));
+      pop.appendChild(row);
+    }}
+    pop.appendChild(el("div", "info-pop-foot",
+      "Every metric is rule-based and auditable \\u2014 open About / Methods for the exact formulas."));
+    document.body.appendChild(pop);
+    _infoPop = pop;
+    var rect = anchor.getBoundingClientRect();
+    var pw = pop.offsetWidth, ph = pop.offsetHeight;
+    var top = rect.bottom + 8;
+    if (top + ph > window.innerHeight - 8) top = Math.max(8, rect.top - ph - 8);
+    var left = rect.left;
+    if (left + pw > window.innerWidth - 8) left = Math.max(8, window.innerWidth - pw - 8);
+    pop.style.top = top + "px";
+    pop.style.left = left + "px";
+    window.addEventListener("scroll", closeInfoPop, {{once: true, capture: true}});
+    setTimeout(function() {{
+      document.addEventListener("click", _infoPopOutside);
+      document.addEventListener("keydown", _infoPopKey);
+    }}, 0);
+  }}
+  function infoDot() {{
+    var b = el("button", "info-dot", "?");
+    b.type = "button";
+    b.setAttribute("aria-label", "How to read these scores");
+    b.addEventListener("click", function(e) {{
+      e.stopPropagation();
+      if (_infoPop) closeInfoPop(); else openScoreLegend(b);
+    }});
+    return b;
+  }}
+
   function reliabilityMeter(rec) {{
     var wrap = el("span", "meter-wrap");
+    wrap.title = "Rigor: how well the study was run for its own type (e.g. a good mouse study and a "
+      + "weak trial can both score ~70). Click the ? for details.";
+    // Name the bar so a reader knows what it measures (matches the directness badge).
+    wrap.appendChild(el("span", "meter-cap", "Rigor"));
+    wrap.appendChild(infoDot());
     var score = Math.max(0, Math.min(100, num(rec.reliability_score)));
     var tier = tierClass(rec.reliability_tier);
     var meter = el("div", "meter");

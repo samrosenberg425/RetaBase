@@ -40,6 +40,16 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Verify dependency resolution (drift / conflict guard)
+        # `pip check` fails if the resolved environment is internally inconsistent
+        # (incompatible transitive versions). The freeze is logged so the exact
+        # resolved versions are auditable per run without a full hash-lock file.
+        run: |
+          pip check
+          echo "::group::Resolved dependency versions"
+          pip freeze
+          echo "::endgroup::"
+
       - name: Validate config CSVs (fail fast on a malformed rule file)
         run: python3 scripts/validate_config.py
 
@@ -51,6 +61,16 @@ jobs:
           key: retarats-corpus-${{ github.run_id }}
           restore-keys: |
             retarats-corpus-
+
+      - name: Guard against a lost/truncated corpus cache
+        # HARD gate (no `|| true`): if the restored corpus has collapsed below 90%
+        # of last run's recorded size, a cache miss/corruption likely happened.
+        # Fail here so we never rebuild + republish a hollowed-out site; the last
+        # good deploy stays up. No prior state (first run) passes through.
+        run: |
+          python3 scripts/check_corpus_freshness.py --mode guard \
+            --db data/retarats_pubmed.sqlite --state data/freshness_state.json \
+            --min-ratio 0.9
 
       - name: Incremental PubMed fetch (last 8 days)
         env:
@@ -92,6 +112,17 @@ jobs:
           # DBs don't exist yet (registry.yml hasn't run), the deploy still succeeds.
           python3 scripts/build_trials_json.py --db data/retarats_trials.sqlite --out exports/site/trials_data.json 2>/dev/null || true
           python3 scripts/build_preprints_json.py --db data/retarats_preprints.sqlite --out exports/site/preprints_data.json 2>/dev/null || true
+
+      - name: Corpus freshness alert (soft)
+        # SOFT alert (`|| true`): records the corpus size and, if it hasn't grown
+        # in >= 14 days, emits a ::warning:: + job-summary line so a silently-dead
+        # fetch (expired NCBI key, upstream change) is visible. Never blocks the
+        # publish -- a quiet news day shouldn't stop a rebuild. Runs after the
+        # baseline promotion so state only advances on a validated build.
+        run: |
+          python3 scripts/check_corpus_freshness.py --mode freshness \
+            --db data/retarats_pubmed.sqlite --state data/freshness_state.json \
+            --stats exports/curated/corpus_stats.json --max-stale-days 14 || true
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

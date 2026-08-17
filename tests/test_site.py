@@ -83,6 +83,20 @@ def run():
     check("CSP allows same-origin fetch of the feed", "connect-src 'self'" in html_text)
     check("CSP blocks framing (clickjacking)", "frame-ancestors 'none'" in html_text)
     check("referrer policy set", 'name="referrer"' in html_text and "no-referrer" in html_text)
+    # Phase 4: light scientific theme + clinical blue-teal accent + masthead.
+    check("light theme palette", "--bg: #f4f7fa" in html_text and "--panel: #ffffff" in html_text)
+    check("clinical blue-teal accent", "--accent: #0b6e99" in html_text)
+    check("no leftover dark-theme hardcodes", "#0f1115" not in html_text and "#06101f" not in html_text)
+    check("masthead accent strip", "border-top: 3px solid var(--accent)" in html_text)
+    check("score bar is labelled 'Rigor'", 'el("span", "meter-cap", "Rigor")' in html_text
+          and ".meter-cap" in html_text)
+    check("score bar has a quick hover example", "can both score ~70" in html_text and "wrap.title" in html_text)
+    check("score bar has a '?' info popover", "info-dot" in html_text and "How to read these scores" in html_text
+          and "openScoreLegend" in html_text)
+    check("legend explains within-class rigor + directness + rank",
+          "its OWN evidence class" in html_text and "human-relevance axis" in html_text
+          and "best-first ordering of the feed" in html_text)
+    check("inputs get accent focus rings", "box-shadow: 0 0 0 3px var(--accent-soft)" in html_text)
     # Hardened CSP: hash-based script-src, no 'unsafe-inline', no inline handlers.
     import hashlib as _hl, base64 as _b64, re as _re
     _csp = _re.search(r'Content-Security-Policy" content="([^"]*)"', html_text).group(1)

@@ -9,15 +9,31 @@
   count fix, field registry 1.1/1.2/1.2c, ranking fix, PHASE 2 complete, Phase 3.1
   (Web Worker feed parse w/ fallback), Phase 6.1 (impact weight 0.05→0.10). All green:
   site 364, curation 177, extractors 90, sources 53.
-- **Also done:** Phase 6.2 ("clinical" de-overload + on-ramp) and Phase 5.4 (manual
-  paper add: `config/manual_pmids.csv` → `retarats_pipeline/manual_add.py` turns each
-  row into a synthetic `<pmid>[uid]` rule appended in `retarats_v2.py`, honouring
-  --molecule and skipping unknown molecule_ids). Both tested. curation 183, site 368.
-- **Next action:** Phase 4 — theme / visual identity (Sam: modern scientific-database
-  look, less generic; lower priority / possibly outsource). Suggested first step 4.1:
-  extract the CSS out of `_TEMPLATE` into its own block so a redesign is safe/isolated,
-  then 4.2 design tokens (palette, type, masthead, light+dark, logo placeholder).
-  Confirm with Sam whether to attempt via AI or hand off before doing 4.2.
+- **Also done:** Phase 6.2, Phase 5.4, and Phase 4 (theme, first pass) — LIGHT
+  scientific theme + clinical blue-teal accent (Sam's choice): retargeted `:root`
+  tokens, retuned tier/tag colours for white, masthead accent strip + accent product
+  name + solid active tabs, card depth/hover, light regulatory banner. Plus a local
+  PREVIEW tool: `scripts/preview_site.py` builds `exports/preview.html` (self-contained
+  sample, opens by double-click) for eyeballing changes without the corpus/server.
+  All green: site 372, curation 183, extractors 90, sources 53.
+- **Also done:** theme iteration 1 — labelled the reliability bar "Rigor" (+ tooltip;
+  matches the directness badge), and interactive polish (accent focus rings on inputs,
+  hover cues on chips/buttons). Sam likes the light blue-teal ("feels official").
+- **Also done:** theme iteration 2 — Rigor now carries a "?" opening a shared styled
+  popover ("How to read these scores") that explains Rigor (within-class, judged on its
+  own curve, with a worked example), Directness and Rank in one place; hover tooltip
+  shortened to the quick example. About "How to read this" + About/Methods carry the
+  fuller within-class wording. Sam approved the direction. site 377.
+- **Also done:** Phase 6.4 — corpus freshness alert + cache-collapse guard
+  (`scripts/check_corpus_freshness.py`, wired into `update.yml`; 18 tests) + `pip check`
+  drift step. All green: site 377, curation 183, extractors 90, sources 53, freshness 18.
+- **Next action:** 6.5 (duration rule gap #2) — harden the duration extractor regex and
+  add synthetic unit tests here; the actual ~400-record re-extraction needs the corpus DB
+  in the Actions cache (runs in CI, not sandbox). One-time user step for full dep hashing:
+  `pip install pip-tools && pip-compile --generate-hashes -o requirements.lock requirements.txt`
+  then switch `update.yml` install to `pip install --require-hashes -r requirements.lock`.
+  Optional later: more theme iteration with Sam (other card labels, density,
+  triangle/evidence-map light pass), 6.3 card de-nesting.
 - **Deferred (judgement):** 6.3 de-nesting interactive links/tags out of `role=button`
   cards — real ARIA nit but a risky card restructure for modest payoff; revisit with
   Phase 4 (theme) since cards get touched then. Also Phase 3.2 (filter in worker) and
@@ -112,10 +128,12 @@ Resume note: 3.1 delivered the main win (off-thread parse).
 Goal: modern scientific-database look (think PubMed/Europe PMC/ChEMBL with a cleaner,
 more contemporary touch), NOT generic dark dashboard. Easier after Phase 1 (CSS is
 still in `_TEMPLATE`; consider extracting CSS to its own string first).
-- [ ] **4.1** Extract CSS out of `_TEMPLATE` into a dedicated block/file (safe, no logic).
-- [ ] **4.2** New design tokens: palette, typography, spacing, header/masthead, subtle
-  card styling. Light+dark. Placeholder for a logo (Sam will supply later).
-Resume note: token/CSS-only; revert is trivial if a look doesn't land.
+- [~] **4.1** SKIPPED (deliberate) — restyled in place via `:root` tokens instead of
+  extracting CSS first; lower risk. Extraction can still be done later if desired.
+- [x] **4.2** Light scientific theme + clinical blue-teal accent applied via design
+  tokens + masthead + card polish. Tested (test_site light-theme checks). A local
+  preview tool (`scripts/preview_site.py`) was added for iteration.
+Resume note: token/CSS-only; revert is trivial. Iterate with the preview.
 
 ## PHASE 5 — Self-sustaining automation (Sam's follow-up asks)
 - [ ] **5.1** New-literature scan — already `update.yml` daily; confirm cadence + that
@@ -138,10 +156,22 @@ Resume note: token/CSS-only; revert is trivial if a look doesn't land.
   About clarifies the Human-data-tab vs iCite-filter distinction. Tested.
 - [~] **6.3** A11y (#7): DONE — tablist roving tabindex + arrow/Home/End navigation.
   Remaining (deferred): de-nest links/tags from `role=button` cards (do with Phase 4).
-- [ ] **6.4** Pipeline (#4) + CI (#5): freshness alert if a fetch adds nothing for N
-  days; assert restored-cache paper count ≥ baseline; pin deps by hash.
-- [ ] **6.5** Duration rule gap (#2): ~400 records have a duration in the abstract that
-  wasn't extracted — chase that pattern.
+- [x] **6.4** Pipeline (#4) + CI (#5): DONE (deps partial). New `scripts/check_corpus_freshness.py`
+  with two modes wired into `update.yml`: `guard` (hard gate, pre-fetch — fails the build if
+  the restored corpus cache collapsed below 90% of last recorded size, so a lost cache never
+  republishes a hollow site) and `freshness` (soft — records corpus size in
+  `data/freshness_state.json`; emits `::warning::` + job-summary if no growth for ≥14 days,
+  surfacing a silently-dead fetch). Both compare raw `papers` row counts (apples-to-apples).
+  18 unit tests in `tests/test_freshness.py`. Added a `pip check` + `pip freeze` step for
+  dependency-drift observability. NOT done: full hash-locked requirements — needs a networked
+  `pip-compile --generate-hashes` run (see note below); the sandbox has no network.
+- [x] **6.5** Duration rule gap (#2): DONE (rule side). `parse_duration` now also catches
+  SPELLED-OUT durations ("twelve weeks", "six-month", "fifty-two weeks") via a new
+  `_DURATION_WORD_RE` with a compositional tens+ones prefix (so "fifty-two"/"twenty-four"
+  resolve without enumerating every compound), normalised to digits so they dedupe with any
+  digit form. Also hardened `_AGE_DISTRACTOR` to catch hyphenated "six-year-old"/"1-year-old".
+  5 new tests in test_extractors (95 total). The ~400-record re-extraction runs in CI on the
+  next `update.yml` rebuild (corpus DB lives in the Actions cache, not the sandbox).
 
 ---
 

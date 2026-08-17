@@ -92,6 +92,14 @@ def run():
     check("duration months", "6 months" in parse_duration("Follow-up over 6 months."))
     # age distractor should NOT be picked up as a study duration
     check("duration ignores age", parse_duration("Adults aged 65 years old were enrolled.") == "")
+    # spelled-out durations, normalised to digits so they dedupe with digit forms
+    check("duration word weeks", "12 weeks" in parse_duration("Patients were treated for twelve weeks."))
+    check("duration word hyphen month", "6 month" in parse_duration("A six-month treatment period followed."))
+    check("duration word trial length", "52 weeks" in parse_duration("The study ran for fifty-two weeks."))
+    check("duration word dedupes with digit",
+          parse_duration("Over twelve weeks (12 weeks) of dosing.").count("12 weeks") == 1)
+    check("duration word ignores spelled age",
+          parse_duration("Children who were six years old at study entry.") == "")
 
     # --- sample size parsing ---
     disp, n = parse_sample_size("A total of n=338 patients were randomized.")
