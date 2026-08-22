@@ -734,6 +734,9 @@ _TEMPLATE = """<!DOCTYPE html>
     resize: horizontal;
   }}
   aside .fg {{ margin-bottom: 14px; }}
+  /* de-emphasized, secondary filter (moved to the bottom) */
+  aside .fg-minor {{ margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--border); opacity: .8; }}
+  aside .fg-minor label {{ color: var(--muted); font-weight: 500; }}
   aside label {{ display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }}
   aside select, aside input {{
     width: 100%; padding: 7px 9px; background: var(--panel2); color: var(--text);
@@ -774,6 +777,9 @@ _TEMPLATE = """<!DOCTYPE html>
   /* reliability meter */
   .meter-wrap {{ display: flex; align-items: center; gap: 6px; cursor: help; }}
   .meter-cap {{ font-size: 11px; color: var(--muted); font-weight: 600; }}
+  .guide-badge {{ font-size: 11px; font-weight: 600; color: var(--accent2);
+    background: rgba(15,157,118,.10); border: 1px solid var(--accent2);
+    border-radius: 999px; padding: 1px 8px; white-space: nowrap; }}
   .info-dot {{ width: 15px; height: 15px; padding: 0; margin-left: 1px; border-radius: 999px;
     border: 1px solid var(--border); background: var(--panel2); color: var(--muted);
     font-size: 10px; line-height: 13px; font-weight: 700; text-align: center; cursor: pointer;
@@ -1100,12 +1106,12 @@ _TEMPLATE = """<!DOCTYPE html>
       <input id="journal-sub" type="search" placeholder="type part of a journal, e.g. Lancet">
       <div class="note-hint">Text match on the journal name &mdash; a partial word works (e.g. &ldquo;diabetes&rdquo;).</div>
     </div>
-    <div class="fg">
+    <div id="facet-filters"></div>
+    <div class="fg fg-minor">
       <label for="min-cit">Min times cited</label>
       <input id="min-cit" type="number" placeholder="0" min="0">
-      <div class="note-hint">How often the paper has been cited by others (via OpenAlex).</div>
+      <div class="note-hint">How often the paper has been cited by others (via OpenAlex). Note: counts may lag behind current totals.</div>
     </div>
-    <div id="facet-filters"></div>
     <button class="reset" id="reset-filters">Reset filters</button>
   </aside>
   <section class="content">
@@ -1523,7 +1529,10 @@ _TEMPLATE = """<!DOCTYPE html>
       ["Directness", "How directly the finding applies to humans (human RCT high \\u2192 in-vitro low). "
         + "This is the human-relevance axis that rigor deliberately ignores \\u2014 read the two together."],
       ["Rank", "The best-first ordering of the feed: a blend of directness, rigor, topical relevance, recency, "
-        + "citation impact and journal venue."]
+        + "citation impact and journal venue."],
+      ["Practice guidelines", "Clinical practice guidelines (flagged by their PubMed publication type) are "
+        + "authoritative synthesized recommendations, not primary studies \\u2014 so rigor is shown as n/a "
+        + "rather than graded on study conduct. They are treated as high-directness and ranked near the top."]
     ];
   }}
   function openScoreLegend(anchor) {{
@@ -1571,6 +1580,16 @@ _TEMPLATE = """<!DOCTYPE html>
 
   function reliabilityMeter(rec) {{
     var wrap = el("span", "meter-wrap");
+    // Practice guidelines aren't graded on study conduct -- show an authoritative
+    // badge in place of the rigor bar (see the "?" popover for why).
+    if ((rec.evidence_class || "") === "clinical_guideline") {{
+      wrap.title = "Clinical practice guideline: an authoritative synthesized recommendation, "
+        + "not a primary study. Rigor is not graded on study conduct. Click the ? for details.";
+      wrap.appendChild(el("span", "meter-cap", "Rigor"));
+      wrap.appendChild(infoDot());
+      wrap.appendChild(el("span", "guide-badge", "n/a \\u00b7 authoritative guideline"));
+      return wrap;
+    }}
     wrap.title = "Rigor: how well the study was run for its own type (e.g. a good mouse study and a "
       + "weak trial can both score ~70). Click the ? for details.";
     // Name the bar so a reader knows what it measures (matches the directness badge).

@@ -68,6 +68,7 @@ def sample_feed():
     i = 0
     plans = [
         ("retatrutide", "Retatrutide", [
+            ("clinical_guideline", "Human evidence", 1, 0, 0, {"t": "consensus report on incretin-based obesity pharmacotherapy", "rel": 0, "rtier": "not_applicable", "dir": 92, "dtier": "high", "label": "Clinical practice guideline", "rank": 93, "dose": ""}),
             ("human_clinical_controlled", "Human evidence", 1, 0, 0, {"t": "phase 2 RCT in obesity", "rel": 82, "rank": 94}),
             ("human_observational", "Human evidence", 0.9, 0.1, 0, {"t": "real-world cohort", "rel": 55, "rank": 70}),
             ("evidence_synthesis", "Reviews and overviews", 1, 0, 0, {"t": "systematic review and meta-analysis", "n": "12 studies; 4,530 participants", "dose": "", "rank": 90}),

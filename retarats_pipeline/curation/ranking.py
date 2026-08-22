@@ -200,9 +200,17 @@ def compute_rank(evidence: dict) -> Rank:
     ``reliability_score`` (from reliability.py), plus role/year/citations.
     Off-topic records (directness 0 and excluded) naturally sink to the bottom.
     """
+    # Guidelines carry no graded rigor (reliability_score is 0 / not_applicable by
+    # design), so use a high quality PROXY for ranking only -- this keeps gold-standard
+    # practice guidelines near the top instead of sinking from a 0 quality axis. The
+    # displayed rigor stays "n/a"; only the rank math sees the proxy.
+    if str(evidence.get("evidence_class", "") or "") == "clinical_guideline":
+        quality = 85.0
+    else:
+        quality = float(_int(evidence.get("reliability_score"), 0))
     axes = {
         "directness": float(_int(evidence.get("evidence_directness"), 0)),
-        "quality": float(_int(evidence.get("reliability_score"), 0)),
+        "quality": quality,
         "relevance": _relevance(evidence),
         "recency": _recency(evidence),
         "impact": _impact(evidence),

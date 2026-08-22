@@ -209,6 +209,7 @@ SECTION_BY_LANE = {
 }
 SECTION_BY_CLASS = {
     "human_clinical_controlled": "Human evidence",
+    "clinical_guideline": "Human evidence",
     "human_clinical": "Human evidence",
     "human_observational": "Human evidence",
     "evidence_synthesis": "Reviews and overviews",
@@ -287,13 +288,19 @@ def decide_publication(
         )
     # 3) Featured = translationally direct AND at least moderate quality, or a
     #    strong evidence synthesis. These are the spotlight records.
-    elif (directness_tier == "high" and quality >= 50) or (ev_class == "evidence_synthesis" and quality >= 60):
+    # Guidelines are authoritative gold-standard sources; feature them even though
+    # rigor is ungraded (quality == 0 by design). Their directness is high.
+    elif (directness_tier == "high" and quality >= 50) \
+            or (ev_class == "evidence_synthesis" and quality >= 60) \
+            or ev_class == "clinical_guideline":
         status, auto, reason, rule_id = ("featured", True, "", "broad_v1:featured")
     else:
         status, auto, reason, rule_id = ("listed", False, "", "broad_v1:listed")
 
-    # Priority: section band dominates, then quality orders within a section.
-    display_priority = SECTION_PRIORITY.get(section, 30) * 100 + min(quality, 99)
+    # Priority: section band dominates, then quality orders within a section. Guidelines
+    # have no graded quality, so use a high proxy so they sort near the top of the band.
+    order_quality = 90 if ev_class == "clinical_guideline" else quality
+    display_priority = SECTION_PRIORITY.get(section, 30) * 100 + min(order_quality, 99)
 
     return PublicationDecision(
         publication_status=status,

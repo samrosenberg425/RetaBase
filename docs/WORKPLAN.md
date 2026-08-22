@@ -42,6 +42,17 @@
   medications or novel use cases"). All green: curation 186, site 381, extractors 98, sources
   53, freshness 18. NOTE: this is a data-contract change — the deploy now produces
   site_detail.json; verify it appears in exports/site on the next update.yml run.
+- **Also done:** Clinical practice guidelines (Sam: gold-standard docs were scoring low on
+  rigor/directness). New rules-based handling — detected by PubMed pubtype "Guideline"/
+  "Practice Guideline" (+ conservative title fallback guarded against "adherence to guidelines"
+  papers). New evidence class `clinical_guideline`: directness=92 (high), rigor NOT graded
+  (tier not_applicable, score 0) since we lack AGREE-II-type inputs and shouldn't imply we
+  graded a gold standard. Ranking uses an 85 quality PROXY so they surface near the top;
+  publication_status features them into the Human evidence section. UI: the Rigor bar is
+  replaced by an "n/a · authoritative guideline" badge, and the "?" popover gains a Practice-
+  guidelines row. Also moved the "Min times cited" filter to the bottom of the sidebar +
+  de-emphasized it (citation counts may be stale — a later fix). All green: curation 194,
+  site 385, extractors 98, sources 53, freshness 18; e2e fixture parses.
 - **Next action (was):** 6.5 (duration rule gap #2) — harden the duration extractor regex and
   add synthetic unit tests here; the actual ~400-record re-extraction needs the corpus DB
   in the Actions cache (runs in CI, not sandbox). One-time user step for full dep hashing:

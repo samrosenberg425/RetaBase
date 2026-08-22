@@ -46,6 +46,7 @@ _OFF_TOPIC_ROLES = {"environmental_or_material_use"}
 # Cross-class translational directness (0-100) by resolved evidence class.
 CLASS_DIRECTNESS = {
     "human_clinical_controlled": 95,
+    "clinical_guideline": 92,
     "evidence_synthesis": 90,
     "human_clinical": 80,
     "human_observational": 66,
@@ -59,6 +60,7 @@ CLASS_DIRECTNESS = {
 
 CLASS_LABELS = {
     "human_clinical_controlled": "Human — controlled trial",
+    "clinical_guideline": "Clinical practice guideline",
     "evidence_synthesis": "Evidence synthesis",
     "human_clinical": "Human — interventional",
     "human_observational": "Human — observational",
@@ -258,6 +260,39 @@ def _icite_model(evidence: dict) -> str:
         return ""
     top = max(known, key=lambda k: known[k])
     return top if known[top] is not None and known[top] >= 0.5 else ""
+
+
+# Clinical practice guidelines are authoritative, synthesized recommendations, not
+# primary studies -- our study-conduct rubric doesn't apply, and grading their quality
+# is a separate formal instrument (AGREE II) whose signals we don't have. So we detect
+# them by PubMed's publication type (the gold-standard, auditable trigger) and treat
+# them as a distinct class: high directness, rigor NOT graded (tier not_applicable).
+_GUIDELINE_PUBTYPES = {"guideline", "practice guideline"}
+# Conservative title fallback for guidelines that aren't yet MeSH pubtype-indexed.
+# Requires an explicit guideline/consensus phrase and excludes papers merely ABOUT
+# guidelines (adherence/implementation/barriers) to avoid false positives.
+_GUIDELINE_TITLE_RE = re.compile(
+    r"\b(?:clinical practice guideline|practice guideline|consensus statement|"
+    r"consensus recommendations?|consensus guideline)\b", re.IGNORECASE)
+_GUIDELINE_TITLE_NEG = re.compile(
+    r"\b(?:adherence|adherent|implementation|implementing|barriers?|awareness|"
+    r"uptake|compliance|knowledge of|attitudes?)\b", re.IGNORECASE)
+
+
+def _pubtypes_of(evidence: dict, paper: Optional[dict]) -> set:
+    """Lowercased set of PubMed publication types, tolerant of list or ;/,-joined string."""
+    raw = (paper or {}).get("pubtypes") if (paper and (paper or {}).get("pubtypes")) else evidence.get("pubtypes", "")
+    if not raw:
+        return set()
+    items = [str(x) for x in raw] if isinstance(raw, (list, tuple)) else str(raw).replace(",", ";").split(";")
+    return {t.strip().lower() for t in items if t.strip()}
+
+
+def is_guideline(evidence: dict, paper: Optional[dict] = None) -> bool:
+    if _GUIDELINE_PUBTYPES & _pubtypes_of(evidence, paper):
+        return True
+    title = str((paper or {}).get("title", "") or evidence.get("title", "") or "")
+    return bool(_GUIDELINE_TITLE_RE.search(title) and not _GUIDELINE_TITLE_NEG.search(title))
 
 
 def classify_evidence(evidence: dict) -> str:
@@ -468,6 +503,28 @@ def assess_reliability(evidence: dict, paper: Optional[dict] = None) -> Reliabil
             directness_tier="none",
             reliability_components=json.dumps({}),
             reliability_rationale="Off-topic (non-biomedical) record; not scored as therapeutic evidence.",
+            quality_components={},
+        )
+
+    # Clinical practice guidelines: authoritative synthesized recommendations. We do
+    # NOT grade rigor (no study-conduct to score; guideline quality is a separate
+    # instrument we lack the inputs for), so rigor is not_applicable. Directness is
+    # high (they are about human clinical care); ranking gives them a high proxy so
+    # they still surface near the top (see ranking.compute_rank).
+    if is_guideline(evidence, paper):
+        gdir = CLASS_DIRECTNESS["clinical_guideline"]
+        return Reliability(
+            evidence_class="clinical_guideline",
+            evidence_class_label=CLASS_LABELS["clinical_guideline"],
+            reliability_score=0,
+            reliability_tier="not_applicable",
+            evidence_directness=gdir,
+            directness_tier=_directness_tier(gdir),
+            reliability_components=json.dumps({}),
+            reliability_rationale=(
+                "Clinical practice guideline (PubMed publication type): authoritative "
+                "synthesized recommendations. Rigor is not graded on study-conduct "
+                "criteria; treated as a high-directness, authoritative source."),
             quality_components={},
         )
 

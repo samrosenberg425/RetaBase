@@ -104,6 +104,16 @@ def run():
           'dval(r, "reliability_components")' in html_text and 'dval(r, "appraisal_strengths")' in html_text)
     check("search haystack rebuilt without facet_all",
           "function hayFor" in html_text and "rec.facet_all" not in html_text)
+    # practice guidelines: authoritative badge instead of a rigor bar + popover note
+    check("guideline shows authoritative badge not a rigor bar",
+          'clinical_guideline' in html_text and 'authoritative guideline' in html_text
+          and '.guide-badge' in html_text)
+    check("popover explains guidelines aren't rigor-graded",
+          "Practice guidelines" in html_text and "shown as n/a" in html_text)
+    # min-cited filter de-emphasized + moved below the facet filters
+    check("min-cited control moved below facet filters",
+          html_text.index('id="facet-filters"') < html_text.index('for="min-cit"'))
+    check("min-cited control visually de-emphasized", 'fg fg-minor' in html_text and ".fg-minor" in html_text)
     # Hardened CSP: hash-based script-src, no 'unsafe-inline', no inline handlers.
     import hashlib as _hl, base64 as _b64, re as _re
     _csp = _re.search(r'Content-Security-Policy" content="([^"]*)"', html_text).group(1)

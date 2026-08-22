@@ -518,6 +518,28 @@ def run():
     check("human RCT -> Human evidence section", dec.website_section == "Human evidence")
     check("publish_rule recorded", dec.publish_rule_id == "broad_v1:featured")
 
+    # --- clinical practice guidelines: authoritative, rigor NOT graded ---
+    g_ev = dict(ev); g_ev["title"] = "ADA Standards of Care in Diabetes 2026"
+    g_paper = dict(paper); g_paper["title"] = g_ev["title"]; g_paper["pubtypes"] = ["Practice Guideline"]
+    g_rel = assess_reliability(g_ev, g_paper)
+    check("guideline pubtype -> clinical_guideline class", g_rel.evidence_class == "clinical_guideline")
+    check("guideline directness high (92)", g_rel.directness_tier == "high" and g_rel.evidence_directness == 92)
+    check("guideline rigor NOT graded (n/a, score 0)",
+          g_rel.reliability_tier == "not_applicable" and g_rel.reliability_score == 0)
+    # title fallback when the pubtype isn't indexed yet, guarded against ABOUT-guideline papers
+    check("guideline title fallback works",
+          assess_reliability({"title": "Clinical practice guideline for obesity management"}, None).evidence_class
+          == "clinical_guideline")
+    check("'adherence to guidelines' is NOT flagged a guideline",
+          assess_reliability({"title": "Adherence to clinical practice guidelines in primary care"}, None).evidence_class
+          != "clinical_guideline")
+    # ranks near the top despite ungraded rigor (quality proxy), and is featured
+    g_ev.update(g_rel.to_dict())
+    check("guideline ranks near top", compute_rank(g_ev).rank_tier in {"high", "moderate"})
+    g_dec = decide_publication(g_ev)
+    check("guideline is featured", g_dec.auto_publish_eligible and g_dec.publication_status == "featured")
+    check("guideline -> Human evidence section", g_dec.website_section == "Human evidence")
+
     # a methods record is INCLUDED (listed or review), never excluded as noise
     methods = methods_noise(); methods.update(assess_reliability(methods, None).to_dict())
     mdec = decide_publication(methods)
