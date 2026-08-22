@@ -1,6 +1,6 @@
 # RetaBase
 
-**A transparent, auto-updating evidence database for retatrutide and related bioactives** (peptides, incretin agonists, metabolic & longevity compounds, and more).
+**Transparent, rule-based evidence on bioactives gaining new attention as emerging medications or novel use cases** 
 
 🔎 **Live dashboard:** https://samrosenberg425.github.io/RetaBase/
 
