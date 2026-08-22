@@ -393,8 +393,16 @@ def _corpus_stats(curated_rows: List[dict], papers: List[dict], evidence: List[d
 # DERIVED from the single field registry (Phase 1.2) rather than hand-maintained, so
 # adding a field is one registry entry. A test locks that this equals the historical
 # list. To add a feed field: add it to field_registry.FIELDS with site_json=True.
-from retarats_pipeline.curation.field_registry import site_json_fields as _site_json_fields  # noqa: E402
-SITE_JSON_FIELDS = _site_json_fields()
+from retarats_pipeline.curation.field_registry import (  # noqa: E402
+    list_json_fields as _list_json_fields,
+    detail_fields as _detail_fields,
+)
+# The initial list feed (site_data.json) carries only fields the card list + filters
+# need. Modal-only fields (detail=True) go to a lazy-loaded site_detail.json instead,
+# so first load stays small. SITE_JSON_FIELDS keeps its name (used across this file)
+# but now means "list feed fields".
+SITE_JSON_FIELDS = _list_json_fields()
+DETAIL_JSON_FIELDS = _detail_fields()
 
 
 def _load_experimental(path: str = os.path.join("config", "EXPERIMENTAL_MOLECULES.csv")) -> List[dict]:
@@ -570,6 +578,7 @@ def _write_site_json(path: str, records: List[dict], molecules: List[dict], corp
     # every field as `rec.field || ""` / `String(rec.field == null ? "" : ...)`, so a
     # MISSING key behaves exactly like an empty string.
     trimmed = []
+    detail_map = {}
     for r in records:
         row = {}
         for k in SITE_JSON_FIELDS:
@@ -577,6 +586,20 @@ def _write_site_json(path: str, records: List[dict], molecules: List[dict], corp
             if v != "":
                 row[k] = v
         trimmed.append(row)
+        # Detail record (modal-only fields), keyed by the SAME id the client's rid()
+        # builds: pmid|molecule_id|title[:40]. Omit records with no detail values.
+        drow = {}
+        for k in DETAIL_JSON_FIELDS:
+            v = _flat(r.get(k, ""))
+            if v != "":
+                drow[k] = v
+        if drow:
+            rid = "{0}|{1}|{2}".format(
+                str(r.get("pmid", "") or ""),
+                str(r.get("molecule_id", "") or ""),
+                str(r.get("title", "") or "")[:40],
+            )
+            detail_map[rid] = drow
     experimental = _load_experimental()
     payload = {
         "generated_utc": _dt.datetime.utcnow().isoformat() + "Z",
@@ -589,6 +612,11 @@ def _write_site_json(path: str, records: List[dict], molecules: List[dict], corp
     }
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, separators=(",", ":"), ensure_ascii=False)
+    # Sidecar detail feed, fetched lazily by the client after first paint.
+    detail_path = os.path.join(os.path.dirname(path) or ".", "site_detail.json")
+    with open(detail_path, "w", encoding="utf-8") as fh:
+        json.dump({"generated_utc": payload["generated_utc"], "detail": detail_map},
+                  fh, separators=(",", ":"), ensure_ascii=False)
 
 
 # Optional PubChem enrichment (scripts/enrich_pubchem.py). NETWORK is required to

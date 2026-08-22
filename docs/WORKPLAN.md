@@ -27,7 +27,22 @@
 - **Also done:** Phase 6.4 — corpus freshness alert + cache-collapse guard
   (`scripts/check_corpus_freshness.py`, wired into `update.yml`; 18 tests) + `pip check`
   drift step. All green: site 377, curation 183, extractors 90, sources 53, freshness 18.
-- **Next action:** 6.5 (duration rule gap #2) — harden the duration extractor regex and
+- **Also done:** load-time fix (Sam: "takes way too long to load") — SPLIT FEED. Diagnosed
+  the real cost: the whole corpus (~101k records, ~150-230 MB JSON) was parsed up front; the
+  web worker can't fix that (it must structured-clone the parsed object back to the main
+  thread). Fix: `field_registry` gains a `detail` flag; the 4 modal-only fields
+  (reliability_components, rank_components, appraisal_strengths, appraisal_limitations) now go
+  to a lazy-loaded `site_detail.json` (fetched after first paint), and `facet_all` (a redundant
+  search blob) is fully retired (search rebuilt client-side from facet_* via `hayFor`). Initial
+  list feed ~36% smaller. `build_curated_database` emits both files (detail keyed by
+  pmid|molecule_id|title[:40] = client rid()); client `dval()` reads detail with record
+  fallback so inline/preview + a slow/failed detail load degrade gracefully; inline mode embeds
+  detail (filtered to inlined records). `update.yml` copies site_detail.json. Also changed the
+  masthead tagline (dropped "retatrutide", now "bioactives gaining new attention as emerging
+  medications or novel use cases"). All green: curation 186, site 381, extractors 98, sources
+  53, freshness 18. NOTE: this is a data-contract change — the deploy now produces
+  site_detail.json; verify it appears in exports/site on the next update.yml run.
+- **Next action (was):** 6.5 (duration rule gap #2) — harden the duration extractor regex and
   add synthetic unit tests here; the actual ~400-record re-extraction needs the corpus DB
   in the Actions cache (runs in CI, not sandbox). One-time user step for full dep hashing:
   `pip install pip-tools && pip-compile --generate-hashes -o requirements.lock requirements.txt`

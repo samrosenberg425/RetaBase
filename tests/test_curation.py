@@ -397,8 +397,14 @@ def run_field_registry_tests():
     sys.modules["build_public_site"] = _bps
     _bps_spec.loader.exec_module(_bps)
 
-    check("build feed list is registry-derived",
-          set(fr.site_json_fields()) == set(bcd.SITE_JSON_FIELDS))
+    check("build list feed is registry-derived",
+          set(fr.list_json_fields()) == set(bcd.SITE_JSON_FIELDS))
+    check("build detail feed is registry-derived",
+          set(fr.detail_fields()) == set(bcd.DETAIL_JSON_FIELDS))
+    check("list + detail together == all fed fields (no field lost in the split)",
+          set(fr.list_json_fields()) | set(fr.detail_fields()) == set(fr.site_json_fields()))
+    check("list feed and detail feed are disjoint",
+          set(fr.list_json_fields()) & set(fr.detail_fields()) == set())
     check("UI record list is registry-derived",
           set(fr.record_fields()) == set(_bps.RECORD_FIELDS))
     check("registry record_fields order matches current RECORD_FIELDS",

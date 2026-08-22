@@ -97,6 +97,13 @@ def run():
           "its OWN evidence class" in html_text and "human-relevance axis" in html_text
           and "best-first ordering of the feed" in html_text)
     check("inputs get accent focus rings", "box-shadow: 0 0 0 3px var(--accent-soft)" in html_text)
+    # split feed: modal-only detail lazy-loads from site_detail.json via DETAIL/dval
+    check("detail sidecar is fetched", 'fetch("site_detail.json")' in html_text)
+    check("DETAIL map + dval helper present", "var DETAIL" in html_text and "function dval(r, k)" in html_text)
+    check("modal reads detail via dval (with record fallback)",
+          'dval(r, "reliability_components")' in html_text and 'dval(r, "appraisal_strengths")' in html_text)
+    check("search haystack rebuilt without facet_all",
+          "function hayFor" in html_text and "rec.facet_all" not in html_text)
     # Hardened CSP: hash-based script-src, no 'unsafe-inline', no inline handlers.
     import hashlib as _hl, base64 as _b64, re as _re
     _csp = _re.search(r'Content-Security-Policy" content="([^"]*)"', html_text).group(1)

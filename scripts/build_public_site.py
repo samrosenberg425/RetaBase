@@ -82,7 +82,7 @@ MULTI_VALUE_FIELDS = {
     "facet_species", "facet_indication", "facet_endpoint", "facet_study_type",
     "facet_model_system", "facet_route",
     "facet_drug_class", "facet_population", "facet_sex", "facet_formulation",
-    "facet_evidence_direction", "facet_all",
+    "facet_evidence_direction",
 }
 
 # Aspect-tag chips shown on each card: (record field, css class, short label).
@@ -172,6 +172,7 @@ class SiteData:
     trials: List[Dict[str, object]] = field(default_factory=list)
     preprints: List[Dict[str, str]] = field(default_factory=list)
     corpus_stats: Dict[str, object] = field(default_factory=dict)
+    detail: Dict[str, Dict[str, str]] = field(default_factory=dict)
     trials_generated_utc: str = ""
     preprints_generated_utc: str = ""
     generated_utc: str = ""
@@ -201,6 +202,16 @@ def _as_int(value) -> int:
         return int(str(value).strip())
     except (TypeError, ValueError):
         return 0
+
+
+def _rid(r: Dict) -> str:
+    """Record id used to key the detail sidecar, matching the client's rid():
+    pmid|molecule_id|title[:40]."""
+    return "{0}|{1}|{2}".format(
+        str(r.get("pmid", "") or ""),
+        str(r.get("molecule_id", "") or ""),
+        str(r.get("title", "") or "")[:40],
+    )
 
 
 def _norm_record(raw: Dict) -> Dict[str, str]:
@@ -327,9 +338,24 @@ def load_site_data(curated_dir: str) -> SiteData:
     preprints, preprints_gen = _load_feed(
         curated_dir, "preprints_data.json", "preprints", _norm_preprint)
 
+    # Modal-only detail sidecar (site_detail.json). Optional: fetch mode loads it at
+    # runtime, but inline mode must embed it so the offline bundle keeps modal detail.
+    detail: Dict[str, Dict[str, str]] = {}
+    detail_path = os.path.join(curated_dir, "site_detail.json")
+    if os.path.exists(detail_path):
+        try:
+            with open(detail_path, encoding="utf-8") as fh:
+                dfeed = json.load(fh)
+            d = dfeed.get("detail") if isinstance(dfeed, dict) else None
+            if isinstance(d, dict):
+                detail = d
+        except (OSError, ValueError):
+            detail = {}
+
     return SiteData(records=records, molecules=molecules,
                     experimental=experimental, trials=trials,
                     preprints=preprints, corpus_stats=corpus_stats,
+                    detail=detail,
                     trials_generated_utc=trials_gen,
                     preprints_generated_utc=preprints_gen,
                     generated_utc=generated)
@@ -514,6 +540,9 @@ def build_site(curated_dir: str, out_dir: str, mode: str = "inline",
         # Corpus-wide summary strip; small + trusted, so inlined in BOTH modes so
         # the header stat line renders without waiting on a sibling fetch.
         "corpus_stats": data.corpus_stats,
+        # Modal-only detail: embedded in inline mode (filtered to inlined records
+        # below), fetched at runtime in fetch mode (blanked in the cfg branch).
+        "detail": data.detail,
         "filters": [{"field": f, "label": lbl} for f, lbl in FILTER_FACETS],
         "multi": sorted(MULTI_VALUE_FIELDS),
         "aspects": [{"field": f, "cls": c, "label": lbl} for f, c, lbl in ASPECT_TAGS],
@@ -535,11 +564,16 @@ def build_site(curated_dir: str, out_dir: str, mode: str = "inline",
         # 404 -> empty). corpus_stats stays inlined (it is tiny, trusted config).
         cfg["trials"] = []
         cfg["preprints"] = []
+        cfg["detail"] = {}  # fetched at runtime from site_detail.json
         cfg["mode"] = "fetch"
         json_block = _safe_json_block(cfg)
         record_count = 0  # fetch mode inlines no record bodies
     else:
         payload["mode"] = "inline"
+        # Only embed detail for records actually inlined (matters when truncated).
+        if data.detail:
+            kept = {_rid(r) for r in data.records}
+            payload["detail"] = {k: v for k, v in data.detail.items() if k in kept}
         json_block = _safe_json_block(payload)
         record_count = len(data.records)
 
@@ -588,7 +622,8 @@ def _render_html(json_block: str, record_count: int, molecule_count: int,
     # contributes one record per bioactive, so this count exceeds the distinct-paper
     # total (shown separately in the corpus strip). Say what we actually count.
     subtitle = html.escape(
-        f"Transparent, rule-based evidence on retatrutide & related bioactives "
+        f"Transparent, rule-based evidence on bioactives gaining new attention "
+        f"as emerging medications or novel use cases "
         f"— {total_records} evidence records across {molecule_count} bioactives, offline & auditable"
     ) + note
     # Curator approval controls (public build omits them entirely).
@@ -1180,6 +1215,15 @@ _TEMPLATE = """<!DOCTYPE html>
   var RECORDS = DATA.records || [];
   var MOLECULES = DATA.molecules || [];
   var EXPERIMENTAL = DATA.experimental || [];
+  // Modal-only fields live in a lazily-loaded site_detail.json, keyed by rid(). Until
+  // it arrives (or in inline/preview mode, where fields sit on the record itself) the
+  // modal simply falls back to whatever the record carries. Never blocks first paint.
+  var DETAIL = (DATA.detail) || {{}};
+  function dval(r, k) {{
+    var d = DETAIL[rid(r)];
+    if (d && d[k] != null && d[k] !== "") return d[k];
+    return r[k];
+  }}
   var TRIALS = DATA.trials || [];
   var PREPRINTS = DATA.preprints || [];
   var CORPUS = DATA.corpus_stats || {{}};
@@ -1369,10 +1413,23 @@ _TEMPLATE = """<!DOCTYPE html>
     return out;
   }}
 
+  // Search haystack, rebuilt from fields in the list feed now that facet_all is gone.
+  // Underscores in facet tokens (obesity_weight) become spaces so natural queries
+  // ("glycemic control") match. Cached on the record so filtering stays O(1)/record.
+  var _HAY_FIELDS = ["title", "molecule_name", "appraisal_summary", "journal",
+    "evidence_class_label", "facet_indication", "facet_endpoint", "facet_species",
+    "facet_study_type", "facet_model_system", "facet_drug_class", "facet_population",
+    "facet_sex", "facet_route", "facet_formulation", "facet_evidence_direction"];
+  function hayFor(rec) {{
+    if (rec._hay != null) return rec._hay;
+    var parts = [];
+    for (var i = 0; i < _HAY_FIELDS.length; i++) {{ parts.push(rec[_HAY_FIELDS[i]] || ""); }}
+    rec._hay = parts.join(" ").replace(/_/g, " ").toLowerCase();
+    return rec._hay;
+  }}
   function matchesQuery(rec, q) {{
-    // multi-term AND, case-insensitive, over title + facet_all + molecule + summary.
-    var hay = ((rec.title || "") + " " + (rec.facet_all || "") + " " +
-               (rec.molecule_name || "") + " " + (rec.appraisal_summary || "")).toLowerCase();
+    // multi-term AND, case-insensitive.
+    var hay = hayFor(rec);
     var terms = q.split(/\\s+/).filter(Boolean);
     for (var i = 0; i < terms.length; i++) {{ if (hay.indexOf(terms[i]) === -1) return false; }}
     return true;
@@ -1851,14 +1908,14 @@ _TEMPLATE = """<!DOCTYPE html>
     if (r.doi) {{ var d = el("a", null, "DOI"); d.href = "https://doi.org/" + encodeURIComponent(r.doi); d.target = "_blank"; d.rel = "noopener noreferrer"; links.appendChild(d); }}
     if (links.childNodes.length) m.appendChild(links);
 
-    var rc = parseComp(r.reliability_components);
+    var rc = parseComp(dval(r, "reliability_components"));
     if (rc) {{
       m.appendChild(el("h4", null, "Automated rigor breakdown"));
       var comp = el("div", "comp");
       Object.keys(rc).forEach(function(k) {{ comp.appendChild(el("span", null, humanize(k) + ": " + rc[k])); }});
       m.appendChild(comp);
     }}
-    var kc = parseComp(r.rank_components);
+    var kc = parseComp(dval(r, "rank_components"));
     if (kc) {{
       m.appendChild(el("h4", null, "Rank breakdown"));
       var comp2 = el("div", "comp");
@@ -1866,13 +1923,15 @@ _TEMPLATE = """<!DOCTYPE html>
       m.appendChild(comp2);
     }}
 
-    if (r.appraisal_strengths) {{
+    var strengths = dval(r, "appraisal_strengths");
+    if (strengths) {{
       m.appendChild(el("h4", null, "Strengths"));
-      m.appendChild(el("div", "sl", r.appraisal_strengths));
+      m.appendChild(el("div", "sl", strengths));
     }}
-    if (r.appraisal_limitations) {{
+    var limitations = dval(r, "appraisal_limitations");
+    if (limitations) {{
       m.appendChild(el("h4", null, "Limitations"));
-      m.appendChild(el("div", "sl lim", r.appraisal_limitations));
+      m.appendChild(el("div", "sl lim", limitations));
     }}
     m.appendChild(el("h4", null, "Aspects"));
     m.appendChild(aspectTags(r, function(f, v) {{ closeModal(); applyTagFilter(f, v); }}));
@@ -3488,6 +3547,12 @@ _TEMPLATE = """<!DOCTYPE html>
       fetchSideFeed("preprints_data.json", "preprints", function(v) {{
         PREPRINTS = v || []; if (currentTab === "preprints") renderPreprints();
       }});
+      // Modal-only detail (appraisal strengths/limitations, score breakdowns) loads
+      // in the background. The modal reads DETAIL live via dval(), so nothing needs
+      // re-rendering; a card opened before it arrives simply shows less until then.
+      fetch("site_detail.json").then(function(r) {{ return r.ok ? r.json() : null; }})
+        .then(function(d) {{ if (d && d.detail) DETAIL = d.detail; }})
+        .catch(function() {{}});
     }}).catch(function() {{
       var rl = document.getElementById("records-list");
       if (rl) rl.textContent = "";
