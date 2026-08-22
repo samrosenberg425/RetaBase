@@ -675,7 +675,15 @@ def _apply_csp(html_out: str) -> str:
     script_src = "script-src 'self' " + script_hash if script_hash else "script-src 'self' 'unsafe-inline'"
     policy = (
         "default-src 'self'; " + script_src + "; style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; "
+        "img-src 'self' data:; connect-src 'self'; "
+        # The feed parser runs in a Web Worker built from an inline Blob (blob: URL).
+        # Without an explicit worker-src, CSP falls back to default-src 'self', which
+        # does NOT include blob: -- so the worker was blocked and silently fell back to
+        # main-thread parsing every time. Allow our own blob worker (child-src for
+        # older browsers that predate worker-src). script-src stays hash-locked, so no
+        # external/inline script can be introduced this way.
+        "worker-src 'self' blob:; child-src 'self' blob:; "
+        "base-uri 'none'; form-action 'none'; "
         "frame-ancestors 'none'"
     )
     return html_out.replace("__CSP_POLICY__", policy)

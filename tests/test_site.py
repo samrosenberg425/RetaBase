@@ -114,6 +114,10 @@ def run():
     check("min-cited control moved below facet filters",
           html_text.index('id="facet-filters"') < html_text.index('for="min-cit"'))
     check("min-cited control visually de-emphasized", 'fg fg-minor' in html_text and ".fg-minor" in html_text)
+    # CSP must allow the blob-based feed worker, else it is blocked and falls back to
+    # main-thread parsing every time (the reason the worker never actually ran).
+    check("CSP allows the blob web worker", "worker-src 'self' blob:" in html_text)
+    check("CSP still hash-locks scripts (no unsafe-inline)", "'unsafe-inline'" not in html_text.split("script-src")[1].split(";")[0])
     # Hardened CSP: hash-based script-src, no 'unsafe-inline', no inline handlers.
     import hashlib as _hl, base64 as _b64, re as _re
     _csp = _re.search(r'Content-Security-Policy" content="([^"]*)"', html_text).group(1)
