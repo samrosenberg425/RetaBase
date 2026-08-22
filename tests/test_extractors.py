@@ -100,6 +100,10 @@ def run():
           parse_duration("Over twelve weeks (12 weeks) of dosing.").count("12 weeks") == 1)
     check("duration word ignores spelled age",
           parse_duration("Children who were six years old at study entry.") == "")
+    # bare tens words must resolve (regression: a second _WORD_NUM once shadowed these)
+    check("duration bare tens forty", "40 weeks" in parse_duration("dosed for forty weeks total"))
+    check("duration bare tens fifty", "50 days" in parse_duration("observed over fifty days"))
+    check("duration bare tens sixty", "60 months" in parse_duration("a sixty months follow-up"))
 
     # --- sample size parsing ---
     disp, n = parse_sample_size("A total of n=338 patients were randomized.")

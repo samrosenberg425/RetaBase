@@ -107,7 +107,10 @@ _DURATION_RE = re.compile(
 # in abstracts and were previously missed (the digit regex only sees \d+). Map the
 # words the literature actually uses -- ones..twelve plus the round tens and the
 # canonical trial lengths -- and normalise to digits so they dedupe with digit forms.
-_WORD_NUM = {
+# NOTE: named _DUR_* (not _WORD_NUM) on purpose -- a separate _WORD_NUM dict for
+# review "K studies" parsing is defined later in this module; reusing the name here
+# would clobber it (last assignment wins) and drop the tens, so keep these distinct.
+_DUR_WORD_NUM = {
     "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
     "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
     "fourteen": 14, "fifteen": 15, "sixteen": 16, "eighteen": 18, "twenty": 20,
@@ -115,9 +118,9 @@ _WORD_NUM = {
 }
 # Optional round-ten prefix lets "fifty-two", "twenty-four" resolve compositionally
 # (tens + ones) without enumerating every compound as its own dict key.
-_TENS_NUM = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60}
-_ONES_RE = "|".join(sorted(_WORD_NUM, key=len, reverse=True))
-_TENS_RE = "|".join(sorted(_TENS_NUM, key=len, reverse=True))
+_DUR_TENS_NUM = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60}
+_ONES_RE = "|".join(sorted(_DUR_WORD_NUM, key=len, reverse=True))
+_TENS_RE = "|".join(sorted(_DUR_TENS_NUM, key=len, reverse=True))
 _DURATION_WORD_RE = re.compile(
     r"(?<![A-Za-z])"
     r"(?:(" + _TENS_RE + r")[-\s]+)?"      # optional tens prefix (group 1)
@@ -391,8 +394,8 @@ def parse_duration(text: str) -> str:
             window = sent[max(0, m.start() - 12): m.end() + 6]
             if _AGE_DISTRACTOR.search(window):
                 continue
-            ones = _WORD_NUM[m.group(2).lower()]
-            tens = _TENS_NUM.get((m.group(1) or "").lower())
+            ones = _DUR_WORD_NUM[m.group(2).lower()]
+            tens = _DUR_TENS_NUM.get((m.group(1) or "").lower())
             n = tens + ones if (tens and ones < 10) else ones
             out.append(f"{n} {m.group(3).lower()}")
     return "; ".join(_dedupe(out)[:6])
