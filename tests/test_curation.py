@@ -256,6 +256,29 @@ def run_pipeline_robustness_tests():
     check("filled fields preserved", _out.get("molecule_name") == "M" and _out.get("pmid") == "1")
     check("blank field is simply absent", "journal" not in _out)
 
+    # progressive feed: top chunk in site_data.json + rank-ordered background shards
+    _first, _shard = bcd.FEED_FIRST_CHUNK, bcd.FEED_SHARD_SIZE
+    try:
+        bcd.FEED_FIRST_CHUNK, bcd.FEED_SHARD_SIZE = 3, 4
+        _srecs = [{"molecule_id": "m", "molecule_name": "M", "pmid": str(i), "title": "T%d" % i,
+                   "rank_score": str(100 - i)} for i in range(11)]
+        with _tf.TemporaryDirectory() as _d:
+            _p = _os.path.join(_d, "site_data.json")
+            bcd._write_site_json(_p, _srecs, [{"molecule_id": "m", "molecule_name": "M"}], {})
+            _feed = _json.load(open(_p, encoding="utf-8"))
+            check("site_data.json holds only the top chunk", _feed["record_count"] == 3)
+            check("total_records = full corpus", _feed["total_records"] == 11)
+            check("remainder split into shards", len(_feed["shards"]) == 2)
+            _all = list(_feed["records"])
+            for _s in _feed["shards"]:
+                _all += _json.load(open(_os.path.join(_d, _s), encoding="utf-8"))["records"]
+            check("chunk + shards reassemble the full corpus", len(_all) == 11)
+            _rk = [int(r["rank_score"]) for r in _all]
+            check("rank order preserved across chunk + shards",
+                  all(_rk[i] >= _rk[i + 1] for i in range(len(_rk) - 1)))
+    finally:
+        bcd.FEED_FIRST_CHUNK, bcd.FEED_SHARD_SIZE = _first, _shard
+
     # molecule_index dedups (pmid,molecule) and counts human via model_primary.
     mrecs = [
         {"molecule_id": "m", "molecule_name": "M", "pmid": "1", "model_primary": "human",

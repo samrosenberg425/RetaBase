@@ -404,6 +404,13 @@ from retarats_pipeline.curation.field_registry import (  # noqa: E402
 SITE_JSON_FIELDS = _list_json_fields()
 DETAIL_JSON_FIELDS = _detail_fields()
 
+# Progressive feed sizing. The first chunk ships in site_data.json for an instant
+# first paint (covers the default view + several "Load more" pages); the rest streams
+# in rank-ordered background shards. ~10k/shard keeps each shard small (~1 MB gzipped)
+# so appends never cause a big main-thread spike.
+FEED_FIRST_CHUNK = 1500
+FEED_SHARD_SIZE = 10000
+
 
 def _load_experimental(path: str = os.path.join("config", "EXPERIMENTAL_MOLECULES.csv")) -> List[dict]:
     """Candidate molecules proposed for the experimental section (no data yet).
@@ -601,21 +608,42 @@ def _write_site_json(path: str, records: List[dict], molecules: List[dict], corp
             )
             detail_map[rid] = drow
     experimental = _load_experimental()
+    generated = _dt.datetime.utcnow().isoformat() + "Z"
+    out_dir = os.path.dirname(path) or "."
+
+    # PROGRESSIVE FEED: records are globally rank-sorted, so site_data.json ships only
+    # the top chunk (instant first paint) plus a manifest of rank-ordered shard files.
+    # The client renders the top chunk immediately, then streams the remaining shards
+    # in the background and appends them -- the list stays a correct rank-ordered
+    # prefix the whole time, so the default view + "Load more" work without waiting for
+    # the full corpus. This scales: a bigger corpus is just more small shards.
+    first = trimmed[:FEED_FIRST_CHUNK]
+    rest = trimmed[FEED_FIRST_CHUNK:]
+    shard_names = []
+    for i in range(0, len(rest), FEED_SHARD_SIZE):
+        name = "site_records_{0:03d}.json".format(i // FEED_SHARD_SIZE + 1)
+        shard_names.append(name)
+        with open(os.path.join(out_dir, name), "w", encoding="utf-8") as fh:
+            json.dump({"records": rest[i:i + FEED_SHARD_SIZE]}, fh,
+                      separators=(",", ":"), ensure_ascii=False)
+
     payload = {
-        "generated_utc": _dt.datetime.utcnow().isoformat() + "Z",
-        "record_count": len(trimmed),
+        "generated_utc": generated,
+        "record_count": len(first),        # records inlined in THIS file (top chunk)
+        "total_records": len(trimmed),     # full corpus size (chunk + all shards)
+        "shards": shard_names,             # rank-ordered remainder, streamed in background
         "molecule_count": len(molecules),
-        "records": trimmed,
+        "records": first,
         "molecules": molecules,
         "experimental": experimental,
         "corpus_stats": corpus_stats or {},
     }
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, separators=(",", ":"), ensure_ascii=False)
-    # Sidecar detail feed, fetched lazily by the client after first paint.
-    detail_path = os.path.join(os.path.dirname(path) or ".", "site_detail.json")
+    # Sidecar detail feed, fetched on demand when the first card modal is opened.
+    detail_path = os.path.join(out_dir, "site_detail.json")
     with open(detail_path, "w", encoding="utf-8") as fh:
-        json.dump({"generated_utc": payload["generated_utc"], "detail": detail_map},
+        json.dump({"generated_utc": generated, "detail": detail_map},
                   fh, separators=(",", ":"), ensure_ascii=False)
 
 

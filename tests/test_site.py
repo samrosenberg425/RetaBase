@@ -98,7 +98,7 @@ def run():
           and "best-first ordering of the feed" in html_text)
     check("inputs get accent focus rings", "box-shadow: 0 0 0 3px var(--accent-soft)" in html_text)
     # split feed: modal-only detail lazy-loads from site_detail.json via DETAIL/dval
-    check("detail sidecar is fetched", 'fetch("site_detail.json")' in html_text)
+    check("detail sidecar is fetched on demand", 'fetchJson("site_detail.json")' in html_text)
     check("DETAIL map + dval helper present", "var DETAIL" in html_text and "function dval(r, k)" in html_text)
     check("modal reads detail via dval (with record fallback)",
           'dval(r, "reliability_components")' in html_text and 'dval(r, "appraisal_strengths")' in html_text)
@@ -118,6 +118,16 @@ def run():
     # main-thread parsing every time (the reason the worker never actually ran).
     check("CSP allows the blob web worker", "worker-src 'self' blob:" in html_text)
     check("CSP still hash-locks scripts (no unsafe-inline)", "'unsafe-inline'" not in html_text.split("script-src")[1].split(";")[0])
+    # progressive feed: top chunk paints first, rest streams in background shards
+    check("progressive shard loader wired", "function startProgressiveLoad" in html_text
+          and "feed.shards" in html_text)
+    check("shards fetched+parsed off-thread with fallback", "function fetchJson" in html_text)
+    check("load progress indicator present", 'id="load-progress"' in html_text
+          and "loading full corpus" in html_text)
+    check("background append preserves the user's render window",
+          "function applyFilters(preserveWindow)" in html_text and "if (!preserveWindow) visibleCount" in html_text)
+    check("modal detail fetched on demand (not eagerly)", "function ensureDetail" in html_text
+          and 'fetch("site_detail.json")' not in html_text)
     # Hardened CSP: hash-based script-src, no 'unsafe-inline', no inline handlers.
     import hashlib as _hl, base64 as _b64, re as _re
     _csp = _re.search(r'Content-Security-Policy" content="([^"]*)"', html_text).group(1)

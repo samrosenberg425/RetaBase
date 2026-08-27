@@ -53,6 +53,22 @@
   guidelines row. Also moved the "Min times cited" filter to the bottom of the sidebar +
   de-emphasized it (citation counts may be stale — a later fix). All green: curation 194,
   site 385, extractors 98, sources 53, freshness 18; e2e fixture parses.
+- **Also done:** CSP fix + PROGRESSIVE FEED (Sam: load still too slow; worker "didn't work").
+  Root cause of the dead worker: CSP had no worker-src, so the blob worker was blocked and
+  silently fell back to main-thread parsing every load. Fixed: `worker-src 'self' blob:`
+  (+child-src), script-src still hash-locked. Then the real load-time fix — the page no longer
+  loads the whole corpus up front. `build_curated_database` now ships `site_data.json` with only
+  the top FEED_FIRST_CHUNK=1500 rank-sorted records + a shard manifest (`shards`, `total_records`),
+  and writes `site_records_NNN.json` shards (FEED_SHARD_SIZE=10000) for the rest. Client boots on
+  the top chunk (instant), then `startProgressiveLoad` streams shards via `fetchJson` (blob worker,
+  main-thread fallback), appending to RECORDS — which stays a rank-ordered prefix, so the default
+  view + Load more work immediately; a "loading full corpus N%" indicator shows progress;
+  `applyFilters(preserveWindow)` refreshes counts without yanking the user's scroll. Modal detail
+  (site_detail.json) is now fetched ON DEMAND on first card open (via `ensureDetail`), not eagerly.
+  Inline/preview mode reconstructs the full list from shards in `load_site_data` and skips the
+  network path (MODE guard). update.yml copies the shards. All green: curation 199, site 392,
+  extractors 98, sources 53, freshness 18; e2e fixture parses. Scales: bigger corpus = more small
+  shards, first paint unchanged.
 - **Next action (was):** 6.5 (duration rule gap #2) — harden the duration extractor regex and
   add synthetic unit tests here; the actual ~400-record re-extraction needs the corpus DB
   in the Actions cache (runs in CI, not sandbox). One-time user step for full dep hashing:

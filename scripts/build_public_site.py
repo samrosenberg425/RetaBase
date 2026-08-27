@@ -300,6 +300,15 @@ def load_site_data(curated_dir: str) -> SiteData:
         with open(json_path, encoding="utf-8") as fh:
             feed = json.load(fh)
         records = [_norm_record(r) for r in feed.get("records", [])]
+        # Progressive feed: site_data.json holds only the top chunk + a shard manifest.
+        # For INLINE builds (offline single-file bundle) reconstruct the full record
+        # list by concatenating the rank-ordered shards. Fetch-mode ignores this (it
+        # blanks records and the client streams the shards at runtime).
+        for _shard in feed.get("shards", []) or []:
+            _sp = os.path.join(curated_dir, _shard)
+            if os.path.exists(_sp):
+                with open(_sp, encoding="utf-8") as _fh:
+                    records.extend(_norm_record(r) for r in json.load(_fh).get("records", []))
         corpus_stats = _norm_corpus_stats(feed.get("corpus_stats"))
         molecules = [
             {k: ("" if m.get(k) is None else str(m.get(k, ""))) for k in MOLECULE_FIELDS}
@@ -785,6 +794,8 @@ _TEMPLATE = """<!DOCTYPE html>
   /* reliability meter */
   .meter-wrap {{ display: flex; align-items: center; gap: 6px; cursor: help; }}
   .meter-cap {{ font-size: 11px; color: var(--muted); font-weight: 600; }}
+  .load-progress {{ font-size: 12px; color: var(--accent); font-weight: 600; }}
+  .load-progress:not(:empty)::before {{ content: "\\2193 "; opacity: .7; }}
   .guide-badge {{ font-size: 11px; font-weight: 600; color: var(--accent2);
     background: rgba(15,157,118,.10); border: 1px solid var(--accent2);
     border-radius: 999px; padding: 1px 8px; white-space: nowrap; }}
@@ -1128,6 +1139,7 @@ _TEMPLATE = """<!DOCTYPE html>
       <div class="tab-desc" id="browser-desc"></div>
       <div class="count" id="records-count">
         <span id="showing" aria-live="polite"></span>
+        <span id="load-progress" class="load-progress" aria-live="polite"></span>
         <label style="text-transform:none;display:inline-flex;gap:6px;align-items:center;color:var(--muted)">Sort
           <select id="sort">
             <option value="rank">Rank (best first)</option>
@@ -1238,6 +1250,94 @@ _TEMPLATE = """<!DOCTYPE html>
     if (d && d[k] != null && d[k] !== "") return d[k];
     return r[k];
   }}
+
+  // fetch + parse JSON, OFF the main thread in a blob Web Worker when supported, so a
+  // big shard never freezes the UI. Falls back to a plain main-thread fetch on any
+  // failure (no Worker support / CSP / error), so behaviour degrades gracefully.
+  function fetchJson(url) {{
+    return new Promise(function(resolve, reject) {{
+      if (typeof window.Worker !== "function" || typeof Blob !== "function"
+          || typeof URL === "undefined" || !URL.createObjectURL) {{ reject(); return; }}
+      var body = "onmessage=function(e){{fetch(e.data).then(function(r){{"
+        + "if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}})"
+        + ".then(function(d){{postMessage({{ok:true,data:d}});}})"
+        + ".catch(function(err){{postMessage({{ok:false,error:String(err)}});}});}};";
+      var w, u, done = false;
+      try {{ u = URL.createObjectURL(new Blob([body], {{type: "application/javascript"}})); w = new Worker(u); }}
+      catch (ex) {{ reject(); return; }}
+      function fin(ok, arg) {{ if (done) return; done = true;
+        try {{ w.terminate(); }} catch (e) {{}} try {{ URL.revokeObjectURL(u); }} catch (e) {{}}
+        ok ? resolve(arg) : reject(arg); }}
+      var wd = setTimeout(function() {{ fin(false); }}, 45000);
+      w.onmessage = function(e) {{ clearTimeout(wd); (e.data && e.data.ok) ? fin(true, e.data.data) : fin(false); }};
+      w.onerror = function() {{ clearTimeout(wd); fin(false); }};
+      w.postMessage(url);
+    }}).catch(function() {{
+      return fetch(url).then(function(r) {{ if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }});
+    }});
+  }}
+
+  // Modal-only detail (site_detail.json) is fetched ON DEMAND the first time a card is
+  // opened, so it never competes with the record shards for bandwidth on load. Once
+  // loaded, dval() reads it; before then the modal falls back to the record.
+  var _detailState = 0;  // 0 = not loaded, 1 = loading, 2 = loaded/failed
+  var _detailWaiters = [];
+  function ensureDetail() {{
+    return new Promise(function(resolve) {{
+      if (_detailState === 2) {{ resolve(); return; }}
+      _detailWaiters.push(resolve);
+      if (_detailState === 1) return;
+      _detailState = 1;
+      fetchJson("site_detail.json").then(function(d) {{ if (d && d.detail) DETAIL = d.detail; }})
+        .catch(function() {{}})
+        .then(function() {{ _detailState = 2; var w = _detailWaiters; _detailWaiters = [];
+          for (var i = 0; i < w.length; i++) w[i](); }});
+    }});
+  }}
+
+  // --- progressive corpus streaming --------------------------------------------
+  // site_data.json ships only the top-ranked chunk; the rest streams in rank-ordered
+  // background shards (see the loader at the bottom). Appends keep RECORDS a correct
+  // rank-ordered prefix, so the default feed + "Load more" work while data trickles in.
+  var _appendTimer = null;
+  function _scheduleAppendRefresh() {{
+    if (_appendTimer) return;
+    _appendTimer = setTimeout(function() {{
+      _appendTimer = null;
+      // Only the evidence feed depends on the growing set live; other tabs are lazy
+      // and re-render with the full set when next opened. preserve the render window.
+      if (currentTab === "evidence") applyFilters(true);
+    }}, 600);
+  }}
+  function setLoadProgress(loaded, total) {{
+    var e = document.getElementById("load-progress");
+    if (!e) return;
+    if (!total || loaded >= total) {{ e.textContent = ""; return; }}
+    e.textContent = "loading full corpus " + Math.floor(100 * loaded / total) + "%";
+  }}
+  function startProgressiveLoad(shards, total) {{
+    if (!shards || !shards.length) {{ setLoadProgress(total, total); return; }}
+    var loaded = RECORDS.length, i = 0;
+    setLoadProgress(loaded, total);
+    function next() {{
+      if (i >= shards.length) {{
+        setLoadProgress(total, total);
+        if (currentTab === "evidence") applyFilters(true);
+        return;
+      }}
+      fetchJson(shards[i++]).then(function(d) {{
+        var recs = (d && d.records) || [];
+        for (var j = 0; j < recs.length; j++) RECORDS.push(recs[j]);
+        loaded += recs.length;
+        setLoadProgress(loaded, total);
+        _scheduleAppendRefresh();
+        next();
+      }}).catch(function() {{ next(); }});  // skip a failed shard; best-effort
+    }}
+    next();
+  }}
+
+  var MODE = DATA.mode || "fetch";  // "inline" bundles carry everything; "fetch" streams
   var TRIALS = DATA.trials || [];
   var PREPRINTS = DATA.preprints || [];
   var CORPUS = DATA.corpus_stats || {{}};
@@ -1856,7 +1956,17 @@ _TEMPLATE = """<!DOCTYPE html>
     grid.appendChild(cell);
   }}
   var modalOpener = null;  // element to restore focus to when the modal closes
+  var _openRec = null;     // record currently shown in the modal
   function openModal(r) {{
+    _openRec = r;
+    // Detail (strengths/limitations, score breakdowns) loads on first open; if it
+    // wasn't loaded yet, re-render this modal once it arrives so those rows fill in.
+    if (MODE === "fetch" && _detailState !== 2 && !DETAIL[rid(r)]) {{
+      ensureDetail().then(function() {{
+        var mm = document.getElementById("modal-bg");
+        if (_openRec === r && mm && /\\bopen\\b/.test(mm.className)) openModal(r);
+      }});
+    }}
     modalOpener = document.activeElement;  // remember the opener for focus restore
     var m = document.getElementById("modal");
     m.textContent = "";
@@ -1984,6 +2094,7 @@ _TEMPLATE = """<!DOCTYPE html>
     )).filter(function(el2) {{ return el2.offsetParent !== null || el2 === document.activeElement; }});
   }}
   function closeModal() {{
+    _openRec = null;
     document.getElementById("modal-bg").className = "modal-bg";
     var mc = document.getElementById("main-content"); if (mc) mc.removeAttribute("aria-hidden");
     var hdr = document.querySelector("header"); if (hdr) hdr.removeAttribute("aria-hidden");
@@ -2646,7 +2757,7 @@ _TEMPLATE = """<!DOCTYPE html>
   var applyFiltersDebounced = debounce(function() {{ applyFilters(); }}, 120);
   window.applyFiltersDebounced = applyFiltersDebounced;
 
-  function applyFilters() {{
+  function applyFilters(preserveWindow) {{
     var base = baseRecords();
     lastBaseTotal = base.length;
     var filters = currentFilters();
@@ -2671,7 +2782,9 @@ _TEMPLATE = """<!DOCTYPE html>
     }}
     lastVisible = visible;
     // Any filter/search/sort change resets the render window to the first page.
-    visibleCount = RENDER_LIMIT;
+    // A background shard append passes preserveWindow=true so the user's expanded
+    // "Load more" position and scroll aren't yanked back to the top as data streams in.
+    if (!preserveWindow) visibleCount = RENDER_LIMIT;
     renderVisible();
   }}
 
@@ -3565,7 +3678,7 @@ _TEMPLATE = """<!DOCTYPE html>
       if (feed.experimental) EXPERIMENTAL = feed.experimental;
       // corpus_stats travels with the main feed; prefer it, else keep inlined.
       if (feed.corpus_stats) CORPUS = feed.corpus_stats;
-      boot();  // render the evidence view now; don't await the side feeds
+      boot();  // render the evidence view now (top chunk); don't await the rest
       // Trials + preprints load in the background (may 404 -> stay empty). If the
       // user is already on that tab when it arrives, re-render it in place.
       fetchSideFeed("trials_data.json", "trials", function(v) {{
@@ -3574,12 +3687,11 @@ _TEMPLATE = """<!DOCTYPE html>
       fetchSideFeed("preprints_data.json", "preprints", function(v) {{
         PREPRINTS = v || []; if (currentTab === "preprints") renderPreprints();
       }});
-      // Modal-only detail (appraisal strengths/limitations, score breakdowns) loads
-      // in the background. The modal reads DETAIL live via dval(), so nothing needs
-      // re-rendering; a card opened before it arrives simply shows less until then.
-      fetch("site_detail.json").then(function(r) {{ return r.ok ? r.json() : null; }})
-        .then(function(d) {{ if (d && d.detail) DETAIL = d.detail; }})
-        .catch(function() {{}});
+      // PROGRESSIVE LOAD: site_data.json carried only the top chunk. Stream the rest
+      // of the rank-ordered corpus in the background and append -- RECORDS stays a
+      // correct rank-ordered prefix throughout, so the default view + "Load more" work
+      // immediately and results grow as shards arrive. (Modal detail loads on demand.)
+      startProgressiveLoad(feed.shards || [], feed.total_records || RECORDS.length);
     }}).catch(function() {{
       var rl = document.getElementById("records-list");
       if (rl) rl.textContent = "";

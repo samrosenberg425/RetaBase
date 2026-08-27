@@ -106,8 +106,10 @@ jobs:
           # On its own line after validate, so it only runs if validate didn't abort.
           cp exports/curated/corpus_stats.json data/corpus_stats_baseline.json
           cp exports/curated/site_data.json exports/site/site_data.json
-          # Lazy-loaded modal detail sidecar (fetched by the page after first paint).
+          # Lazy-loaded modal detail sidecar (fetched on first card open).
           cp exports/curated/site_detail.json exports/site/site_detail.json
+          # Progressive-feed shards (rank-ordered remainder streamed in the background).
+          cp exports/curated/site_records_*.json exports/site/ 2>/dev/null || true
           # Rebuild + publish the registry feeds straight from the trials/preprints
           # SQLite DBs that registry.yml populates in the SHARED cache (exports/ is
           # ephemeral, so we can't rely on a file it wrote). Guarded so that if those
