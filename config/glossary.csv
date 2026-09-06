@@ -1,0 +1,84 @@
+category_key,category_label,value,display,definition
+route,Administration route,oral,Oral,Taken by mouth (a pill capsule or liquid that is swallowed).
+route,Administration route,subcutaneous,Subcutaneous,Injected into the fatty layer just under the skin (like most insulin pens).
+route,Administration route,intravenous,Intravenous (IV),Delivered straight into a vein through a drip or line so it enters the bloodstream immediately.
+route,Administration route,intraperitoneal,Intraperitoneal (IP),Injected into the belly cavity around the organs — a lab method used mainly in animal studies.
+route,Administration route,topical,Topical,Applied to the surface of the skin (a cream gel or patch).
+route,Administration route,inhaled,Inhaled,Breathed in as a spray or mist so it reaches the lungs.
+study_type,Study type,rct,Randomized controlled trial,People are randomly assigned to the treatment or a comparison group — the strongest way to test if something works in humans.
+study_type,Study type,observational,Observational study,Researchers watch what happens in real-world use without assigning treatments — useful but more prone to bias than a trial.
+study_type,Study type,systematic_review,Systematic review,A structured search that gathers and appraises all studies on a question.
+study_type,Study type,meta_analysis,Meta-analysis,Statistically pools results from many studies into one combined estimate.
+study_type,Study type,guideline,Practice guideline,Formal recommendations issued by an expert body summarizing the evidence for clinicians.
+study_type,Study type,in_vivo,Animal (in vivo),Done in living animals — an early step before human testing.
+study_type,Study type,in_vitro,Lab / cell (in vitro),Done in cells or a test tube outside a living body — the earliest kind of evidence.
+study_type,Study type,case_report,Case report / series,A description of one or a few individual patients — hypothesis-generating not proof.
+model_system,Study model,human,Human,The study was conducted in people.
+model_system,Study model,animal,Animal,The study was conducted in living animals.
+model_system,Study model,mouse,Mouse,Conducted in mice — a common early-stage animal model.
+model_system,Study model,rat,Rat,Conducted in rats — a common early-stage animal model.
+model_system,Study model,nonhuman_primate,Non-human primate,Conducted in monkeys — closer to humans than rodents so often more translatable.
+model_system,Study model,in_vitro,Lab / cell,Conducted in isolated cells or tissue outside a living body.
+species,Species,human,Human,Studied in people.
+species,Species,mouse,Mouse,Studied in mice.
+species,Species,rat,Rat,Studied in rats.
+species,Species,nonhuman_primate,Non-human primate,Studied in monkeys — biologically closer to humans than rodents.
+species,Species,pig,Pig,Studied in pigs — sometimes used because organs resemble human ones.
+species,Species,dog,Dog,Studied in dogs.
+species,Species,rabbit,Rabbit,Studied in rabbits.
+species,Species,zebrafish,Zebrafish,Studied in zebrafish — a small fish used for fast early screening.
+species,Species,drosophila,Fruit fly,Studied in fruit flies — used in basic biology and aging research.
+species,Species,c_elegans,Roundworm (C. elegans),Studied in a tiny worm — used in basic biology and aging research.
+species,Species,cell_line,Cell line / in vitro,Studied in cultured cells rather than a whole organism.
+sex,Sex studied,female,Female,The study included or focused on female subjects.
+sex,Sex studied,male,Male,The study included or focused on male subjects.
+sex,Sex studied,both_sexes,Both sexes,The study included both male and female subjects.
+population,Population,older_adults,Older adults,Focused on older or elderly participants.
+population,Population,pediatric,Children,Focused on infants children or adolescents.
+population,Population,women_pregnancy,Women / pregnancy,Focused on women or pregnancy-related settings.
+population,Population,male,Male participants,Focused on male participants.
+population,Population,comorbid_metabolic,Metabolic conditions,Participants who also had conditions like obesity or type 2 diabetes.
+population,Population,comorbid_cardiorenal,Heart / kidney conditions,Participants who also had heart or kidney disease.
+indication,Condition / use,obesity_weight,Obesity / weight,Related to body weight overweight or obesity.
+indication,Condition / use,diabetes_glycemic,Diabetes / blood sugar,Related to diabetes or blood-sugar control.
+indication,Condition / use,liver_mash,Liver (MASH/NASH),Related to fatty liver disease.
+indication,Condition / use,cardiovascular,Heart / circulation,Related to the heart blood vessels or blood pressure.
+indication,Condition / use,kidney,Kidney,Related to kidney function or disease.
+indication,Condition / use,neurocognitive,Brain / mood,Related to memory cognition or mood (e.g. anxiety depression Alzheimer's).
+indication,Condition / use,oncology,Cancer,Related to cancer or tumors.
+indication,Condition / use,musculoskeletal,Muscle / bone,Related to muscle bone joints or tendons.
+indication,Condition / use,inflammation_autoimmune,Inflammation / autoimmune,Related to inflammation or immune-system disorders.
+indication,Condition / use,reproductive,Reproductive,Related to fertility hormones or reproductive health.
+indication,Condition / use,injury_repair,Injury / healing,Related to wounds injury or tissue repair.
+indication,Condition / use,infectious_immunity,Infection / immunity,Related to infections or the immune response.
+indication,Condition / use,aging_longevity,Aging / longevity,Related to aging lifespan or healthspan.
+endpoint,What was measured,body_weight,Body weight,Change in weight BMI or body fat.
+endpoint,What was measured,glycemic_control,Blood-sugar control,Measures of blood sugar such as HbA1c or fasting glucose.
+endpoint,What was measured,lipids,Cholesterol / lipids,Blood fats such as cholesterol and triglycerides.
+endpoint,What was measured,liver_histology,Liver health,Liver enzymes fat or scarring seen on tests or biopsy.
+endpoint,What was measured,blood_pressure,Blood pressure,Systolic and diastolic blood-pressure readings.
+endpoint,What was measured,inflammation_markers,Inflammation markers,Blood signals of inflammation such as CRP or IL-6.
+endpoint,What was measured,oxidative_stress,Oxidative stress,Markers of cell damage from reactive molecules (and antioxidant defenses).
+endpoint,What was measured,mitochondrial_function,Mitochondrial function,How well cells' energy-producing mitochondria are working.
+endpoint,What was measured,safety_tolerability,Safety / side effects,Adverse events tolerability and how well the treatment was tolerated.
+endpoint,What was measured,pharmacokinetics,Drug levels (PK),How the body absorbs and clears the drug (blood levels half-life).
+endpoint,What was measured,mortality_survival,Survival,Death rates or how long participants survived.
+endpoint,What was measured,muscle_performance,Muscle / strength,Muscle mass strength or physical performance.
+drug_class,Drug class,glp1_agonist,GLP-1 agonist,Mimics the gut hormone GLP-1 to curb appetite and improve blood sugar (e.g. semaglutide).
+drug_class,Drug class,gip_agonist,GIP agonist,Acts on the GIP hormone pathway — often combined with GLP-1 for weight and glucose.
+drug_class,Drug class,glucagon_agonist,Glucagon agonist,Acts on the glucagon pathway to raise energy expenditure — part of some triple agonists.
+drug_class,Drug class,amylin_analog,Amylin analog,Mimics the hormone amylin to increase fullness and slow stomach emptying.
+drug_class,Drug class,sglt2_inhibitor,SGLT2 inhibitor,Makes the kidneys flush out excess sugar — used for diabetes and heart/kidney protection.
+drug_class,Drug class,mito_err_agonist,Mitochondrial / ERR agonist,Targets cellular energy pathways (mitochondria / ERR receptors).
+drug_class,Drug class,nad_precursor,NAD precursor,A building block the body turns into NAD+ a molecule central to cell energy and aging research.
+drug_class,Drug class,senolytic,Senolytic,Aims to clear worn-out ('senescent') cells thought to drive aging.
+drug_class,Drug class,peptide_hormone,Peptide hormone,A small protein-like molecule that acts as a signaling hormone.
+drug_class,Drug class,mtor_inhibitor,mTOR inhibitor,Dials down the mTOR growth pathway — studied for aging and metabolism.
+drug_class,Drug class,myostatin_inhibitor,Myostatin inhibitor,Blocks myostatin a brake on muscle growth — studied for muscle wasting.
+formulation,Formulation,oral_peptide,Oral peptide,A peptide drug engineered to survive digestion so it can be taken as a pill.
+formulation,Formulation,long_acting,Long-acting / weekly,Designed to last long enough for weekly (or less frequent) dosing.
+formulation,Formulation,nanoparticle,Nanoparticle delivery,Uses tiny engineered particles to carry the drug to where it is needed.
+evidence_direction,Result direction,positive,Positive / beneficial,The study reported a beneficial effect.
+evidence_direction,Result direction,null,No effect,The study found no meaningful effect.
+evidence_direction,Result direction,mixed,Mixed,Results were mixed — beneficial on some measures not others.
+evidence_direction,Result direction,adverse,Adverse / harmful,The study reported a harmful or negative effect.

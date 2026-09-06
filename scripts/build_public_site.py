@@ -38,6 +38,7 @@ import csv
 import html
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass, field
 from typing import Dict, List
@@ -516,8 +517,152 @@ def _cross_filter_counts(records, filters, multi, year_filter=None,
     return out
 
 
+# --- editable copy (config/site_copy/*.md) -----------------------------------
+# The Home + Methods prose live in editable markdown files parsed here into a small
+# block structure that the JS renders with textContent/el (no innerHTML). This lets
+# the copy be rewritten (and figures added later) without touching the code.
+_MD_INLINE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*")
+
+
+def _md_spans(text: str) -> List[dict]:
+    """Parse inline **bold** and [text](url) into a span list."""
+    out: List[dict] = []
+    pos = 0
+    for mo in _MD_INLINE.finditer(text):
+        if mo.start() > pos:
+            out.append({"t": "text", "v": text[pos:mo.start()]})
+        if mo.group(1) is not None:
+            out.append({"t": "a", "v": mo.group(1), "href": mo.group(2)})
+        else:
+            out.append({"t": "b", "v": mo.group(3)})
+        pos = mo.end()
+    if pos < len(text):
+        out.append({"t": "text", "v": text[pos:]})
+    return out
+
+
+def _md_is_block_start(s: str) -> bool:
+    return (s.startswith("#") or s.startswith(">") or s.startswith("- ")
+            or s.startswith("|") or s.startswith("```")
+            or (s.startswith("::") and s.endswith("::")))
+
+
+def _parse_copy_md(text: str) -> List[dict]:
+    """Minimal markdown -> block list: h2/h3/h4, p, ul, table, formula, note, ::token::."""
+    lines = text.replace("\r\n", "\n").split("\n")
+    blocks: List[dict] = []
+    i, n = 0, len(lines)
+    while i < n:
+        s = lines[i].strip()
+        if not s:
+            i += 1
+            continue
+        if s.startswith("```"):                      # fenced (formula) block
+            i += 1
+            buf = []
+            while i < n and not lines[i].strip().startswith("```"):
+                buf.append(lines[i])
+                i += 1
+            i += 1
+            blocks.append({"t": "formula", "text": "\n".join(buf).strip()})
+            continue
+        if s.startswith("::") and s.endswith("::") and len(s) > 4:
+            blocks.append({"t": "token", "name": s[2:-2].strip()})
+            i += 1
+            continue
+        if s.startswith("#### "):
+            blocks.append({"t": "h4", "spans": _md_spans(s[5:].strip())}); i += 1; continue
+        if s.startswith("### "):
+            blocks.append({"t": "h3", "spans": _md_spans(s[4:].strip())}); i += 1; continue
+        if s.startswith("## "):
+            blocks.append({"t": "h2", "spans": _md_spans(s[3:].strip())}); i += 1; continue
+        if s.startswith(">"):                         # blockquote/callout note
+            buf = []
+            while i < n and lines[i].strip().startswith(">"):
+                buf.append(lines[i].strip().lstrip(">").strip()); i += 1
+            blocks.append({"t": "note", "spans": _md_spans(" ".join(buf))}); continue
+        if s.startswith("|") and i + 1 < n and set(lines[i + 1].strip().replace("|", "").replace(" ", "")) <= set("-:") and lines[i + 1].strip():
+            head = [c.strip() for c in s.strip().strip("|").split("|")]
+            i += 2
+            rows = []
+            while i < n and lines[i].strip().startswith("|"):
+                rows.append([c.strip() for c in lines[i].strip().strip("|").split("|")]); i += 1
+            blocks.append({"t": "table", "head": head, "rows": rows}); continue
+        if s.startswith("- "):
+            items = []
+            while i < n and lines[i].strip().startswith("- "):
+                items.append(_md_spans(lines[i].strip()[2:].strip())); i += 1
+            blocks.append({"t": "ul", "items": items}); continue
+        buf = [s]                                     # paragraph
+        i += 1
+        while i < n and lines[i].strip() and not _md_is_block_start(lines[i].strip()):
+            buf.append(lines[i].strip()); i += 1
+        blocks.append({"t": "p", "spans": _md_spans(" ".join(buf))})
+    return blocks
+
+
+def _load_copy() -> Dict[str, List[dict]]:
+    base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "site_copy")
+    out: Dict[str, List[dict]] = {}
+    for key, fn in (("home", "home.md"), ("methods", "methods.md")):
+        try:
+            with open(os.path.join(base, fn), encoding="utf-8") as fh:
+                out[key] = _parse_copy_md(fh.read())
+        except OSError:
+            out[key] = []
+    return out
+
+
+def _load_glossary() -> dict:
+    """Editable plain-language glossary (config/glossary.csv): category -> options with a
+    one-sentence definition. Feeds the Guide tab and the (optional) card-tag hover tips."""
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "glossary.csv")
+    cats: List[dict] = []
+    index: Dict[str, dict] = {}
+    by_key: Dict[str, dict] = {}
+    try:
+        with open(path, newline="", encoding="utf-8") as fh:
+            for row in csv.DictReader(fh):
+                ck = (row.get("category_key") or "").strip()
+                val = (row.get("value") or "").strip()
+                if not ck or not val:
+                    continue
+                if ck not in index:
+                    index[ck] = {"key": ck, "label": (row.get("category_label") or ck).strip(), "items": []}
+                    cats.append(index[ck])
+                item = {"value": val, "display": (row.get("display") or val).strip(),
+                        "def": (row.get("definition") or "").strip()}
+                index[ck]["items"].append(item)
+                by_key[ck + "|" + val] = {"display": item["display"], "def": item["def"]}
+    except OSError:
+        pass
+    # Future-proof completeness: fold in any FACETS.csv value that the curated glossary
+    # doesn't cover yet, using its display label (blank definition). This guarantees every
+    # card tag has at least a readable name on hover even after new facets are added.
+    facets_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "FACETS.csv")
+    _tag_groups = {"species", "indication", "endpoint", "route", "drug_class",
+                   "population", "sex", "formulation", "evidence_direction"}
+    try:
+        with open(facets_path, newline="", encoding="utf-8") as fh:
+            for row in csv.DictReader(fh):
+                ck = (row.get("facet_group") or "").strip()
+                val = (row.get("facet_value") or "").strip()
+                if ck not in _tag_groups or not val or (ck + "|" + val) in by_key:
+                    continue
+                if ck not in index:
+                    index[ck] = {"key": ck, "label": ck.replace("_", " ").title(), "items": []}
+                    cats.append(index[ck])
+                disp = (row.get("display_label") or val).strip()
+                index[ck]["items"].append({"value": val, "display": disp, "def": ""})
+                by_key[ck + "|" + val] = {"display": disp, "def": ""}
+    except OSError:
+        pass
+    return {"categories": cats, "byKey": by_key}
+
+
 def build_site(curated_dir: str, out_dir: str, mode: str = "inline",
-               max_inline: int = 4000, internal: bool = False) -> Dict[str, int]:
+               max_inline: int = 4000, internal: bool = False, variant: str = "",
+               tag_hovers: bool = True) -> Dict[str, int]:
     data = load_site_data(curated_dir)
     os.makedirs(out_dir, exist_ok=True)
 
@@ -552,6 +697,13 @@ def build_site(curated_dir: str, out_dir: str, mode: str = "inline",
         # Modal-only detail: embedded in inline mode (filtered to inlined records
         # below), fetched at runtime in fetch mode (blanked in the cfg branch).
         "detail": data.detail,
+        # Editable Home + Methods copy (parsed from config/site_copy/*.md). Small,
+        # trusted config -> inlined in both modes so those tabs render without a fetch.
+        "copy": _load_copy(),
+        # Plain-language glossary (config/glossary.csv) for the Guide tab + tag hovers.
+        "glossary": _load_glossary(),
+        # Whether card aspect-tags show a definition tooltip on hover (build toggle).
+        "tag_hovers": bool(tag_hovers),
         "filters": [{"field": f, "label": lbl} for f, lbl in FILTER_FACETS],
         "multi": sorted(MULTI_VALUE_FIELDS),
         "aspects": [{"field": f, "cls": c, "label": lbl} for f, c, lbl in ASPECT_TAGS],
@@ -588,7 +740,7 @@ def build_site(curated_dir: str, out_dir: str, mode: str = "inline",
 
     html_text = _render_html(json_block, record_count, molecule_count,
                              data.generated_utc, total_records, truncated, mode,
-                             internal)
+                             internal, variant)
 
     out_path = os.path.join(out_dir, "index.html")
     with open(out_path, "w", encoding="utf-8") as fh:
@@ -608,7 +760,7 @@ def build_site(curated_dir: str, out_dir: str, mode: str = "inline",
 
 def _render_html(json_block: str, record_count: int, molecule_count: int,
                  generated_utc: str, total_records: int, truncated: int,
-                 mode: str, internal: bool = False) -> str:
+                 mode: str, internal: bool = False, variant: str = "") -> str:
     """Assemble the single-file HTML.
 
     All dynamic-but-trusted numbers are ints; the only feed-derived content in
@@ -647,6 +799,9 @@ def _render_html(json_block: str, record_count: int, molecule_count: int,
         '\n<link rel="preload" as="fetch" href="site_data.json" crossorigin="anonymous">'
         if mode == "fetch" else ""
     )
+    # Stylistic variant: a body class that re-points design tokens (test-run skins).
+    _VALID_VARIANTS = {"indigo", "emerald", "slate", "warm"}
+    body_class = ("v-" + variant) if variant in _VALID_VARIANTS else ""
     rendered = _TEMPLATE.format(
         title=title,
         subtitle=subtitle,
@@ -656,6 +811,7 @@ def _render_html(json_block: str, record_count: int, molecule_count: int,
         data_json=json_block,
         export_btn=export_btn,
         preload_hint=preload_hint,
+        body_class=body_class,
     )
     return _apply_csp(rendered)
 
@@ -714,6 +870,7 @@ _TEMPLATE = """<!DOCTYPE html>
     --bg: #f4f7fa; --panel: #ffffff; --panel2: #eef3f7; --border: #d3dde5;
     --text: #14212b; --muted: #5b6b78; --accent: #0b6e99; --accent2: #0f9d76;
     --accent-soft: #e6f2f8;
+    --topbar-h: 56px;
     --tier-high: #157f4a; --tier-moderate: #b7791f; --tier-limited: #c2530a;
     --tier-low: #c0392b; --tier-not_applicable: #64748b;
     --ap-approve: #157f4a; --ap-reject: #c0392b;
@@ -727,27 +884,97 @@ _TEMPLATE = """<!DOCTYPE html>
     margin: 0; background: var(--bg); color: var(--text);
     font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }}
-  /* Masthead: a thin accent strip + accent product name, like a scientific portal. */
-  body {{ border-top: 3px solid var(--accent); }}
-  header {{ padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--panel); }}
-  header h1 {{ margin: 0 0 4px; font-size: 21px; letter-spacing: -0.01em; color: var(--accent); font-weight: 700; }}
-  header p {{ margin: 0; color: var(--muted); font-size: 13px; }}
-  header .gen {{ font-size: 12px; color: var(--muted); margin-top: 2px; }}
-  .tabs {{ display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }}
+  /* Nike-style top bar: thin, sticky, logo left + nav across. */
+  .topbar {{ position: sticky; top: 0; z-index: 40; display: flex; align-items: center; gap: 22px;
+    height: var(--topbar-h); padding: 0 24px; background: var(--panel);
+    border-bottom: 1px solid var(--border); }}
+  .brand {{ display: inline-flex; align-items: center; text-decoration: none; flex: 0 0 auto; }}
+  .logo-slot {{ display: inline-flex; align-items: center; height: 30px; }}
+  .logo-slot img {{ height: 28px; width: auto; display: block; }}
+  .logo-word {{ font-size: 20px; font-weight: 800; letter-spacing: -0.02em; color: var(--text); }}
+  .logo-word b {{ color: var(--accent); font-weight: 800; }}
+  .tabs {{ display: flex; gap: 4px; align-items: center; flex: 1 1 auto; overflow-x: auto; }}
   .tabs button {{
-    background: var(--panel2); color: var(--muted); border: 1px solid var(--border);
-    padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px;
+    background: transparent; color: var(--muted); border: none; border-bottom: 2px solid transparent;
+    padding: 8px 12px; border-radius: 0; cursor: pointer; font-size: 13.5px; font-weight: 600;
+    white-space: nowrap;
   }}
-  .tabs button:hover {{ color: var(--text); border-color: var(--accent); }}
-  .tabs button.active {{ color: #ffffff; background: var(--accent); border-color: var(--accent); font-weight: 600; }}
+  .tabs button:hover {{ color: var(--text); }}
+  .tabs button.active {{ color: var(--accent); border-bottom-color: var(--accent); }}
   .tabs .spacer {{ flex: 1; }}
   .tabs .ap-summary {{ font-size: 12px; color: var(--muted); }}
   .tabs .ap-summary b {{ color: var(--text); }}
-  .tabs .exp {{ background: var(--accent); color: #ffffff; border: none; font-weight: 600; }}
+  .tabs .exp {{ background: var(--accent); color: #ffffff; border: none; font-weight: 600; border-radius: 6px; padding: 6px 12px; }}
+  .site-link {{ flex: 0 0 auto; white-space: nowrap; font-size: 12.5px; font-weight: 600; color: var(--accent);
+    text-decoration: none; border: 1px solid var(--accent); border-radius: 999px; padding: 5px 12px; margin-left: 6px; }}
+  .site-link:hover {{ background: var(--accent); color: #ffffff; }}
+  /* Home / landing */
+  #home-view {{ max-width: 900px; margin: 0 auto; }}
+  .hero {{ padding: 10px 0 6px; }}
+  .hero h1 {{ margin: 0 0 8px; font-size: 30px; letter-spacing: -0.02em; color: var(--text); font-weight: 800; }}
+  .hero-sub {{ margin: 0; color: var(--muted); font-size: 15px; max-width: 640px; }}
+  .hero .gen {{ font-size: 12px; color: var(--muted); margin: 8px 0 0; }}
+  .home-body {{ margin-top: 8px; }}
+  .home-card {{ background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 18px; margin: 14px 0; }}
+  .home-card.home-safety {{ background: #fff8e6; border-color: #e2b93b; }}
+  .home-h {{ margin: 0 0 8px; font-size: 17px; font-weight: 700; color: var(--accent); }}
+  .home-card p {{ margin: 0 0 8px; font-size: 14px; color: var(--text); }}
+  .home-nav {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; margin-top: 6px; }}
+  .home-navbtn {{ text-align: left; background: var(--panel2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 14px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; }}
+  .home-navbtn:hover {{ border-color: var(--accent); background: var(--accent-soft); }}
+  .home-navbtn.inline {{ display: inline-flex; flex-direction: row; margin-top: 6px; color: var(--accent); font-weight: 600; }}
+  .home-navbtn-t {{ font-weight: 700; color: var(--text); font-size: 14px; }}
+  .home-navbtn-d {{ color: var(--muted); font-size: 12px; }}
+  .home-legend {{ margin: 8px 0 0; padding-left: 18px; font-size: 13px; color: var(--text); }}
+  .home-legend li {{ margin: 3px 0; }}
+  .home-legend b {{ color: var(--accent2); }}
+  /* Home + Methods rendered from editable markdown blocks (config/site_copy/*.md) */
+  #home-body {{ max-width: 900px; }}
+  .about {{ max-width: 820px; }}
+  #home-body h2, .about h2 {{ font-size: 20px; color: var(--text); font-weight: 700; margin: 22px 0 8px; }}
+  #home-body h3, .about h3 {{ font-size: 16px; color: var(--accent); font-weight: 700; margin: 18px 0 6px; }}
+  #home-body h4, .about h4 {{ font-size: 12.5px; color: var(--accent2); font-weight: 700;
+    text-transform: uppercase; letter-spacing: .04em; margin: 16px 0 4px; }}
+  #home-body p, .about p {{ font-size: 14px; line-height: 1.6; color: var(--text); margin: 0 0 10px; max-width: 760px; }}
+  .copy-ul {{ margin: 6px 0 12px; padding-left: 20px; }}
+  .copy-ul li {{ margin: 3px 0; font-size: 14px; line-height: 1.55; }}
+  .copy-note {{ border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 10px 14px;
+    border-radius: 8px; margin: 10px 0 14px; font-size: 13.5px; color: var(--text); max-width: 760px; }}
+  .copy-table {{ border-collapse: collapse; margin: 8px 0 16px; font-size: 13px; }}
+  .copy-table th, .copy-table td {{ border: 1px solid var(--border); padding: 6px 12px; text-align: left; }}
+  .copy-table th {{ background: var(--panel2); font-weight: 700; color: var(--text); }}
+  .copy-ver {{ font-size: 12px; color: var(--muted); margin-top: 16px; }}
+  #home-body a, .about a {{ color: var(--accent); text-decoration: none; }}
+  #home-body a:hover, .about a:hover {{ text-decoration: underline; }}
+  /* Guide tab (plain-language glossary) */
+  .guide {{ max-width: 820px; }}
+  .guide-h {{ font-size: 22px; font-weight: 800; color: var(--text); margin: 6px 0 6px; }}
+  .guide-intro {{ font-size: 14px; color: var(--muted); margin: 0 0 12px; max-width: 680px; line-height: 1.55; }}
+  .guide-toggle {{ display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text);
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 0 0 14px; cursor: pointer; }}
+  .guide-select {{ font-size: 15px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--panel); color: var(--text); min-width: 260px; max-width: 100%; margin: 0 0 14px 12px; }}
+  .guide-panel {{ display: flex; flex-direction: column; gap: 2px; }}
+  .guide-row {{ display: grid; grid-template-columns: 200px 1fr; gap: 14px; padding: 10px 12px;
+    border-bottom: 1px solid var(--border); align-items: baseline; }}
+  .guide-row:nth-child(odd) {{ background: var(--panel2); }}
+  .guide-term {{ font-weight: 700; color: var(--accent); font-size: 14px; }}
+  .guide-def {{ font-size: 14px; color: var(--text); line-height: 1.5; }}
+  @media (max-width: 620px) {{
+    .guide-row {{ grid-template-columns: 1fr; gap: 2px; }}
+  }}
+  /* per-tab intro blurb */
+  .page-intro {{ background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    border-radius: 10px; padding: 12px 16px; margin: 2px 0 14px; max-width: 900px; }}
+  .page-intro h2 {{ margin: 0 0 6px; font-size: 17px; font-weight: 700; color: var(--accent); }}
+  .page-intro p {{ margin: 0; font-size: 13.5px; color: var(--text); line-height: 1.55; }}
+  .page-intro b {{ color: var(--text); }}
   main {{ display: flex; gap: 0; align-items: flex-start; }}
   aside {{
     width: 340px; min-width: 340px; padding: 16px; border-right: 1px solid var(--border);
-    background: var(--panel); height: calc(100vh - 118px); overflow-y: auto; position: sticky; top: 0;
+    background: var(--panel); height: calc(100vh - var(--topbar-h)); overflow-y: auto; position: sticky; top: var(--topbar-h);
     resize: horizontal;
   }}
   aside .fg {{ margin-bottom: 14px; }}
@@ -761,7 +988,7 @@ _TEMPLATE = """<!DOCTYPE html>
   }}
   aside .reset {{ background: var(--panel2); color: var(--text); border: 1px solid var(--border); padding: 8px; border-radius: 6px; cursor: pointer; width: 100%; }}
   #q {{ font-size: 14px; }}
-  section.content {{ flex: 1; padding: 16px 24px; height: calc(100vh - 118px); overflow-y: auto; }}
+  section.content {{ flex: 1; padding: 16px 24px; height: calc(100vh - var(--topbar-h)); overflow-y: auto; }}
   .count {{ color: var(--muted); font-size: 13px; margin-bottom: 12px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }}
   .count select {{ background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: 12px; }}
   .card {{
@@ -796,6 +1023,81 @@ _TEMPLATE = """<!DOCTYPE html>
   .meter-cap {{ font-size: 11px; color: var(--muted); font-weight: 600; }}
   .load-progress {{ font-size: 12px; color: var(--accent); font-weight: 600; }}
   .load-progress:not(:empty)::before {{ content: "\\2193 "; opacity: .7; }}
+  /* --- instant hover tooltip --- */
+  .hovertip {{ position: fixed; z-index: 70; display: none; max-width: 300px; padding: 8px 11px;
+    background: #0f2230; color: #eef5fa; border-radius: 8px; font-size: 12px; line-height: 1.45;
+    font-weight: 500; box-shadow: 0 6px 20px rgba(10,25,40,.28); pointer-events: none; }}
+  /* --- score rings: big overarching Rank + small contributing rings to its right --- */
+  .score-box {{ display: flex; align-items: center; gap: 16px; margin: 8px 0 2px; padding: 10px 14px;
+    background: var(--accent-soft); border: 1px solid var(--border); border-radius: 12px; }}
+  .ring-subs {{ display: flex; flex-direction: column; gap: 5px; justify-content: center;
+    padding-left: 16px; border-left: 1px solid var(--border); }}
+  .ring-subs-cap {{ font-size: 10px; color: var(--muted); font-weight: 700; text-transform: uppercase;
+    letter-spacing: .04em; margin-bottom: 1px; }}
+  .ring-item {{ position: relative; display: inline-flex; flex-direction: column; align-items: center;
+    gap: 3px; cursor: help; }}
+  .ring-item.ring-row {{ flex-direction: row; align-items: center; gap: 8px; }}
+  .ring-dial {{ position: relative; display: inline-block; line-height: 0; }}
+  .ring-svg {{ width: 30px; height: 30px; transform: rotate(-90deg); display: block; }}
+  .ring-big .ring-svg {{ width: 60px; height: 60px; }}
+  .ring-track {{ fill: none; stroke: var(--panel2); stroke-width: 3.4; }}
+  .ring-arc {{ fill: none; stroke-width: 3.4; stroke-linecap: round; transition: stroke-dasharray .35s ease; }}
+  .ring-big .ring-track, .ring-big .ring-arc {{ stroke-width: 3; }}
+  .ring-ctr {{ position: absolute; inset: 0; display: flex;
+    align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: var(--text); line-height: 1; }}
+  .ring-big .ring-ctr {{ font-size: 18px; }}
+  .ring-ctr.ring-na {{ font-size: 9px; color: var(--muted); font-weight: 600; }}
+  .ring-big .ring-ctr.ring-na {{ font-size: 13px; }}
+  .ring-lbl {{ font-size: 11px; color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }}
+  .ring-lbl-side {{ font-size: 12px; color: var(--text); font-weight: 600; white-space: nowrap; }}
+  .ring-rank .ring-arc {{ stroke: var(--accent); }}
+  .ring-rigor .ring-arc {{ stroke: var(--t-ms); }}
+  .ring-direct .ring-arc {{ stroke: var(--accent2); }}
+  .ring-impact .ring-arc {{ stroke: var(--t-ind); }}
+  .ring-item.hl .ring-lbl-side {{ color: var(--accent); }}
+  .ring-item.hl {{ background: var(--panel); border-radius: 8px; }}
+
+  /* =========================================================================
+     STYLISTIC VARIANTS (test-run skins). A body class swaps design tokens (and a
+     few component tweaks) so the same markup renders in five distinct styles. The
+     default body (no class) is the Clinical look. Custom properties set on the body
+     cascade to the whole subtree, so re-pointing --accent etc. reskins the rings too.
+     ========================================================================= */
+  /* 2) Indigo -- violet-forward, rounded, calm. */
+  body.v-indigo {{ --accent: #4f46e5; --accent2: #0891b2; --accent-soft: #eef0fe;
+    --t-ms: #4f46e5; --t-ind: #7c3aed; --bg: #f6f7fb; --panel2: #eef1f8; --border: #dce0ee; }}
+  body.v-indigo .home-navbtn, body.v-indigo .home-card, body.v-indigo .card,
+  body.v-indigo .score-box, body.v-indigo .scope-score {{ border-radius: 14px; }}
+  /* 3) Emerald -- green-forward, fresh. */
+  body.v-emerald {{ --accent: #0f766e; --accent2: #16a34a; --accent-soft: #e3f4ef;
+    --t-ms: #0f766e; --t-ind: #0d9488; --bg: #f3f8f6; --panel2: #e9f2ee; --border: #cfe2da; }}
+  /* 4) Slate -- bold, high-contrast dark bar, sharp corners (Nike-bold). */
+  body.v-slate {{ --accent: #0ea5e9; --accent2: #10b981; --accent-soft: #e6f4fb;
+    --t-ms: #0284c7; --t-ind: #6366f1; --border: #d5dce3; }}
+  body.v-slate .topbar {{ background: #0b1220; border-bottom-color: #0b1220; }}
+  body.v-slate .logo-word {{ color: #ffffff; }}
+  body.v-slate .logo-word b {{ color: #38bdf8; }}
+  body.v-slate .tabs button {{ color: #9fb2c6; }}
+  body.v-slate .tabs button:hover {{ color: #ffffff; }}
+  body.v-slate .tabs button.active {{ color: #ffffff; border-bottom-color: #38bdf8; }}
+  body.v-slate .card, body.v-slate .home-card, body.v-slate .home-navbtn,
+  body.v-slate .score-box, body.v-slate .scope-score, body.v-slate .page-intro {{ border-radius: 4px; }}
+  body.v-slate .hero h1 {{ letter-spacing: -0.03em; }}
+  /* 5) Warm -- paper background, amber accent, serif headings. */
+  body.v-warm {{ --accent: #b45309; --accent2: #0e7490; --accent-soft: #fbf0e2;
+    --t-ms: #b45309; --t-ind: #9333ea; --bg: #faf6f0; --panel: #fffdf9; --panel2: #f4ede2; --border: #e6dcc9; }}
+  body.v-warm .hero h1, body.v-warm .home-h, body.v-warm .page-intro h2, body.v-warm h2, body.v-warm h3 {{
+    font-family: Georgia, "Times New Roman", serif; }}
+  /* modal Scope Score: rings + side "what these mean" panel */
+  .scope-score {{ display: flex; gap: 16px; align-items: flex-start; margin: 10px 0 4px; flex-wrap: wrap; }}
+  .scope-score .score-box {{ align-self: stretch; }}
+  .scope-why {{ flex: 1 1 260px; min-width: 240px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 14px; }}
+  .scope-why-h {{ font-weight: 700; color: var(--accent); font-size: 12px; margin-bottom: 8px; letter-spacing: .01em; }}
+  .scope-row {{ font-size: 12px; line-height: 1.5; margin: 0 0 7px; padding: 4px 6px; border-radius: 6px; transition: background .12s; }}
+  .scope-row b {{ color: var(--accent2); }}
+  .scope-row.hl {{ background: var(--panel); box-shadow: inset 0 0 0 1px var(--border); }}
+  .scope-row.hl b {{ color: var(--accent); }}
   .guide-badge {{ font-size: 11px; font-weight: 600; color: var(--accent2);
     background: rgba(15,157,118,.10); border: 1px solid var(--accent2);
     border-radius: 999px; padding: 1px 8px; white-space: nowrap; }}
@@ -900,6 +1202,11 @@ _TEMPLATE = """<!DOCTYPE html>
   .reg-path-name {{ font-weight: 600; display: block; }}
   .reg-path-copy {{ color: var(--muted); }}
   .reg-src {{ margin-top: 8px; color: var(--muted); font-size: 11px; }}
+  .reg-lookup {{ margin-top: 6px; font-size: 12px; }}
+  .reg-lookup a {{ color: var(--accent); text-decoration: none; font-weight: 600; }}
+  .reg-lookup a:hover {{ text-decoration: underline; }}
+  .reg-lookup-hint {{ font-size: 10.5px; color: var(--muted); margin-top: 3px; font-style: italic; }}
+  .pill-tip {{ cursor: help; border-bottom: 1px dotted var(--muted); }}
   .empty {{ color: var(--muted); padding: 30px; text-align: center; }}
   /* experimental (candidate) section */
   .exp-banner {{
@@ -1022,7 +1329,7 @@ _TEMPLATE = """<!DOCTYPE html>
   .about ul {{ margin: 6px 0; padding-left: 20px; }}
   .about li {{ margin: 4px 0; }}
   .about code {{ font-size: 12px; }}
-  .about .formula {{ background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; font-size: 13px; margin: 10px 0; }}
+  .about .formula, #home-body .formula {{ background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; font-size: 13px; margin: 10px 0; font-family: ui-monospace, "SF Mono", Menlo, monospace; }}
   /* modal */
   .modal-bg {{ position: fixed; inset: 0; background: rgba(0,0,0,.62); display: none; z-index: 50; }}
   .modal-bg.open {{ display: flex; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 30px 16px; }}
@@ -1042,8 +1349,10 @@ _TEMPLATE = """<!DOCTYPE html>
   /* Mobile-only "Filters" drawer toggle (hidden on desktop). */
   .filters-toggle {{ display: none; }}
   @media (max-width: 760px) {{
-    header {{ padding: 12px 14px; }}
-    header h1 {{ font-size: 18px; }}
+    .topbar {{ padding: 0 12px; gap: 12px; }}
+    .tabs {{ -webkit-overflow-scrolling: touch; }}
+    .hero h1 {{ font-size: 23px; }}
+    .home-nav {{ grid-template-columns: 1fr; }}
     main {{ flex-direction: column; }}
     /* Sidebar becomes a collapsible drawer: hidden until the user taps Filters,
        so the evidence list is the first thing on screen. */
@@ -1072,39 +1381,34 @@ _TEMPLATE = """<!DOCTYPE html>
   }}
 </style>
 </head>
-<body>
+<body class="{body_class}">
 <a href="#main-content" class="skip-link">Skip to content</a>
-<header>
-  <h1>{title}</h1>
-  <p>{subtitle}</p>
-  <p class="gen">Generated {generated} &middot; {record_count} evidence records inlined &middot; {molecule_count} bioactives</p>
-  <details class="explainer">
-    <summary>How to read this</summary>
-    <ul>
-      <li><b>Automated rigor</b> (0-100) = rule-based signals of how well the study was conducted <i>for its own type</i>. Each study is scored against the standards for its evidence class &mdash; a trial against trial standards (randomization, blinding, controls, sample size), an animal or cell study against preclinical standards. So the score is <i>not comparable across classes</i> (a high-rigor cell study is not stronger evidence than a lower-rigor trial), and it does not measure human relevance (that is directness, below). Automated, not a formal risk-of-bias assessment.</li>
-      <li><b>Directness</b> = how directly the evidence applies to humans (human RCT high &rarr; in-vitro low).</li>
-      <li><b>Rank</b> = the combined best-first ordering (directness + quality + relevance + recency + impact + venue).</li>
-      <li>Open <b>About / Methods</b> for the exact formulas. Every metric is rule-based and auditable.</li>
-    </ul>
-  </details>
-  <div class="corpus-strip" id="corpus-strip" style="display:none"></div>
-  <div class="tabs" role="tablist" aria-label="Views">
-    <button id="tab-evidence" class="active" role="tab" aria-selected="true" tabindex="0">Evidence</button>
-    <button id="tab-clinical" role="tab" aria-selected="false" tabindex="-1">Human data</button>
-    <button id="tab-trials" role="tab" aria-selected="false" tabindex="-1">Trials registry</button>
-    <button id="tab-preprints" role="tab" aria-selected="false" tabindex="-1">Preprints</button>
-    <button id="tab-molecules" role="tab" aria-selected="false" tabindex="-1">Bioactives</button>
-    <button id="tab-experimental" role="tab" aria-selected="false" style="display:none" tabindex="-1">Experimental</button>
-    <button id="tab-about" role="tab" aria-selected="false" tabindex="-1">About / Methods</button>
+<header class="topbar">
+  <a class="brand" id="brand-home" href="#home" aria-label="RetaBase home">
+    <span class="logo-slot" id="logo-slot"><span class="logo-word">Reta<b>Base</b></span></span>
+  </a>
+  <nav class="tabs" role="tablist" aria-label="Views">
+    <button id="tab-home" class="active" role="tab" aria-selected="true" aria-controls="home-view" tabindex="0">Home</button>
+    <button id="tab-evidence" role="tab" aria-selected="false" aria-controls="browser-view" tabindex="-1">Evidence</button>
+    <button id="tab-clinical" role="tab" aria-selected="false" aria-controls="browser-view" tabindex="-1">Human data</button>
+    <button id="tab-trials" role="tab" aria-selected="false" aria-controls="trials-view" tabindex="-1">Trials registry</button>
+    <button id="tab-preprints" role="tab" aria-selected="false" aria-controls="preprints-view" tabindex="-1">Preprints</button>
+    <button id="tab-molecules" role="tab" aria-selected="false" aria-controls="molecules-view" tabindex="-1">Bioactive overview</button>
+    <button id="tab-experimental" role="tab" aria-selected="false" aria-controls="experimental-view" style="display:none" tabindex="-1">Experimental</button>
+    <button id="tab-guide" role="tab" aria-selected="false" aria-controls="guide-view" tabindex="-1">Guide</button>
+    <button id="tab-methods" role="tab" aria-selected="false" aria-controls="methods-view" tabindex="-1">Methods</button>
     <span class="spacer"></span>
     <span class="ap-summary" id="ap-summary"></span>{export_btn}
-  </div>
+    <a class="site-link" href="https://www.retarats.com/" target="_blank" rel="noopener noreferrer"
+       title="Opens the RetaRats main website in a new tab">RetaRats main website <span aria-hidden="true">&#8599;</span></a>
+  </nav>
 </header>
 <main id="main-content" tabindex="-1">
   <aside id="sidebar">
     <div class="fg">
       <label for="q">Search</label>
-      <input id="q" type="search" placeholder="title, bioactive, facets, summary...">
+      <input id="q" type="search" placeholder="e.g. retatrutide weight loss, or a question...">
+      <div class="note-hint">Type any keywords &mdash; a bioactive, condition, outcome, author or journal &mdash; and combine them to narrow (all words must appear). You can phrase it as a question (&ldquo;does retatrutide reduce weight?&rdquo;); common filler words are ignored. It&rsquo;s keyword matching, not a question-answerer, so lead with the key terms.</div>
     </div>
     <div class="fg">
       <label>Year (publication)</label>
@@ -1133,8 +1437,56 @@ _TEMPLATE = """<!DOCTYPE html>
     </div>
     <button class="reset" id="reset-filters">Reset filters</button>
   </aside>
+  <aside id="trials-sidebar" style="display:none">
+    <div class="fg">
+      <label for="trials-q">Search</label>
+      <input id="trials-q" type="search" placeholder="title, condition, intervention...">
+    </div>
+    <div class="fg">
+      <label for="trials-mol">Bioactive</label>
+      <select id="trials-mol"><option value="">All bioactives</option></select>
+    </div>
+    <div class="fg">
+      <label for="trials-status">Status</label>
+      <select id="trials-status">
+        <option value="">Any status</option>
+        <option value="ongoing">Ongoing only</option>
+        <option value="completed">Completed / ended only</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label for="trials-phase">Phase</label>
+      <select id="trials-phase"><option value="">Any phase</option></select>
+    </div>
+    <div class="fg">
+      <label for="trials-stype">Study type</label>
+      <select id="trials-stype"><option value="">Any type</option></select>
+    </div>
+    <div class="fg">
+      <label for="trials-year">Start year</label>
+      <input id="trials-year" type="number" placeholder="e.g. 2024" min="1990" max="2035">
+    </div>
+    <div class="fg">
+      <label for="trials-sort">Sort</label>
+      <select id="trials-sort">
+        <option value="ongoing">Ongoing first</option>
+        <option value="start">Start date (newest)</option>
+        <option value="start-asc">Start date (oldest)</option>
+      </select>
+    </div>
+    <button class="reset" id="trials-reset">Reset filters</button>
+  </aside>
   <section class="content">
-    <div id="browser-view">
+    <div id="home-view" role="tabpanel" aria-labelledby="tab-home" tabindex="0">
+      <div class="hero">
+        <h1>{title}</h1>
+        <p class="hero-sub">{subtitle}</p>
+        <p class="gen">Generated {generated} &middot; {molecule_count} bioactives</p>
+      </div>
+      <div class="corpus-strip" id="corpus-strip" style="display:none"></div>
+      <div class="home-body" id="home-body"></div>
+    </div>
+    <div id="browser-view" role="tabpanel" aria-labelledby="tab-evidence" tabindex="0" style="display:none">
       <button class="filters-toggle" id="filters-toggle" aria-expanded="false" aria-controls="sidebar">&#9776; Filters</button>
       <div class="tab-desc" id="browser-desc"></div>
       <div class="count" id="records-count">
@@ -1178,35 +1530,37 @@ _TEMPLATE = """<!DOCTYPE html>
         <button id="load-more" class="reset" style="width:auto;padding:8px 20px">Load more</button>
       </div>
     </div>
-    <div id="molecules-view" style="display:none">
-      <div class="tab-desc">Bioactives &mdash; peptides, small molecules &amp; related compounds. Click one to see its papers.</div>
+    <div id="molecules-view" role="tabpanel" aria-labelledby="tab-molecules" tabindex="0" style="display:none">
+      <div class="page-intro">
+        <h2>Bioactive overview</h2>
+        <p>This view splits the evidence base by molecule &mdash; one card per tracked bioactive
+          (peptides, small molecules &amp; related compounds). Each card summarizes how much and what
+          kind of evidence exists for that compound: the number of papers, how much is human vs.
+          preclinical, its strongest rigor, an evidence-density tier, and its regulatory status where
+          known. <b>Click a card</b> to jump to the Evidence browser filtered to that molecule.</p>
+      </div>
       <div class="count" id="molecules-count"></div>
       <div class="mol-grid" id="molecules-list"></div>
     </div>
-    <div id="experimental-view" style="display:none">
+    <div id="experimental-view" role="tabpanel" aria-labelledby="tab-experimental" tabindex="0" style="display:none">
       <div class="tab-desc">Experimental &mdash; candidate compounds proposed for future indexing (no papers yet).</div>
       <div class="exp-banner" id="exp-banner"></div>
       <div class="count" id="experimental-count"></div>
       <div class="mol-grid" id="experimental-list"></div>
     </div>
-    <div id="trials-view" style="display:none">
-      <div class="tab-desc">Trials registry &mdash; ongoing &amp; completed studies from ClinicalTrials.gov &mdash; study registrations, not published results.</div>
-      <div class="caution-banner" id="trials-note"></div>
-      <div class="feed-toolbar" id="trials-toolbar" style="display:none">
-        <input id="trials-q" type="search" placeholder="search title / conditions...">
-        <select id="trials-mol"><option value="">All bioactives</option></select>
-        <select id="trials-sort">
-          <option value="ongoing">Ongoing first</option>
-          <option value="start">Start date (newest)</option>
-          <option value="start-asc">Start date (oldest)</option>
-        </select>
-        <input id="trials-year" type="number" placeholder="year" min="1990" max="2035" style="width:5.5em">
-        <label><input id="trials-ongoing" type="checkbox"> Ongoing only</label>
+    <div id="trials-view" role="tabpanel" aria-labelledby="tab-trials" tabindex="0" style="display:none">
+      <button class="filters-toggle" id="trials-filters-toggle" aria-expanded="false" aria-controls="trials-sidebar">&#9776; Filters</button>
+      <div class="page-intro">
+        <h2>Trials registry</h2>
+        <p>Ongoing &amp; completed studies from ClinicalTrials.gov &mdash; these are study
+          <b>registrations, not published results</b>. All are human clinical studies. Use the filters
+          on the left to narrow by bioactive, phase, status, study type or start year.</p>
       </div>
+      <div class="caution-banner" id="trials-note"></div>
       <div class="count" id="trials-count" aria-live="polite"></div>
       <div id="trials-list"></div>
     </div>
-    <div id="preprints-view" style="display:none">
+    <div id="preprints-view" role="tabpanel" aria-labelledby="tab-preprints" tabindex="0" style="display:none">
       <div class="tab-desc">Preprints (bioRxiv/medRxiv) &mdash; NOT peer-reviewed; interpret with caution.</div>
       <div class="caution-banner hard" id="preprints-note"></div>
       <div class="feed-toolbar" id="preprints-toolbar" style="display:none">
@@ -1221,8 +1575,11 @@ _TEMPLATE = """<!DOCTYPE html>
       <div class="count" id="preprints-count" aria-live="polite"></div>
       <div id="preprints-list"></div>
     </div>
-    <div id="about-view" style="display:none">
-      <div class="about" id="about-body"></div>
+    <div id="guide-view" role="tabpanel" aria-labelledby="tab-guide" tabindex="0" style="display:none">
+      <div class="guide" id="guide-body"></div>
+    </div>
+    <div id="methods-view" role="tabpanel" aria-labelledby="tab-methods" tabindex="0" style="display:none">
+      <div class="about" id="methods-body"></div>
     </div>
   </section>
 </main>
@@ -1338,13 +1695,63 @@ _TEMPLATE = """<!DOCTYPE html>
   }}
 
   var MODE = DATA.mode || "fetch";  // "inline" bundles carry everything; "fetch" streams
+  var COPY = DATA.copy || {{}};      // editable Home + Methods blocks (config/site_copy/*.md)
+  var GLOSS = DATA.glossary || {{categories: [], byKey: {{}}}};  // plain-language glossary
+  // Render a parsed-markdown block list into `root` (textContent/el only -- no innerHTML).
+  // ctx maps ::token:: names to functions that append interactive content (nav, rings).
+  function renderSpans(parent, spans) {{
+    (spans || []).forEach(function(sp) {{
+      if (sp.t === "a") {{
+        // safeLink rejects non-http(s) urls (returns null); fall back to plain text so
+        // an editor writing a mailto:/#anchor/relative link can't blank the page.
+        var a = safeLink(sp.v, sp.href);
+        parent.appendChild(a || document.createTextNode(sp.v));
+      }} else if (sp.t === "b") {{
+        parent.appendChild(el("b", null, sp.v));
+      }} else {{
+        parent.appendChild(document.createTextNode(sp.v));
+      }}
+    }});
+  }}
+  function renderBlocks(root, blocks, ctx) {{
+    ctx = ctx || {{}};
+    (blocks || []).forEach(function(b) {{
+      if (b.t === "h2" || b.t === "h3" || b.t === "h4") {{
+        var hh = el(b.t); renderSpans(hh, b.spans); root.appendChild(hh);
+      }} else if (b.t === "p") {{
+        var pp = el("p"); renderSpans(pp, b.spans); root.appendChild(pp);
+      }} else if (b.t === "note") {{
+        var nb = el("div", "copy-note"); renderSpans(nb, b.spans); root.appendChild(nb);
+      }} else if (b.t === "formula") {{
+        root.appendChild(el("div", "formula", b.text));
+      }} else if (b.t === "ul") {{
+        var ul = el("ul", "copy-ul");
+        (b.items || []).forEach(function(it) {{ var li = el("li"); renderSpans(li, it); ul.appendChild(li); }});
+        root.appendChild(ul);
+      }} else if (b.t === "table") {{
+        var tbl = el("table", "copy-table");
+        var thead = el("thead"), tr = el("tr");
+        (b.head || []).forEach(function(hc) {{ tr.appendChild(el("th", null, hc)); }});
+        thead.appendChild(tr); tbl.appendChild(thead);
+        var tb = el("tbody");
+        (b.rows || []).forEach(function(row) {{
+          var r = el("tr");
+          row.forEach(function(c) {{ r.appendChild(el("td", null, c)); }});
+          tb.appendChild(r);
+        }});
+        tbl.appendChild(tb); root.appendChild(tbl);
+      }} else if (b.t === "token") {{
+        if (ctx[b.name]) ctx[b.name](root);
+      }}
+    }});
+  }}
   var TRIALS = DATA.trials || [];
   var PREPRINTS = DATA.preprints || [];
   var CORPUS = DATA.corpus_stats || {{}};
   // Which tab is showing + which lazy tabs have rendered, so the hidden tabs
   // (molecules grid / experimental / about) are built on first open, not on load.
   var currentTab = "evidence";
-  var _rendered = {{molecules: false, experimental: false, about: false}};
+  var _rendered = {{home: false, molecules: false, experimental: false, guide: false, methods: false}};
   var FILTERS = DATA.filters || [];
   var MULTI = new Set(DATA.multi || []);
   var ASPECTS = DATA.aspects || [];
@@ -1541,10 +1948,27 @@ _TEMPLATE = """<!DOCTYPE html>
     rec._hay = parts.join(" ").replace(/_/g, " ").toLowerCase();
     return rec._hay;
   }}
+  // Filler / question words dropped from a query so a natural question still matches
+  // on its meaningful terms (e.g. "does retatrutide reduce weight?" -> retatrutide,
+  // reduce, weight). Rule-based keyword search -- no semantic model.
+  var SEARCH_STOP = {{
+    "the": 1, "a": 1, "an": 1, "is": 1, "are": 1, "was": 1, "were": 1, "be": 1, "been": 1,
+    "of": 1, "for": 1, "to": 1, "in": 1, "on": 1, "at": 1, "by": 1, "and": 1, "or": 1, "as": 1,
+    "do": 1, "does": 1, "did": 1, "what": 1, "whats": 1, "which": 1, "who": 1, "whom": 1, "how": 1,
+    "why": 1, "when": 1, "where": 1, "can": 1, "could": 1, "would": 1, "should": 1, "will": 1,
+    "with": 1, "that": 1, "this": 1, "these": 1, "those": 1, "any": 1, "about": 1, "show": 1,
+    "me": 1, "tell": 1, "there": 1, "has": 1, "have": 1, "had": 1, "i": 1, "vs": 1, "versus": 1,
+    "it": 1, "its": 1, "from": 1, "into": 1, "than": 1, "then": 1, "get": 1, "find": 1, "list": 1
+  }};
+  function queryTerms(q) {{
+    return q.split(/\\s+/)
+      .map(function(t) {{ return t.replace(/[^a-z0-9%.\\-]/g, ""); }})
+      .filter(function(t) {{ return t && !SEARCH_STOP[t]; }});
+  }}
   function matchesQuery(rec, q) {{
-    // multi-term AND, case-insensitive.
+    // multi-term AND over meaningful (non-filler) terms; all-filler query matches all.
     var hay = hayFor(rec);
-    var terms = q.split(/\\s+/).filter(Boolean);
+    var terms = queryTerms(q);
     for (var i = 0; i < terms.length; i++) {{ if (hay.indexOf(terms[i]) === -1) return false; }}
     return true;
   }}
@@ -1722,17 +2146,169 @@ _TEMPLATE = """<!DOCTYPE html>
     return b;
   }}
 
+  // --- instant hover tooltip --------------------------------------------------
+  // Native title= tooltips have a ~1s browser delay; this custom tip appears at once
+  // on hover. (Focus handlers are wired too, harmless if the target isn't focusable.)
+  var _tipEl = null;
+  function _tipShow(text, x, y) {{
+    if (!_tipEl) {{ _tipEl = el("div", "hovertip"); _tipEl.setAttribute("role", "tooltip"); document.body.appendChild(_tipEl); }}
+    _tipEl.textContent = text;
+    _tipEl.style.display = "block";
+    var pad = 10, w = _tipEl.offsetWidth, h = _tipEl.offsetHeight;
+    var left = x + 14, top = y + 16;
+    if (left + w > window.innerWidth - pad) left = Math.max(pad, x - w - 14);
+    if (top + h > window.innerHeight - pad) top = Math.max(pad, y - h - 16);
+    _tipEl.style.left = left + "px";
+    _tipEl.style.top = top + "px";
+  }}
+  function _tipHide() {{ if (_tipEl) _tipEl.style.display = "none"; }}
+  // Scrolling (or a click) can remove the hovered node without a mouseleave; hide then.
+  window.addEventListener("scroll", _tipHide, true);
+  window.addEventListener("mousedown", _tipHide, true);
+  function attachTip(elem, text, gate) {{
+    function ok() {{ return !gate || gate(); }}
+    elem.addEventListener("mouseenter", function(e) {{ if (ok()) _tipShow(text, e.clientX, e.clientY); }});
+    elem.addEventListener("mousemove", function(e) {{ if (ok()) _tipShow(text, e.clientX, e.clientY); }});
+    elem.addEventListener("mouseleave", _tipHide);
+    elem.addEventListener("focus", function() {{
+      if (!ok()) return;
+      var r = elem.getBoundingClientRect(); _tipShow(text, r.left + r.width / 2, r.bottom);
+    }});
+    elem.addEventListener("blur", _tipHide);
+  }}
+  // Runtime toggle for the card definition hovers (tags + metric pills). Initialized
+  // from the build default, overridable by the user, persisted per browser.
+  var TAG_TIPS = (function() {{
+    try {{ var s = localStorage.getItem("reta_tagtips");
+      if (s === "0") return false; if (s === "1") return true; }} catch (e) {{}}
+    return !!DATA.tag_hovers;
+  }})();
+  function tagTipsOn() {{ return TAG_TIPS; }}
+  function setTagTips(on) {{
+    TAG_TIPS = !!on;
+    try {{ localStorage.setItem("reta_tagtips", on ? "1" : "0"); }} catch (e) {{}}
+  }}
+
+  // --- score rings ------------------------------------------------------------
+  // Rank is the overarching "TOTAL" ring; Rigor, Directness and Impact are the
+  // contributing sub-rings. Each is an SVG donut (pathLength=100 so the arc length
+  // is just the score as a %). Colours come from the site accent family; hovering a
+  // ring explains it (and, in the modal, highlights it in the side panel).
+  var SVGNS = "http://www.w3.org/2000/svg";
+  function svgEl(tag, attrs) {{
+    var e = document.createElementNS(SVGNS, tag);
+    if (attrs) for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }}
+  var METRIC_INFO = {{
+    rank: ["Rank", "Overall best-first score. Blends the three rings below with topical relevance, recency and journal venue."],
+    rigor: ["Rigor", "How well the study was conducted for its OWN evidence class (a trial on trial standards, a lab study on lab standards). Not comparable across classes. Practice guidelines are not graded (n/a)."],
+    direct: ["Directness", "How directly the finding applies to humans \\u2014 human RCT high, in-vitro low. The human-relevance axis."],
+    impact: ["Impact", "Citation-impact percentile (time-normalized, via iCite): how the paper's influence compares within its field. Blank when not yet indexed."]
+  }};
+  function pctVal(rec) {{
+    var p = rec.icite_nih_percentile;
+    if (p == null || String(p).trim() === "") return null;
+    var n = parseFloat(p); return isNaN(n) ? null : n;
+  }}
+  // A single ring. layout "big" = large dial + label under (the overarching Rank);
+  // layout "row" = small dial + label to the SIDE (the contributing sub-scores).
+  function scoreRingItem(key, value, opts) {{
+    opts = opts || {{}};
+    var meta = METRIC_INFO[key];
+    var big = !!opts.big, row = !!opts.row;
+    var item = el("span", "ring-item ring-" + key + (big ? " ring-big" : "") + (row ? " ring-row" : ""));
+    item.setAttribute("data-metric", key);
+    attachTip(item, meta[0] + ": " + meta[1]);  // instant hover tip (no title= delay)
+    var s = svgEl("svg", {{viewBox: "0 0 36 36", "class": "ring-svg"}});
+    s.appendChild(svgEl("circle", {{cx: "18", cy: "18", r: "15.5", "class": "ring-track"}}));
+    if (value != null) {{
+      var v = Math.max(0, Math.min(100, value));
+      var arc = svgEl("circle", {{cx: "18", cy: "18", r: "15.5", pathLength: "100", "class": "ring-arc"}});
+      arc.style.strokeDasharray = v + " 100";
+      s.appendChild(arc);
+    }}
+    // Dial wraps the SVG + number so the number centers on the RING, not the item.
+    var dial = el("span", "ring-dial");
+    dial.appendChild(s);
+    var center = opts.center != null ? opts.center : (value != null ? String(Math.round(value)) : "n/a");
+    dial.appendChild(el("span", "ring-ctr" + (value == null ? " ring-na" : ""), center));
+    item.appendChild(dial);
+    item.appendChild(el("span", row ? "ring-lbl-side" : "ring-lbl", meta[0]));
+    return item;
+  }}
+  function scoreRings(rec) {{
+    var box = el("div", "score-box");
+    var isGuide = (rec.evidence_class || "") === "clinical_guideline";
+    // Overarching Rank ring on the left, visually dominant.
+    box.appendChild(scoreRingItem("rank", num(rec.rank_score), {{big: true}}));
+    // The three contributing scores, smaller, stacked to the right with side labels,
+    // under a caption so it reads "Rank <- these three".
+    var subs = el("div", "ring-subs");
+    subs.appendChild(el("div", "ring-subs-cap", "Contributes to rank"));
+    subs.appendChild(scoreRingItem("rigor", isGuide ? null : num(rec.reliability_score), {{row: true, center: isGuide ? "n/a" : null}}));
+    subs.appendChild(scoreRingItem("direct", num(rec.evidence_directness), {{row: true}}));
+    subs.appendChild(scoreRingItem("impact", pctVal(rec), {{row: true}}));
+    box.appendChild(subs);
+    return box;
+  }}
+  // Modal "Scope Score": rings + a side panel explaining each metric, with the ring
+  // and its panel row cross-highlighting on hover (both carry data-metric=key).
+  function scorePanel(rec) {{
+    var wrap = el("div", "scope-score");
+    wrap.appendChild(scoreRings(rec));
+    var isGuide = (rec.evidence_class || "") === "clinical_guideline";
+    var pv = pctVal(rec);
+    var why = el("div", "scope-why");
+    why.appendChild(el("div", "scope-why-h", "What these mean"));
+    var rows = [
+      ["rank", "Rank " + (rec.rank_score || "?") + (rec.rank_tier ? " (" + rec.rank_tier + ")" : ""), METRIC_INFO.rank[1]],
+      ["rigor", isGuide ? "Rigor n/a (guideline)" : "Rigor " + (rec.reliability_score || "?"), METRIC_INFO.rigor[1]],
+      ["direct", "Directness " + (rec.evidence_directness || "?"), METRIC_INFO.direct[1]],
+      ["impact", "Impact " + (pv == null ? "n/a" : Math.round(pv) + "th pct"), METRIC_INFO.impact[1]]
+    ];
+    rows.forEach(function(rw) {{
+      var row = el("div", "scope-row");
+      row.setAttribute("data-metric", rw[0]);
+      row.appendChild(el("b", null, rw[1]));
+      row.appendChild(el("span", null, " \\u2014 " + rw[2]));
+      why.appendChild(row);
+    }});
+    wrap.appendChild(why);
+    var allEls = wrap.querySelectorAll("[data-metric]");
+    function setHl(key, on) {{
+      for (var i = 0; i < allEls.length; i++)
+        if (allEls[i].getAttribute("data-metric") === key) allEls[i].classList[on ? "add" : "remove"]("hl");
+    }}
+    for (var i = 0; i < allEls.length; i++) {{
+      (function(e) {{
+        var key = e.getAttribute("data-metric");
+        e.addEventListener("mouseenter", function() {{ setHl(key, true); }});
+        e.addEventListener("mouseleave", function() {{ setHl(key, false); }});
+      }})(allEls[i]);
+    }}
+    return wrap;
+  }}
+
   function aspectTags(rec, onClick) {{
     var tags = el("div", "tags");
     ASPECTS.forEach(function(a) {{
       splitVals(rec, a.field).forEach(function(v) {{
         // Display the prettified label but filter on the raw value v.
         var t = el("span", "tag " + a.cls, pretty(v));
-        t.title = a.label;
+        // Plain-language definition tip (runtime-toggleable via TAG_TIPS). Every tag
+        // gets a tip: its glossary definition when available, else at least a readable
+        // "Name (category)" so nothing is ever a bare, unexplained tag.
+        var gdef = (GLOSS.byKey || {{}})[a.field.replace("facet_", "") + "|" + v];
+        var tipText = (gdef && gdef["def"])
+          ? (gdef.display || pretty(v)) + " \\u2014 " + gdef["def"]
+          : pretty(v) + " (" + a.label + ")";
+        attachTip(t, tipText, tagTipsOn);
         // Keyboard-operable: a filter shortcut, so make it focusable + Enter/Space.
         t.setAttribute("tabindex", "0");
         t.setAttribute("role", "button");
-        t.setAttribute("aria-label", a.label + ": " + pretty(v));
+        t.setAttribute("aria-label", a.label + ": " + pretty(v)
+          + (gdef && gdef["def"] ? ". " + gdef["def"] : ""));
         t.addEventListener("click", function(ev) {{ ev.stopPropagation(); onClick(a.field, v); }});
         t.addEventListener("keydown", function(ev) {{
           if (ev.key === "Enter" || ev.key === " ") {{ ev.preventDefault(); ev.stopPropagation(); onClick(a.field, v); }}
@@ -1779,7 +2355,10 @@ _TEMPLATE = """<!DOCTYPE html>
 
   function journalTierBadge(rec) {{
     if (!rec.journal_tier) return null;
-    return el("span", "jtier", pretty(rec.journal_tier));
+    var b = el("span", "jtier", pretty(rec.journal_tier));
+    attachTip(b, pretty(rec.journal_tier) + " journal \\u2014 a rough tier for the publishing venue's "
+      + "standing (e.g. flagship / top-tier vs. lower-tier). Venue is a small input to the rank score.", tagTipsOn);
+    return b;
   }}
 
   // Clicking an aspect tag adds that value to its domain's INCLUDE set (if the
@@ -1806,33 +2385,40 @@ _TEMPLATE = """<!DOCTYPE html>
     card.appendChild(el("h3", null, r.title || "(untitled)"));
 
     var meta = el("div", "meta");
+    // Add a plain-language definition tip to a pill (runtime-toggleable). Mark it
+    // with a dotted underline so people know there's an explanation on hover.
+    function pillTip(node, text) {{ node.classList.add("pill-tip"); attachTip(node, text, tagTipsOn); return node; }}
     // Prominent caution badge first so a retracted paper is unmistakable.
     if (isRetracted(r)) meta.appendChild(el("span", "pill retracted", "\\u26a0 RETRACTED"));
     if (r.molecule_name) meta.appendChild(el("span", "pill", r.molecule_name));
     if (r.pub_year) meta.appendChild(el("span", "pill", r.pub_year));
-    if (r.evidence_class_label) meta.appendChild(el("span", "pill", r.evidence_class_label));
+    if (r.evidence_class_label) meta.appendChild(pillTip(el("span", "pill", r.evidence_class_label),
+      "Evidence class \\u2014 the kind of study this is. It sets which rigor rubric applies and the directness value. See the Guide / Methods."));
     // iCite preview pills (present once the corpus is iCite-enriched).
     if (r.icite_rcr !== undefined && String(r.icite_rcr).trim() !== "" && !isNaN(parseFloat(r.icite_rcr)))
-      meta.appendChild(el("span", "pill", "RCR " + parseFloat(r.icite_rcr).toFixed(1)));
-    if (r.icite_nih_percentile !== undefined && String(r.icite_nih_percentile).trim() !== "" && !isNaN(parseFloat(r.icite_nih_percentile)))
-      meta.appendChild(el("span", "pill", Math.round(parseFloat(r.icite_nih_percentile)) + "th pct"));
+      meta.appendChild(pillTip(el("span", "pill", "RCR " + parseFloat(r.icite_rcr).toFixed(1)),
+        "Relative Citation Ratio (NIH iCite): how often this paper is cited versus others in its field. 1.0 = field average; higher = more cited."));
+    // (impact percentile now shown as the Impact score ring, not a duplicate pill)
     var iclp = String(r.icite_is_clinical || "").trim().toLowerCase();
     if (iclp === "yes" || iclp === "y" || iclp === "1" || iclp === "true")
-      meta.appendChild(el("span", "pill", "clinical"));
+      meta.appendChild(pillTip(el("span", "pill", "clinical"),
+        "iCite classifies this as a clinical article (its own citation-based classifier, separate from our Human-data tab)."));
     if (r.journal) {{
       var jp = el("span", "pill", r.journal);
       var jt = journalTierBadge(r);
       if (jt) jp.appendChild(jt);
       meta.appendChild(jp);
     }}
-    meta.appendChild(reliabilityMeter(r));
-    meta.appendChild(directnessBadge(r));
-    meta.appendChild(el("span", "pill", "Cited by " + citationText(r)));
+    meta.appendChild(pillTip(el("span", "pill", "Cited by " + citationText(r)),
+      "Total times this paper has been cited by other papers (via OpenAlex). Counts may lag behind current totals."));
     var ci = clinicalInfluence(r);
     if (ci > 0) {{
-      meta.appendChild(el("span", "pill", "Cited by " + ci + " clinical article" + (ci === 1 ? "" : "s")));
+      meta.appendChild(pillTip(el("span", "pill", "Cited by " + ci + " clinical article" + (ci === 1 ? "" : "s")),
+        "How many CLINICAL articles cite this paper (via iCite) \\u2014 a signal it is informing clinical work."));
     }}
     card.appendChild(meta);
+    // Score rings (Rank total + Rigor / Directness / Impact) in a distinct box.
+    card.appendChild(scoreRings(r));
 
     var au = authorsLine(r);
     if (au) card.appendChild(au);
@@ -1978,15 +2564,14 @@ _TEMPLATE = """<!DOCTYPE html>
     if (mau) m.appendChild(mau);
     m.appendChild(el("div", "summary", composeSummary(r)));
 
-    // meters
-    var mrow = el("div", "meta");
-    // Prominent caution badge first so a retracted paper is unmistakable.
-    if (isRetracted(r)) mrow.appendChild(el("span", "pill retracted", "\\u26a0 RETRACTED"));
-    mrow.appendChild(reliabilityMeter(r));
-    mrow.appendChild(directnessBadge(r));
-    if (r.rank_score) mrow.appendChild(el("span", "badge tier-" + tierClass(r.rank_tier),
-        "rank " + r.rank_score + (r.rank_tier ? " (" + r.rank_tier + ")" : "")));
-    m.appendChild(mrow);
+    // Scope Score: the ring cluster + a side "what these mean" panel that
+    // cross-highlights the metric you hover (rings <-> panel rows).
+    if (isRetracted(r)) {{
+      var rrow = el("div", "meta");
+      rrow.appendChild(el("span", "pill retracted", "\\u26a0 RETRACTED"));
+      m.appendChild(rrow);
+    }}
+    m.appendChild(scorePanel(r));
 
     var grid = el("div", "grid");
     kv(grid, "Molecule", r.molecule_name);
@@ -2903,6 +3488,24 @@ _TEMPLATE = """<!DOCTYPE html>
       if (m.reg_retrieved_utc) src.appendChild(document.createTextNode(" (retrieved " + m.reg_retrieved_utc + ")"));
       d.appendChild(src);
     }}
+    // Direct per-drug lookups into the FDA label (DailyMed) and approval (Drugs@FDA)
+    // databases -- name-based deep links to the actual evidence pages, not the FDA
+    // homepage. Both are shown because neither is a complete index of the other.
+    var lname = (m.molecule_name || m.molecule_id || "").trim();
+    if (lname) {{
+      var look = el("div", "reg-lookup");
+      look.appendChild(document.createTextNode("Regulatory lookup: "));
+      look.appendChild(safeLink("DailyMed label",
+        "https://dailymed.nlm.nih.gov/dailymed/search.cfm?labeltype=all&query=" + encodeURIComponent(lname)));
+      look.appendChild(document.createTextNode(" \\u00b7 "));
+      look.appendChild(safeLink("Drugs@FDA",
+        "https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=BasicSearch.process&searchTerm=" + encodeURIComponent(lname)));
+      d.appendChild(look);
+      d.appendChild(el("div", "reg-lookup-hint",
+        "Name searches on the FDA label (DailyMed) and approval (Drugs@FDA) databases. Neither is a "
+        + "complete list \\u2014 a bioactive may appear in one and not the other, or under a brand or "
+        + "chemical name \\u2014 so check both."));
+    }}
     // Clicking inside the panel must not trigger the card's evidence navigation.
     d.addEventListener("click", function(e) {{ e.stopPropagation(); }});
     return d;
@@ -2915,12 +3518,21 @@ _TEMPLATE = """<!DOCTYPE html>
       var card = el("div", "mol-card");
       card.appendChild(el("h3", null, m.molecule_name || m.molecule_id || "(unnamed)"));
       var stats = el("div", "mol-stats");
-      function stat(label, val) {{ if (val && val !== "0") stats.appendChild(el("span", "pill", label + ": " + val)); }}
-      stat("records", m.total_records);
-      stat("featured", m.auto_published);
-      stat("human", m.human_evidence);
-      stat("preclinical", m.preclinical_evidence);
-      stat("max rigor", m.max_reliability);
+      function stat(label, val, tip) {{
+        if (val && val !== "0") {{
+          var p = el("span", "pill", label + ": " + val);
+          if (tip) {{ p.classList.add("pill-tip"); attachTip(p, tip); }}
+          stats.appendChild(p);
+        }}
+      }}
+      stat("records", m.total_records, "Total evidence records indexed for this bioactive.");
+      stat("spotlight", m.auto_published,
+        "Spotlight papers: records that passed the auto-publish bar (high directness with at least "
+        + "moderate rigor, or a strong evidence synthesis / practice guideline) \\u2014 this bioactive's "
+        + "strongest, most human-relevant evidence.");
+      stat("human", m.human_evidence, "Records that are human / clinical evidence.");
+      stat("preclinical", m.preclinical_evidence, "Records that are preclinical (animal or in-vitro).");
+      stat("max rigor", m.max_reliability, "Highest automated rigor score among this bioactive's records.");
       card.appendChild(stats);
       // Evidence-density badge: honest literature-VOLUME signal (not quality).
       // Sparse molecules publish all their records; the badge sets expectations.
@@ -3033,19 +3645,38 @@ _TEMPLATE = """<!DOCTYPE html>
     "the intervention works. \\u201cOngoing\\u201d means recruiting or active.";
   var TRIALS_EMPTY = "No registry studies indexed yet \\u2014 populates after the " +
     "trials fetch runs.";
+  // Populate a <select> with distinct non-empty values from the trials feed (sorted).
+  function fillTrialSelect(sel, field) {{
+    if (!sel || sel._filled) return;
+    var seen = {{}}, vals = [];
+    TRIALS.forEach(function(t) {{
+      var v = (t[field] || "").trim();
+      if (v && !seen[v]) {{ seen[v] = 1; vals.push(v); }}
+    }});
+    vals.sort();
+    vals.forEach(function(v) {{
+      var o = document.createElement("option"); o.value = v; o.textContent = v;
+      sel.appendChild(o);
+    }});
+    sel._filled = true;
+  }}
+  var _trialsInit = false;
   function trialsFeedInit() {{
     var note = document.getElementById("trials-note");
-    var toolbar = document.getElementById("trials-toolbar");
     if (!TRIALS.length) {{
       note.textContent = TRIALS_EMPTY;
-      toolbar.style.display = "none";
+      document.getElementById("trials-sidebar").style.display = "none";
       document.getElementById("trials-count").textContent = "";
       document.getElementById("trials-list").textContent = "";
       return;
     }}
     note.textContent = TRIALS_NOTE;
-    toolbar.style.display = "";
-    fillMolSelect(document.getElementById("trials-mol"), TRIALS);
+    if (!_trialsInit) {{
+      fillMolSelect(document.getElementById("trials-mol"), TRIALS);
+      fillTrialSelect(document.getElementById("trials-phase"), "phases");
+      fillTrialSelect(document.getElementById("trials-stype"), "study_type");
+      _trialsInit = true;
+    }}
     renderTrials();
   }}
   function trialDates(t) {{
@@ -3058,12 +3689,17 @@ _TEMPLATE = """<!DOCTYPE html>
     if (!TRIALS.length) return;
     var q = (document.getElementById("trials-q").value || "").trim().toLowerCase();
     var mol = document.getElementById("trials-mol").value;
-    var ongoingOnly = document.getElementById("trials-ongoing").checked;
+    var status = (document.getElementById("trials-status") || {{}}).value || "";
+    var phase = (document.getElementById("trials-phase") || {{}}).value || "";
+    var stype = (document.getElementById("trials-stype") || {{}}).value || "";
     var sortBy = document.getElementById("trials-sort").value;
     var yr = (document.getElementById("trials-year").value || "").trim();
     var rows = TRIALS.filter(function(t) {{
-      if (ongoingOnly && !t.ongoing) return false;
+      if (status === "ongoing" && !t.ongoing) return false;
+      if (status === "completed" && t.ongoing) return false;
       if (mol && (t.molecule_name || "") !== mol) return false;
+      if (phase && (t.phases || "") !== phase) return false;
+      if (stype && (t.study_type || "") !== stype) return false;
       if (yr && String(t.start_date || "").slice(0, 4) !== yr) return false;
       if (q) {{
         var hay = ((t.brief_title || "") + " " + (t.conditions || "") + " " +
@@ -3270,30 +3906,30 @@ _TEMPLATE = """<!DOCTYPE html>
   // The Evidence and Clinical tabs share the SAME browser (sidebar + list); only
   // the base record set differs (all vs human-only). Bioactives / Experimental /
   // About are standalone panels.
+  var TAB_ROUTES = ["home", "evidence", "clinical", "trials", "preprints", "molecules", "experimental", "guide", "methods"];
   function showTab(name) {{
+    var isHome = name === "home";
     var isBrowser = (name === "evidence" || name === "clinical");
     var isMol = name === "molecules";
     var isExp = name === "experimental";
     var isTrials = name === "trials";
     var isPreprints = name === "preprints";
-    var isAbout = name === "about";
+    var isGuide = name === "guide";
+    var isMethods = name === "methods";
+    document.getElementById("home-view").style.display = isHome ? "" : "none";
+    document.getElementById("guide-view").style.display = isGuide ? "" : "none";
     document.getElementById("browser-view").style.display = isBrowser ? "" : "none";
     document.getElementById("molecules-view").style.display = isMol ? "" : "none";
     document.getElementById("experimental-view").style.display = isExp ? "" : "none";
     document.getElementById("trials-view").style.display = isTrials ? "" : "none";
     document.getElementById("preprints-view").style.display = isPreprints ? "" : "none";
-    document.getElementById("about-view").style.display = isAbout ? "" : "none";
+    document.getElementById("methods-view").style.display = isMethods ? "" : "none";
     document.getElementById("sidebar").style.display = isBrowser ? "" : "none";
-    document.getElementById("tab-evidence").className = (name === "evidence") ? "active" : "";
-    document.getElementById("tab-clinical").className = (name === "clinical") ? "active" : "";
-    document.getElementById("tab-trials").className = isTrials ? "active" : "";
-    document.getElementById("tab-preprints").className = isPreprints ? "active" : "";
-    document.getElementById("tab-molecules").className = isMol ? "active" : "";
-    document.getElementById("tab-experimental").className = isExp ? "active" : "";
-    document.getElementById("tab-about").className = isAbout ? "active" : "";
-    ["evidence", "clinical", "trials", "preprints", "molecules", "experimental", "about"].forEach(function(t) {{
+    document.getElementById("trials-sidebar").style.display = isTrials ? "" : "none";
+    TAB_ROUTES.forEach(function(t) {{
       var b = document.getElementById("tab-" + t);
       if (b) {{
+        b.className = (t === name) ? "active" : "";
         b.setAttribute("aria-selected", (t === name) ? "true" : "false");
         // Roving tabindex (WAI tablist): only the active tab is in the Tab order.
         b.setAttribute("tabindex", (t === name) ? "0" : "-1");
@@ -3301,9 +3937,11 @@ _TEMPLATE = """<!DOCTYPE html>
     }});
     currentTab = name;
     // Lazy-render hidden tabs on first open so they don't cost anything at load.
+    if (isHome && !_rendered.home) {{ renderHome(); _rendered.home = true; }}
     if (isMol && !_rendered.molecules) {{ renderMolecules(); _rendered.molecules = true; }}
     if (isExp && !_rendered.experimental) {{ renderExperimental(); _rendered.experimental = true; }}
-    if (isAbout && !_rendered.about) {{ renderAbout(); _rendered.about = true; }}
+    if (isGuide && !_rendered.guide) {{ renderGuide(); _rendered.guide = true; }}
+    if (isMethods && !_rendered.methods) {{ renderMethods(); _rendered.methods = true; }}
     if (isTrials) trialsFeedInit();
     if (isPreprints) preprintsFeedInit();
     if (isBrowser) {{
@@ -3327,210 +3965,93 @@ _TEMPLATE = """<!DOCTYPE html>
   // ---- About / Methods -------------------------------------------------------
   // Rendered from a small data structure via textContent (no innerHTML) so the
   // page keeps its no-innerHTML posture. Formulas match the curation pipeline.
-  function renderAbout() {{
-    var root = document.getElementById("about-body");
+  function buildHomeNav() {{
+    var nav = el("div", "home-nav");
+    [["evidence", "Evidence", "Browse & filter all indexed papers, best-first."],
+     ["clinical", "Human data", "Restrict to human / clinical evidence."],
+     ["trials", "Trials registry", "Ongoing & completed trials from ClinicalTrials.gov."],
+     ["preprints", "Preprints", "Not-yet-peer-reviewed bioRxiv / medRxiv."],
+     ["molecules", "Bioactive overview", "Evidence grouped by molecule."],
+     ["methods", "Methods", "Exactly how every score is computed."]].forEach(function(it) {{
+      var b = el("button", "home-navbtn");
+      b.appendChild(el("span", "home-navbtn-t", it[1]));
+      b.appendChild(el("span", "home-navbtn-d", it[2]));
+      b.addEventListener("click", function() {{ showTab(it[0]); }});
+      nav.appendChild(b);
+    }});
+    return nav;
+  }}
+  function renderHome() {{
+    var root = document.getElementById("home-body");
     root.textContent = "";
-    function h2(t) {{ root.appendChild(el("h2", null, t)); }}
-    function h3(t) {{ root.appendChild(el("h3", null, t)); }}
-    function p(t) {{ root.appendChild(el("p", null, t)); }}
-    function formula(t) {{ root.appendChild(el("div", "formula", t)); }}
-    function list(items) {{
-      var ul = el("ul");
-      items.forEach(function(it) {{ ul.appendChild(el("li", null, it)); }});
-      root.appendChild(ul);
+    if (!(COPY.home && COPY.home.length)) {{ root.appendChild(el("p", null, "Welcome to RetaBase.")); return; }}
+    renderBlocks(root, COPY.home, {{
+      "nav": function(r) {{ r.appendChild(buildHomeNav()); }},
+      "rings": function(r) {{ r.appendChild(scoreRings({{rank_score: "88", reliability_score: "82", evidence_directness: "95", icite_nih_percentile: "76", evidence_class: ""}})); }},
+      "methods-link": function(r) {{
+        var mb = el("button", "home-navbtn inline");
+        mb.textContent = "Open Methods \\u2192";
+        mb.addEventListener("click", function() {{ showTab("methods"); }});
+        r.appendChild(mb);
+      }}
+    }});
+  }}
+  // Guide tab: plain-language glossary. A category menu (mobile-friendly <select>)
+  // reveals one category at a time; each option shows its display name + one sentence.
+  function renderGuide() {{
+    var root = document.getElementById("guide-body");
+    root.textContent = "";
+    var cats = (GLOSS && GLOSS.categories) || [];
+    root.appendChild(el("h2", "guide-h", "Guide to the tags"));
+    root.appendChild(el("p", "guide-intro", "Plain-language definitions of every descriptor you'll see "
+      + "on a card \\u2014 what each category means and what its options are. Pick a category:"));
+    // Site-wide toggle for the on-card definition hovers (persists in this browser).
+    var toggle = el("label", "guide-toggle");
+    var cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = TAG_TIPS;
+    cb.addEventListener("change", function() {{ setTagTips(cb.checked); }});
+    toggle.appendChild(cb);
+    toggle.appendChild(document.createTextNode(" Show these definitions when I hover a tag or metric on a card"));
+    root.appendChild(toggle);
+    if (!cats.length) {{ root.appendChild(el("p", null, "Glossary is being updated.")); return; }}
+    var sel = el("select", "guide-select");
+    sel.setAttribute("aria-label", "Choose a category");
+    cats.forEach(function(c, idx) {{
+      var o = document.createElement("option"); o.value = String(idx); o.textContent = c.label;
+      sel.appendChild(o);
+    }});
+    root.appendChild(sel);
+    var panel = el("div", "guide-panel");
+    root.appendChild(panel);
+    function show(idx) {{
+      panel.textContent = "";
+      var c = cats[idx]; if (!c) return;
+      (c.items || []).forEach(function(it) {{
+        var row = el("div", "guide-row");
+        row.appendChild(el("span", "guide-term", it.display || it.value));
+        row.appendChild(el("span", "guide-def", it["def"] || ""));
+        panel.appendChild(row);
+      }});
     }}
-    h2("About RetaBase");
-    p("RetaBase is a transparent, rule-based evidence dashboard for retatrutide and "
-      + "related bioactives (peptides, small molecules, and related compounds). Every "
-      + "paper is scored by an auditable rubric \\u2014 no black-box model decides what "
-      + "ranks first. The whole site is a single offline HTML file; the underlying feed "
-      + "and scoring code can be inspected and reproduced.");
-    p("Scope: RetaBase indexes the biomedical literature only for the specific molecules "
-      + "it tracks \\u2014 the ones listed under the Bioactives tab \\u2014 not every paper on "
-      + "every peptide or drug. \\u201cAll\\u201d and \\u201cevery\\u201d on this site always mean "
-      + "\\u201call of the papers found for those tracked bioactives,\\u201d and even within that set "
-      + "coverage depends on what the searches have fetched so far (the historical backfill is "
-      + "still filling in older years).");
-    p("Each paper carries two independent axes \\u2014 how well it was conducted "
-      + "(automated rigor) and how directly it applies to humans (directness) \\u2014 plus a "
-      + "combined rank used for best-first ordering. The tabs let you browse the full indexed "
-      + "set for the tracked bioactives, restrict to human/clinical data, list the bioactives, "
-      + "or view candidate compounds.");
+    sel.addEventListener("change", function() {{ show(parseInt(sel.value, 10) || 0); }});
+    show(0);
+  }}
 
-    h3("Regulatory information & safety");
-    p("RetaBase exists to document what the published literature and public registries "
-      + "say \\u2014 including what people are reported to be doing \\u2014 so that readers, "
-      + "clinicians and researchers can see the evidence and the regulatory picture in one "
-      + "place. It is not medical advice, creates no clinician\\u2013patient relationship, and "
-      + "is not a guide to obtaining anything.");
-    p("We are explicitly against the use of these substances without a qualified clinician. "
-      + "Many interact with prescription medicines, several have contraindications that depend "
-      + "on individual history, and several are being studied precisely because their risks are "
-      + "not yet characterised. An absence of reported harms in this database is not evidence of "
-      + "safety \\u2014 it frequently means nobody has looked.");
-    p("Regulatory status varies by country and changes over time; every status shown carries "
-      + "its source and the date it was retrieved, and may already be out of date. Legality "
-      + "differs by jurisdiction and is the reader's responsibility. Nothing here should be read "
-      + "as encouragement to obtain a substance through compounding, research-chemical, or "
-      + "grey-market channels.");
-
-    h3("Version, citation & reproducibility");
+  function renderMethods() {{
+    var root = document.getElementById("methods-body");
+    root.textContent = "";
+    if (!(COPY.methods && COPY.methods.length)) {{ root.appendChild(el("p", null, "Methods content is being updated.")); return; }}
+    renderBlocks(root, COPY.methods, {{}});
     var vparts = [];
     if (CORPUS.corpus_fingerprint) vparts.push("corpus fingerprint " + CORPUS.corpus_fingerprint);
     if (CORPUS.build_sha && CORPUS.build_sha !== "local") vparts.push("build " + CORPUS.build_sha);
     if (CORPUS.generated_utc) vparts.push("generated " + String(CORPUS.generated_utc).slice(0, 10));
-    if (vparts.length)
-      p("This deployed build: " + vparts.join(" \\u00b7 ") + ". The corpus fingerprint is a "
-        + "deterministic hash of the exact corpus composition, so a citation can name the "
-        + "version it saw and two builds from the same corpus share it.");
-    p("The full SQLite corpus is snapshotted weekly (compressed + SHA-256) as a GitHub "
-      + "Release asset, so a given fingerprint can be reconstructed from the matching snapshot.");
+    if (vparts.length) root.appendChild(el("p", "copy-ver", "This build: " + vparts.join(" \\u00b7 ") + "."));
     if (CORPUS.zenodo_doi) {{
       var cite = el("p", null, "How to cite: RetaBase, DOI ");
       cite.appendChild(safeLink(CORPUS.zenodo_doi, "https://doi.org/" + encodeURIComponent(CORPUS.zenodo_doi)));
       cite.appendChild(document.createTextNode(" (see CITATION.cff in the repository)."));
       root.appendChild(cite);
     }}
-
-    h3("Automated rigor signals \\u2014 within-class study quality (0\\u2013100)");
-    p("The automated rigor score is a set of RULE-BASED signals extracted from the "
-      + "reported methods/abstract of each paper. Using a rubric appropriate to the "
-      + "evidence class (a randomized human trial and an in-vitro assay are judged on "
-      + "different rubrics), it starts from a class base score and adds/subtracts points "
-      + "for design features it can detect in the text \\u2014 randomization, blinding, "
-      + "controls, sample size, follow-up, reporting completeness \\u2014 clamped to "
-      + "0\\u2013100. It is a within-class quality signal, NOT a measure of how human-"
-      + "relevant the evidence is (that is directness).");
-    p("Important: this is NOT a formal risk-of-bias assessment (such as Cochrane RoB 2 "
-      + "or ROBINS-I) and NOT a GRADE certainty-of-evidence rating. No human reviewer "
-      + "appraises each study, and formal risk of bias is NOT assessed \\u2014 the paper "
-      + "detail view labels it \\u201cnot assessed (automated rigor signals only)\\u201d. "
-      + "Treat the score as an automated triage signal, not a substitute for reading the "
-      + "methods or a systematic critical appraisal.");
-    p("Design credits are negation-aware: a study is not given points for a method it "
-      + "explicitly lacks or merely cites. \\u201cAn open-label study, unlike double-blind "
-      + "trials\\u2026\\u201d and \\u201cnot randomized\\u201d earn no blinding/randomization "
-      + "credit, and a term inside a larger word (\\u201cunblinded\\u201d) is not counted. "
-      + "Where an abstract is structured, these design terms are read from its Methods "
-      + "section, so background or citation mentions do not leak rigor credit.");
-
-    h3("Extracted study details (dose, route, duration, sample size)");
-    p("Dose, route, duration and sample size are parsed from the title/abstract by rules "
-      + "\\u2014 no model interprets them. Two safeguards matter. First, values are tied to "
-      + "the record\\u2019s own molecule: when a paper compares drugs, extraction is "
-      + "restricted to sentences naming THIS molecule, and if two drugs\\u2019 doses sit in "
-      + "one clause so they cannot be attributed, the dose is omitted rather than guessed "
-      + "(the paper detail view says so). Second, look-alikes are rejected: a BMI figure "
-      + "(\\u201c39\\u00b79 kg/m\\u00b2\\u201d) is not a dose, lab concentrations "
-      + "(\\u201c7\\u00b72 mmol/L\\u201d, \\u201c140 mg/dL\\u201d) are readouts rather than "
-      + "doses, and counts reported at different stages of one cohort (\\u201cn=50 enrolled "
-      + "\\u2026 n=48 analysed\\u201d) are not summed \\u2014 only genuine multi-arm counts are. "
-      + "Blank means \\u201cnot stated or not safely attributable,\\u201d never zero.");
-
-    h3("Evidence density per bioactive");
-    p("Each bioactive carries an evidence-density tier \\u2014 sparse, moderate or "
-      + "saturated \\u2014 shown on its card. This describes how MUCH literature exists "
-      + "(record and human-study counts), not how good it is: a sparse molecule is "
-      + "under-studied, not disproven. Low-volume molecules are exempt from the per-molecule "
-      + "publishing cap so none of their few records are hidden. Records are also de-duplicated "
-      + "per paper+bioactive, so a paper matched by several search rules is counted once.");
-
-    h3("Directness \\u2014 translational level");
-    p("Directness measures how directly the evidence bears on human outcomes: human "
-      + "randomized controlled trials score highest, then human interventional and "
-      + "observational studies and evidence syntheses, then animal in-vivo work, with "
-      + "in-vitro / molecular studies lowest. It is derived from the evidence class and "
-      + "study model, independent of study quality.");
-
-    h3("NIH iCite signals \\u2014 impact, translation, clinical uptake");
-    p("Several metrics come from NIH iCite (the Open Citation Collection), which "
-      + "provides field- and time-normalized values for essentially every PubMed "
-      + "article. Where iCite covers a paper, we prefer its curated values over our "
-      + "own heuristics; papers iCite has not yet scored (very recent or not-yet-"
-      + "indexed) fall back to the keyword-based signals.");
-    list([
-      "Impact \\u2014 instead of a raw citation count, ranking prefers iCite\\u2019s NIH "
-        + "percentile and Relative Citation Ratio (RCR; 1.0 = the field median), so a "
-        + "well-cited older paper and a fast-rising new one are compared fairly.",
-      "Human / animal / in-vitro \\u2014 iCite\\u2019s MeSH-curated human/animal/molecular "
-        + "fractions decide a paper\\u2019s translational compartment when our text "
-        + "heuristics are unsure (precise designs like RCTs are still set by study type).",
-      "APT (Approximate Potential to Translate, 0\\u20131) \\u2014 a model estimate of "
-        + "translational potential that slightly nudges the directness of preclinical / "
-        + "in-vitro work.",
-      "Clinical influence \\u2014 how many clinical articles cite the paper (shown in its "
-        + "detail view), a direct read on clinical uptake.",
-    ]);
-    p("The \\u201cTriangle view\\u201d toggle on the Evidence tab plots the currently-"
-      + "filtered papers on the biomedicine triangle (Human, Animal, Molecular/Cellular "
-      + "corners) from iCite coordinates, so you can see the translational spread of a "
-      + "result set at a glance. You can also sort by impact percentile, translational "
-      + "potential (APT), or clinical influence, and restrict to clinical articles only.");
-
-    h3("Rank \\u2014 combined best-first ordering");
-    p("The rank score combines six normalized (0\\u20131) components into a single "
-      + "weighted sum used to order results:");
-    list([
-      "Directness \\u2014 translational level (human RCT high \\u2192 in-vitro low).",
-      "Quality \\u2014 the automated rigor score above (within-class study quality).",
-      "Relevance \\u2014 topical fit to the bioactive and its core indications/endpoints.",
-      "Recency \\u2014 how recent the publication year is.",
-      "Impact \\u2014 how much OTHER papers cite this one, preferring NIH iCite's field- and time-normalized percentile (so a recent paper is judged against peers of the same age, not buried for being new); it falls back to the Relative Citation Ratio, then a log-scaled raw count only when iCite has not scored the paper. Not about whether the paper has a reference list.",
-      "Venue \\u2014 journal reputation / tier."
-    ]);
-    formula("rank_score = 0.30\\u00b7directness + 0.28\\u00b7quality + 0.18\\u00b7relevance "
-      + "+ 0.10\\u00b7recency + 0.10\\u00b7impact + 0.04\\u00b7venue");
-    p("Every component and the final weighted score are shown per paper in the "
-      + "\\u201cRank breakdown\\u201d of its detail view, so any ordering can be traced back "
-      + "to its inputs.");
-
-    h3("Counts");
-    p("Result counts are EVIDENCE-RECORD counts (paper \\u00d7 molecule \\u00d7 rule), which is "
-      + "why they can exceed the distinct-paper number shown in the corpus strip. The header "
-      + "reads \\u201cShowing X of Y evidence records\\u201d where Y is the records in the current "
-      + "tab (all evidence, or human-only) and X is the number passing your filters; "
-      + "\\u201cZ filtered out\\u201d is Y minus X. Each filter option\\u2019s number is the count "
-      + "of records with that value under all your OTHER active filters (cross-filtered).");
-
-    h3("What's published vs. the full corpus");
-    p("A few molecules (for example metformin or rapamycin) have tens of thousands of "
-      + "papers. To keep the site fast in your browser, the published feed is capped per "
-      + "molecule, but weighted toward what this database is about: the human-evidence "
-      + "(therapeutic use), mechanism-of-action, and review sections get a high ceiling so "
-      + "well-studied molecules can show a lot, while lower-value sections (methods/assays, "
-      + "comparator/background, biomarkers) are limited more tightly. Within each, records "
-      + "are kept best-first by rank. This is a display limit only \\u2014 the FULL set of "
-      + "matching papers is retained in the project's data files; nothing is deleted, just "
-      + "what loads in the browser is bounded.");
-
-    h3("Filters");
-    p("Every facet supports INCLUDE and EXCLUDE. Include is OR within a domain (a paper "
-      + "matches if it has ANY selected include value); exclude drops a paper that has ANY "
-      + "selected exclude value. Year filters on publication year (before / after / range), "
-      + "\\u201cjournal name includes\\u201d is a case-insensitive substring, and \\u201cmin "
-      + "times cited\\u201d sets a floor on how often the paper has been cited by others.");
-
-    h3("Human data view");
-    p("The Human data tab restricts to human evidence: papers whose evidence class is "
-      + "a human clinical (controlled or interventional), human observational, or evidence "
-      + "synthesis class, or whose section is Human evidence or Reviews and overviews. It "
-      + "reuses the same browser and filters, pre-filtered to those records. This is "
-      + "distinct from the \\u201ciCite clinical articles only\\u201d filter, which uses NIH "
-      + "iCite\\u2019s separate clinical-article classifier rather than our evidence class.");
-
-    h3("Trials registry (NOT results)");
-    p("The Trials registry tab lists studies from ClinicalTrials.gov. These are study "
-      + "REGISTRATIONS \\u2014 trial designs, status, sponsors, and timelines \\u2014 not "
-      + "published, peer-reviewed results. A registration does not imply the intervention "
-      + "works. It is a distinct data type from the peer-reviewed Evidence and Clinical "
-      + "tabs; use the \\u201cOngoing only\\u201d toggle, molecule filter, and search to "
-      + "explore it. Populates after the trials fetch runs.");
-
-    h3("Preprints (NOT peer-reviewed)");
-    p("The Preprints tab lists bioRxiv/medRxiv preprints (via EuropePMC). Preprints have "
-      + "NOT been peer-reviewed \\u2014 their findings may change or be retracted and should "
-      + "be interpreted with caution. They are kept separate from the peer-reviewed evidence "
-      + "for exactly this reason. Populates after the preprints fetch runs.");
   }}
 
   // All interactivity is wired here via addEventListener -- there are NO inline
@@ -3538,11 +4059,13 @@ _TEMPLATE = """<!DOCTYPE html>
   // script (script-src is hash-based, no 'unsafe-inline'). Runs once at startup.
   function wireStaticEvents() {{
     function on(id, ev, fn) {{ var e = document.getElementById(id); if (e) e.addEventListener(ev, fn); }}
-    var TAB_IDS = ["tab-evidence", "tab-clinical", "tab-trials", "tab-preprints",
-                   "tab-molecules", "tab-experimental", "tab-about"];
-    ["evidence", "clinical", "trials", "preprints", "molecules", "experimental", "about"].forEach(function(t) {{
+    var TAB_IDS = ["tab-home", "tab-evidence", "tab-clinical", "tab-trials", "tab-preprints",
+                   "tab-molecules", "tab-experimental", "tab-guide", "tab-methods"];
+    ["home", "evidence", "clinical", "trials", "preprints", "molecules", "experimental", "guide", "methods"].forEach(function(t) {{
       on("tab-" + t, "click", function() {{ showTab(t); }});
     }});
+    // Brand logo returns to Home.
+    on("brand-home", "click", function(e) {{ e.preventDefault(); showTab("home"); }});
     // WAI tablist keyboard model: Left/Right (Home/End) move between VISIBLE tabs and
     // activate them; roving tabindex means Tab enters the tablist once, then arrows
     // navigate within it.
@@ -3575,7 +4098,19 @@ _TEMPLATE = """<!DOCTYPE html>
     on("triangle-toggle", "click", function() {{ toggleTriangle(); }});
     on("load-more", "click", function() {{ loadMore(); }});
     ["trials-q", "trials-year"].forEach(function(id) {{ on(id, "input", function() {{ renderTrials(); }}); }});
-    ["trials-mol", "trials-sort", "trials-ongoing"].forEach(function(id) {{ on(id, "change", function() {{ renderTrials(); }}); }});
+    ["trials-mol", "trials-sort", "trials-status", "trials-phase", "trials-stype"].forEach(function(id) {{ on(id, "change", function() {{ renderTrials(); }}); }});
+    on("trials-reset", "click", function() {{
+      ["trials-q", "trials-year"].forEach(function(id) {{ var e = document.getElementById(id); if (e) e.value = ""; }});
+      ["trials-mol", "trials-status", "trials-phase", "trials-stype"].forEach(function(id) {{ var e = document.getElementById(id); if (e) e.value = ""; }});
+      var so = document.getElementById("trials-sort"); if (so) so.value = "ongoing";
+      renderTrials();
+    }});
+    on("trials-filters-toggle", "click", function() {{
+      var side = document.getElementById("trials-sidebar");
+      var btn = document.getElementById("trials-filters-toggle");
+      var open = side.classList.toggle("filters-open");
+      if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
+    }});
     ["pp-q", "pp-year"].forEach(function(id) {{ on(id, "input", function() {{ renderPreprints(); }}); }});
     ["pp-mol", "pp-sort"].forEach(function(id) {{ on(id, "change", function() {{ renderPreprints(); }}); }});
     var mb = document.getElementById("modal-bg");
@@ -3588,9 +4123,11 @@ _TEMPLATE = """<!DOCTYPE html>
     buildFilters();
     if (INTERNAL) updateApSummary();
     renderCorpusStrip();
-    // molecules / experimental / about are rendered lazily on first tab open
-    // (see showTab) so the initial paint only builds the evidence view.
-    showTab("evidence");
+    // Land on Home (instant, needs no feed). Other tabs render lazily on first open;
+    // the evidence feed + shards stream in the background so it's ready on switch.
+    showTab("home");
+    // Pre-render the evidence feed once records exist so switching to it is instant.
+    applyFilters();
   }}
 
   // In fetch mode the trials + preprints feeds are loaded at runtime like

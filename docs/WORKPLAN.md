@@ -69,6 +69,68 @@
   network path (MODE guard). update.yml copies the shards. All green: curation 199, site 392,
   extractors 98, sources 53, freshness 18; e2e fixture parses. Scales: bigger corpus = more small
   shards, first paint unchanged.
+- **REDESIGN TEST RUN (uncommitted — awaiting Sam's variant choice):** Big UI overhaul, all
+  in the working tree (NOT committed), so `git restore . && git clean -fd exports/` reverts to
+  the current committed style. Delivered as 5 stylistic variants: `exports/preview_{clinical,
+  indigo,emerald,slate,warm}.html` (`python3 scripts/preview_site.py --all`). Changes:
+  (1) Nike-style sticky top bar `.topbar` with logo slot (`.logo-word` placeholder wordmark,
+  swap `#logo-slot` for Sam's real logo image later) + nav tabs; (2) Home landing page
+  (`#home-view`, default tab) with what-is / how-to-use nav buttons / how-to-read-the-rings /
+  safety; Methods split into its own tab (`#methods-view`, renamed from about-view;
+  renderAbout→renderMethods, +renderHome); (3) score RINGS replace the bar/badge — overarching
+  Rank ring + Rigor/Directness/Impact sub-rings in a `.score-box`, SVG donuts (pathLength=100,
+  dasharray=score), guideline rigor shows n/a; modal `.scope-score` = rings + `.scope-why` panel
+  that cross-highlights on hover (data-metric); (4) Trials filter sidebar `#trials-sidebar`
+  (status/phase/study-type/molecule/year/sort); (5) Bioactives tab → "Bioactive overview" + intro
+  blurb; (6) 5 `body.v-*` variant skins (token overrides) via build_site(variant=...) /
+  preview_site --all/--variant. Reviewed by a subagent: fixed the ring-number centering (dial
+  wrapper) + completed tablist ARIA (role=tabpanel/aria-controls). e2e specs updated (Home is
+  now default → click Evidence first). All green: site 399, curation 199, extractors 98,
+  sources 53, freshness 18; e2e fixture parses. NOTE: I cannot see rendered pixels (no browser in
+  sandbox) — Sam picks the variant visually. Once chosen: keep that body class (or set it as the
+  build default), then commit.
+- **REDESIGN ROUND 2 (uncommitted test run):** Sam locked the CLINICAL theme (default; the 5
+  variants still exist via `preview_site.py --all`/`--variant`). This round (all in working tree,
+  `git restore . && git clean -fd exports/ config/site_copy/` to revert): (1) score rings reworked
+  — big overarching **Rank** ring left, 3 smaller labeled rings (Rigor/Directness/Impact) stacked
+  right under a "Contributes to rank" caption; (2) **instant** hover tooltips (`attachTip`/`.hovertip`)
+  replace slow native title=; (3) **RetaRats site link** top-right in the bar (https://www.retarats.com/);
+  (4) **6 sample trials** added to `preview_site.py` so the trials sidebar is testable; (5)
+  **question-tolerant search** (`queryTerms` strips filler/question words via `SEARCH_STOP`) + a hint
+  under the box; (6) **regulatory dual links** — name-based DailyMed + Drugs@FDA deep links in
+  `regulatoryPanel`; molecule "featured" relabeled **"spotlight"** with a tooltip; (7) **EDITABLE COPY**:
+  Home + Methods prose moved to `config/site_copy/{home,methods}.md`, parsed at build (`_parse_copy_md`)
+  into blocks and rendered by JS `renderBlocks`/`renderSpans` (no innerHTML). Methods restructured:
+  no "About" start, small section titles, a class→directness table, rank/rigor equation blocks, source
+  links. Sam edits those .md files to change text (figures later). Reviewed by a subagent: fixed a
+  should-fix (renderSpans now falls back to text if an editor writes a non-http link, so a bad link
+  can't blank the page) + tooltip scroll-hide + home formula CSS + featured/spotlight reconciliation.
+  All green: site 406, curation 199, extractors 98, sources 53, freshness 18; e2e fixture parses.
+  Preview: `exports/preview.html` (clinical). Editable copy is inlined in BOTH modes (small trusted config).
+- **REDESIGN ROUND 3 (uncommitted test run):** (1) fixed the "missing tags"/"all weight-loss"
+  confusion — it was sparse PREVIEW sample data, not a regression; enriched `preview_site.py`
+  `_record()` with the full 11-facet set + varied indications. (2) New **Guide tab** (plain-language
+  glossary): `config/glossary.csv` (editable; 11 categories, 83 options with a one-sentence
+  definition each) → `_load_glossary()` → `renderGuide()` (category <select> menu, mobile-friendly,
+  lazy). (3) **Tag hover definitions** on card aspect-tags, gated by a `tag_hovers` build flag so
+  `preview_site.py` now emits TWO files for comparison: `exports/preview_tags_hover.html` and
+  `preview_tags_plain.html` (default preview.html = hovers on). Glossary + copy inlined both modes
+  (+~8 KB gzipped total — negligible; Guide renders on tab open). All green: site 410, curation 199,
+  extractors 98, sources 53, freshness 18; e2e fixture parses. Sam to pick hovers on/off and can edit
+  `config/glossary.csv` for wording.
+- **REDESIGN ROUND 4 — READY TO DEPLOY:** (1) card definition hovers are now a RUNTIME toggle
+  (`TAG_TIPS`, persisted in localStorage, checkbox in the Guide tab), initialized from the
+  `tag_hovers` build flag. (2) EVERY tag + metric now has a hover: aspect tags fall back to
+  "Name (category)" when no glossary def; metric pills (evidence class, RCR, clinical, journal
+  tier, Cited-by) got `pillTip` definition tips. (3) `_load_glossary()` now MERGES config/FACETS.csv
+  so any facet value auto-gets at least its display label — no live tag can lack an entry. Hover
+  text and Guide come from the SAME source (config/glossary.csv) so editing it updates both.
+  (4) Fixed preview sample data to use only real facet values (the "HbA1c" gap was an invented
+  sample value). All green: site 414, curation 199, extractors 98, sources 53, freshness 18; e2e
+  fixture parses; fetch-mode build smoke-tested (CSP + glossary/copy/guide/rings all present).
+  **This whole multi-round redesign is uncommitted on a clean main** — one commit ships it. New
+  files: config/glossary.csv, config/site_copy/{home,methods}.md. Deploy = commit + push + run
+  update.yml (fetch build loads glossary/copy from config/, inlines them; tag_hovers defaults ON).
 - **Next action (was):** 6.5 (duration rule gap #2) — harden the duration extractor regex and
   add synthetic unit tests here; the actual ~400-record re-extraction needs the corpus DB
   in the Actions cache (runs in CI, not sandbox). One-time user step for full dep hashing:

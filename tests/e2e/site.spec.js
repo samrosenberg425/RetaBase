@@ -9,15 +9,36 @@ const path = require('path');
 
 const url = 'file://' + path.resolve(__dirname, 'fixture.html');
 
-test('renders evidence cards on load', async ({ page }) => {
+// The site now lands on the Home tab; the evidence feed lives behind the Evidence
+// tab. Navigate there before asserting on cards.
+async function gotoEvidence(page) {
   await page.goto(url);
+  await page.click('#tab-evidence');
+  await page.locator('.card').first().waitFor();
+}
+
+test('renders evidence cards after opening Evidence', async ({ page }) => {
+  await page.goto(url);
+  await page.click('#tab-evidence');
   await expect(page.locator('.card').first()).toBeVisible();
   expect(await page.locator('.card').count()).toBeGreaterThan(0);
 });
 
-test('search filters the list to matching records', async ({ page }) => {
+test('Home is the default landing tab', async ({ page }) => {
   await page.goto(url);
-  await page.locator('.card').first().waitFor();
+  await expect(page.locator('#tab-home')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#home-view')).toBeVisible();
+});
+
+test('score rings render on cards', async ({ page }) => {
+  await gotoEvidence(page);
+  await expect(page.locator('.card .score-box').first()).toBeVisible();
+  // Rank total ring + 3 sub-rings = 4 ring items per card.
+  expect(await page.locator('.card').first().locator('.ring-item').count()).toBe(4);
+});
+
+test('search filters the list to matching records', async ({ page }) => {
+  await gotoEvidence(page);
   const before = await page.locator('.card').count();
   await page.fill('#q', 'retatrutide');
   await page.waitForTimeout(400); // input is debounced ~150ms
@@ -30,7 +51,7 @@ test('search filters the list to matching records', async ({ page }) => {
 });
 
 test('clicking a card opens the detail dialog; Escape closes it', async ({ page }) => {
-  await page.goto(url);
+  await gotoEvidence(page);
   await page.locator('.card').first().click();
   const dialog = page.locator('#modal[role="dialog"]');
   await expect(dialog).toBeVisible();
@@ -39,14 +60,14 @@ test('clicking a card opens the detail dialog; Escape closes it', async ({ page 
 });
 
 test('a card is keyboard-operable (focus + Enter opens the dialog)', async ({ page }) => {
-  await page.goto(url);
+  await gotoEvidence(page);
   await page.locator('.card').first().focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('#modal[role="dialog"]')).toBeVisible();
 });
 
 test('modal traps Tab focus inside the dialog', async ({ page }) => {
-  await page.goto(url);
+  await gotoEvidence(page);
   await page.locator('.card').first().click();
   await expect(page.locator('#modal[role="dialog"]')).toBeVisible();
   // Tab several times; focus must stay within the dialog, never escape to the page.

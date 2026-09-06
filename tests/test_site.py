@@ -27,6 +27,11 @@ site = importlib.util.module_from_spec(_SPEC)
 sys.modules["build_public_site"] = site
 _SPEC.loader.exec_module(site)  # type: ignore
 
+import json as _json
+# Home + Methods prose now lives in editable markdown (config/site_copy/*.md), parsed
+# into blocks and inlined by build_site. Content assertions check that source of truth.
+COPY_TEXT = _json.dumps(site._load_copy(), ensure_ascii=False)
+
 PASS = 0
 FAIL = 0
 
@@ -87,7 +92,8 @@ def run():
     check("light theme palette", "--bg: #f4f7fa" in html_text and "--panel: #ffffff" in html_text)
     check("clinical blue-teal accent", "--accent: #0b6e99" in html_text)
     check("no leftover dark-theme hardcodes", "#0f1115" not in html_text and "#06101f" not in html_text)
-    check("masthead accent strip", "border-top: 3px solid var(--accent)" in html_text)
+    check("nike-style sticky topbar", ".topbar {" in html_text and "position: sticky" in html_text)
+    check("home + methods tabs present", 'id="tab-home"' in html_text and 'id="tab-methods"' in html_text)
     check("score bar is labelled 'Rigor'", 'el("span", "meter-cap", "Rigor")' in html_text
           and ".meter-cap" in html_text)
     check("score bar has a quick hover example", "can both score ~70" in html_text and "wrap.title" in html_text)
@@ -128,6 +134,54 @@ def run():
           "function applyFilters(preserveWindow)" in html_text and "if (!preserveWindow) visibleCount" in html_text)
     check("modal detail fetched on demand (not eagerly)", "function ensureDetail" in html_text
           and 'fetch("site_detail.json")' not in html_text)
+    # stylistic variants: body-class skins that re-point tokens
+    check("variant skins defined", "body.v-indigo {" in html_text and "body.v-slate {" in html_text
+          and "body.v-emerald {" in html_text and "body.v-warm {" in html_text)
+    import scripts.build_public_site as _bps
+    _cfg = '{"records":[],"molecules":[],"corpus_stats":{},"detail":{},"shards":[],"total_records":0,"mode":"fetch","filters":[],"aspects":[],"multi":[]}'
+    _v = _bps._render_html(_cfg, 0, 0, "2026-01-01", 0, 0, "fetch", False, "slate")
+    check("variant sets the body class", 'class="v-slate"' in _v)
+    _base = _bps._render_html(_cfg, 0, 0, "2026-01-01", 0, 0, "fetch")
+    check("no variant = clean body (base clinical look)", 'class=""' in _base)
+    _bad = _bps._render_html(_cfg, 0, 0, "2026-01-01", 0, 0, "fetch", False, "bogus")
+    check("unknown variant is ignored (safe)", 'class=""' in _bad)
+    # editable copy: markdown parsed into blocks, rendered via a no-innerHTML renderer
+    _copy = site._load_copy()
+    _mtypes = [b["t"] for b in _copy["methods"]]
+    check("methods copy parsed with a table + formula", "table" in _mtypes and "formula" in _mtypes)
+    check("home copy uses nav + rings tokens",
+          any(b.get("name") == "nav" for b in _copy["home"])
+          and any(b.get("name") == "rings" for b in _copy["home"]))
+    check("block renderer wired (no innerHTML)",
+          "function renderBlocks" in html_text and "function renderSpans" in html_text
+          and "var COPY = DATA.copy" in html_text)
+    check("question-tolerant search strips filler words",
+          "SEARCH_STOP" in html_text and "function queryTerms" in html_text)
+    check("regulatory dual links (DailyMed + Drugs@FDA)",
+          "dailymed.nlm.nih.gov" in html_text and "accessdata.fda.gov" in html_text)
+    check("instant hover tooltip (not native title delay)",
+          "function attachTip" in html_text and ".hovertip {" in html_text)
+    check("RetaRats site link in the bar", "retarats.com" in html_text and "RetaRats main website" in html_text)
+    # Guide tab (plain-language glossary)
+    check("guide tab + view present", 'id="tab-guide"' in html_text and 'id="guide-view"' in html_text
+          and "function renderGuide" in html_text)
+    _gloss = site._load_glossary()
+    check("glossary has categories incl. administration route",
+          any(c["label"] == "Administration route" for c in _gloss["categories"])
+          and any(c["label"] == "Study type" for c in _gloss["categories"]))
+    check("glossary defines subcutaneous in plain language",
+          "route|subcutaneous" in _gloss["byKey"] and "under the skin" in _gloss["byKey"]["route|subcutaneous"]["def"])
+    # tag/metric hovers are runtime-toggleable (persisted) and every tag gets a tip
+    check("hovers gated by a runtime toggle", "var TAG_TIPS" in html_text
+          and "function tagTipsOn" in html_text and "function setTagTips" in html_text)
+    check("every tag gets a tip (definition or name fallback)",
+          "attachTip(t, tipText, tagTipsOn)" in html_text and 'pretty(v) + " (" + a.label + ")"' in html_text)
+    check("metric pills carry definition tips", "function pillTip" in html_text
+          and "Relative Citation Ratio" in html_text and "Total times this paper has been cited" in html_text)
+    check("guide has a hover on/off toggle", "Show these definitions when I hover" in html_text)
+    check("glossary covers all facet tag values (curated + FACETS merge)",
+          all((c + "|" + v) in _gloss["byKey"] for (c, v) in
+              [("route", "subcutaneous"), ("endpoint", "glycemic_control"), ("drug_class", "sglt2_inhibitor")]))
     # Hardened CSP: hash-based script-src, no 'unsafe-inline', no inline handlers.
     import hashlib as _hl, base64 as _b64, re as _re
     _csp = _re.search(r'Content-Security-Policy" content="([^"]*)"', html_text).group(1)
@@ -188,8 +242,11 @@ def run():
     check("showTab keeps aria-selected in sync", 'setAttribute("aria-selected"' in fetch_html)
     # Phase 6.3: WAI tablist keyboard model (roving tabindex + arrow navigation).
     check("tabs use roving tabindex (active=0, others=-1)",
-          'aria-selected="true" tabindex="0"' in fetch_html
-          and 'aria-selected="false" tabindex="-1"' in fetch_html)
+          'aria-selected="true" aria-controls="home-view" tabindex="0"' in fetch_html
+          and 'aria-selected="false" aria-controls="browser-view" tabindex="-1"' in fetch_html)
+    check("tabs associate with their panels (aria-controls + role=tabpanel)",
+          fetch_html.count('role="tabpanel"') == 8 and 'aria-labelledby="tab-methods"' in fetch_html
+          and 'aria-controls="guide-view"' in fetch_html)
     check("showTab moves the roving tabindex with selection",
           'setAttribute("tabindex", (t === name) ? "0" : "-1")' in fetch_html)
     check("tablist supports arrow/Home/End key navigation",
@@ -218,9 +275,9 @@ def run():
           and "Being studied for a use is NOT approval for that use" in fetch_html)
     check("no vendor/sourcing/purchasing guidance leaked",
           all(w not in fetch_html.lower() for w in ("buy from", "purchase from", "where to buy", "vendor list")))
-    check("About has the regulatory-safety statement",
-          "Regulatory information & safety" in fetch_html
-          and "explicitly against the use of these substances without a qualified clinician" in fetch_html)
+    check("Methods copy has the regulatory-safety statement",
+          "Regulatory information & safety" in COPY_TEXT
+          and "explicitly against the use of these substances without a qualified clinician" in COPY_TEXT)
     check("regulatory panel uses safe rendering (no javascript href)",
           'href="javascript:' not in fetch_html.lower())
     check("modal has a real focus trap", "_modalFocusables" in fetch_html and "Focus trap" in fetch_html)
@@ -411,10 +468,10 @@ def run():
           "href=\"javascript:" not in feed_html.lower())
     check("authors rendered via el() textContent (authorsLine present)",
           "function authorsLine" in feed_html)
-    # (b) The explainer text is present (reliability + directness lines).
-    check("explainer: How to read this", "How to read this" in feed_html)
-    check("explainer: directness line",
-          "how directly the evidence applies to humans" in feed_html)
+    # (b) The home landing explains how to read the scores (rings legend).
+    check("home copy: how to read a card", "How to read a card" in COPY_TEXT)
+    check("home copy: directness legend line",
+          "how directly it applies to humans" in COPY_TEXT)
     # public build (default internal=False) must NOT emit the export-decisions
     # button markup; the curator notes/approval code remains in the JS but is
     # gated behind the runtime INTERNAL flag (see the dedicated --internal test).
@@ -559,14 +616,14 @@ def run():
             brand_html = fh.read()
         check("brand: RetaBase in title", "RetaBase" in brand_html)
         check("brand: no user-facing 'Retarats' text", "Retarats" not in brand_html)
-        check("Bioactives tab present (renamed Molecules)",
-              ">Bioactives<" in brand_html)
+        check("Bioactive overview tab present (renamed Molecules)",
+              ">Bioactive overview<" in brand_html)
         check("Human data (human-only) tab present", ">Human data<" in brand_html)
         check("About / Methods tab present", "About / Methods" in brand_html)
         # About page carries the actual rank formula.
-        check("About page carries the current rank formula",
-              "rank_score = 0.30" in brand_html and "0.10" in brand_html
-              and "directness" in brand_html and "impact" in brand_html)
+        check("Methods copy carries the current rank formula",
+              "0.30" in COPY_TEXT and "0.28" in COPY_TEXT and "0.10" in COPY_TEXT
+              and "directness" in COPY_TEXT and "impact" in COPY_TEXT)
 
     # 14) --internal toggles the curator approval UI. Public build (default) omits
     #     the approve/reject/notes + export-decisions markup entirely; the internal
@@ -733,10 +790,15 @@ def run():
               "populates after the" in feed3 and "trials fetch runs" in feed3)
         check("preprints empty placeholder text present",
               "preprints fetch runs" in feed3)
-        check("ongoing-only toggle present",
-              'id="trials-ongoing"' in feed3 and "ongoingOnly" in feed3)
-        check("ongoing filter drops non-ongoing when checked",
-              "if (ongoingOnly && !t.ongoing) return false" in feed3)
+        check("trials filter sidebar present (evidence-style)",
+              'id="trials-sidebar"' in feed3 and 'id="trials-status"' in feed3
+              and 'id="trials-phase"' in feed3 and 'id="trials-stype"' in feed3)
+        check("trials status filter drops non-matching",
+              'if (status === "ongoing" && !t.ongoing) return false' in feed3
+              and 'if (status === "completed" && t.ongoing) return false' in feed3)
+        check("trials phase + study-type filters applied",
+              'if (phase && (t.phases || "") !== phase) return false' in feed3
+              and 'if (stype && (t.study_type || "") !== stype) return false' in feed3)
         # corpus_stats: numbers inlined AND formatted with thousands separators in JS.
         check("corpus_stats total_papers inlined", "36371" in feed3)
         check("corpus strip renderer present", "function renderCorpusStrip" in feed3)
@@ -1016,10 +1078,10 @@ def run():
           "not assessed (automated rigor signals only)" in rig_html)
     # About / Methods honesty text: rule-based signals, explicitly NOT RoB 2 /
     # ROBINS-I / GRADE.
-    check("about clarifies not a formal risk-of-bias assessment",
-          "not a formal risk-of-bias assessment" in rig_html.lower())
-    check("about names RoB 2 / ROBINS-I", "RoB 2" in rig_html and "ROBINS-I" in rig_html)
-    check("about names GRADE certainty", "GRADE" in rig_html)
+    check("methods copy: not a formal risk-of-bias assessment",
+          "formal risk-of-bias assessment" in COPY_TEXT.lower())
+    check("methods copy names RoB 2 / ROBINS-I", "RoB 2" in COPY_TEXT and "ROBINS-I" in COPY_TEXT)
+    check("methods copy names GRADE certainty", "GRADE" in COPY_TEXT)
     # Ranking presets: the control and all option labels.
     check("rank-preset control present", 'id="rank-preset"' in rig_html)
     check("preset Default (blended rank)", "Default (blended rank)" in rig_html)

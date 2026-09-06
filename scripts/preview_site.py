@@ -55,8 +55,20 @@ def _record(mol_id, mol_name, i, cls, section, human, animal, molec, **extra):
         "refined_outcome_direction": extra.pop("outcome", "beneficial"),
         "icite_human": str(human), "icite_animal": str(animal), "icite_molecular": str(molec),
         "icite_nih_percentile": str(extra.pop("pct", 88)), "icite_rcr": str(extra.pop("rcr", 2.4)),
-        "facet_indication": extra.pop("indication", "obesity_weight"),
+        # Full facet set so the preview cards show the same tag richness as the real
+        # corpus (species, indication, endpoint, study type, model, route, drug class,
+        # population, sex, formulation, evidence direction). Each is overridable per record.
+        "facet_indication": extra.pop("indication", "obesity_weight; diabetes_glycemic; cardiovascular"),
         "facet_species": extra.pop("species", "human"),
+        "facet_endpoint": extra.pop("endpoint", "body_weight; blood_pressure; glycemic_control; safety_tolerability"),
+        "facet_study_type": extra.pop("study_type", "rct"),
+        "facet_model_system": extra.pop("model_system", "human"),
+        "facet_route": extra.pop("facet_route", "subcutaneous"),
+        "facet_drug_class": extra.pop("drug_class", "glp1_agonist; amylin_analog"),
+        "facet_population": extra.pop("population", "comorbid_metabolic"),
+        "facet_sex": extra.pop("sex", "female; male"),
+        "facet_formulation": extra.pop("formulation", "long_acting"),
+        "facet_evidence_direction": extra.pop("evidence_direction", "positive"),
         "facet_all": f"{mol_name} {section}".lower(),
     }
     r.update(extra)
@@ -68,24 +80,24 @@ def sample_feed():
     i = 0
     plans = [
         ("retatrutide", "Retatrutide", [
-            ("clinical_guideline", "Human evidence", 1, 0, 0, {"t": "consensus report on incretin-based obesity pharmacotherapy", "rel": 0, "rtier": "not_applicable", "dir": 92, "dtier": "high", "label": "Clinical practice guideline", "rank": 93, "dose": ""}),
-            ("human_clinical_controlled", "Human evidence", 1, 0, 0, {"t": "phase 2 RCT in obesity", "rel": 82, "rank": 94}),
-            ("human_observational", "Human evidence", 0.9, 0.1, 0, {"t": "real-world cohort", "rel": 55, "rank": 70}),
-            ("evidence_synthesis", "Reviews and overviews", 1, 0, 0, {"t": "systematic review and meta-analysis", "n": "12 studies; 4,530 participants", "dose": "", "rank": 90}),
-            ("in_vivo", "Mechanisms and pathways", 0, 1, 0, {"t": "mouse model of diet-induced obesity", "species": "mouse", "dir": 40, "dtier": "low", "route": "intraperitoneal", "dose": "10 mg/kg"}),
+            ("clinical_guideline", "Human evidence", 1, 0, 0, {"t": "consensus report on incretin-based obesity pharmacotherapy", "rel": 0, "rtier": "not_applicable", "dir": 92, "dtier": "high", "label": "Clinical practice guideline", "rank": 93, "dose": "", "study_type": "guideline", "drug_class": "glp1_agonist; gip_agonist; glucagon_agonist"}),
+            ("human_clinical_controlled", "Human evidence", 1, 0, 0, {"t": "phase 2 RCT in obesity", "rel": 82, "rank": 94, "drug_class": "glp1_agonist; gip_agonist; glucagon_agonist", "endpoint": "body_weight; glycemic_control; safety_tolerability"}),
+            ("human_observational", "Human evidence", 0.9, 0.1, 0, {"t": "real-world cohort", "rel": 55, "rank": 70, "study_type": "observational", "sex": "female", "population": "older_adults", "indication": "obesity_weight; cardiovascular"}),
+            ("evidence_synthesis", "Reviews and overviews", 1, 0, 0, {"t": "systematic review and meta-analysis", "n": "12 studies; 4,530 participants", "dose": "", "rank": 90, "study_type": "systematic_review"}),
+            ("in_vivo", "Mechanisms and pathways", 0, 1, 0, {"t": "mouse model of diet-induced obesity", "species": "mouse", "model_system": "mouse", "study_type": "in_vivo", "dir": 40, "dtier": "low", "route": "intraperitoneal", "facet_route": "intraperitoneal", "dose": "10 mg/kg", "sex": "male", "population": "", "indication": "obesity_weight", "endpoint": "body_weight", "drug_class": "glp1_agonist; gip_agonist", "formulation": ""}),
         ]),
         ("metformin", "Metformin", [
-            ("human_clinical_controlled", "Human evidence", 1, 0, 0, {"t": "randomized trial in type 2 diabetes", "dose": "1000 mg twice daily", "rel": 78}),
-            ("in_vitro", "Mechanisms and pathways", 0, 0, 1, {"t": "AMPK activation in hepatocytes", "species": "in vitro", "dir": 20, "dtier": "low", "dose": ""}),
+            ("human_clinical_controlled", "Human evidence", 1, 0, 0, {"t": "randomized trial in type 2 diabetes", "dose": "1000 mg twice daily", "rel": 78, "drug_class": "", "indication": "diabetes_glycemic", "endpoint": "glycemic_control; body_weight", "route": "oral", "facet_route": "oral", "formulation": ""}),
+            ("in_vitro", "Mechanisms and pathways", 0, 0, 1, {"t": "AMPK activation in hepatocytes", "species": "cell_line", "model_system": "in_vitro", "study_type": "in_vitro", "dir": 20, "dtier": "low", "dose": "", "sex": "", "population": "", "indication": "diabetes_glycemic", "endpoint": "mitochondrial_function", "drug_class": "", "formulation": ""}),
         ]),
         ("tirzepatide", "Tirzepatide", [
-            ("human_clinical_controlled", "Human evidence", 1, 0, 0, {"t": "SURPASS trial", "rel": 88, "rank": 96, "is_retracted": "", "cites": 210, "pct": 97}),
+            ("human_clinical_controlled", "Human evidence", 1, 0, 0, {"t": "SURPASS trial", "rel": 88, "rank": 96, "is_retracted": "", "cites": 210, "pct": 97, "drug_class": "glp1_agonist; gip_agonist", "endpoint": "glycemic_control; body_weight; safety_tolerability"}),
         ]),
         ("glutathione", "Glutathione", [
-            ("in_vitro", "Mechanisms and pathways", 0, 0, 1, {"t": "antioxidant assay", "species": "in vitro", "dir": 15, "dtier": "low", "dose": "", "rank": 40}),
+            ("in_vitro", "Mechanisms and pathways", 0, 0, 1, {"t": "antioxidant assay", "species": "cell_line", "model_system": "in_vitro", "study_type": "in_vitro", "dir": 15, "dtier": "low", "dose": "", "rank": 40, "sex": "", "population": "", "indication": "aging_longevity", "endpoint": "oxidative_stress", "drug_class": "", "formulation": ""}),
         ]),
         ("selank", "Selank", [
-            ("in_vivo", "Behavioural", 0, 1, 0, {"t": "anxiolytic effects in rats", "species": "rat", "dir": 35, "dtier": "low", "route": "intranasal", "dose": "300 µg/kg", "rank": 45}),
+            ("in_vivo", "Behavioural", 0, 1, 0, {"t": "anxiolytic effects in rats", "species": "rat", "model_system": "rat", "study_type": "in_vivo", "dir": 35, "dtier": "low", "route": "intranasal", "facet_route": "", "dose": "300 µg/kg", "rank": 45, "sex": "male", "population": "", "indication": "neurocognitive", "endpoint": "safety_tolerability", "drug_class": "peptide_hormone", "formulation": ""}),
         ]),
     ]
     for mol_id, mol_name, recs in plans:
@@ -143,24 +155,99 @@ def sample_feed():
     }
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--out", default=os.path.join("exports", "preview.html"))
-    ap.add_argument("--open", action="store_true", help="open the file afterward (macOS `open`)")
-    args = ap.parse_args()
+# Stylistic variants to build with --all (label -> variant key; "" = base Clinical look).
+VARIANTS = [
+    ("clinical", ""),
+    ("indigo", "indigo"),
+    ("emerald", "emerald"),
+    ("slate", "slate"),
+    ("warm", "warm"),
+]
 
-    os.makedirs(os.path.dirname(os.path.abspath(args.out)) or ".", exist_ok=True)
+
+def sample_trials():
+    """A handful of registry trials so the Trials tab + filter sidebar can be tested."""
+    def t(nct, mol, mname, title, status, phase, stype, cond, interv, n, start, comp, sponsor, results, ongoing):
+        return {"nct_id": nct, "molecule_id": mol, "molecule_name": mname, "brief_title": title,
+                "overall_status": status, "phases": phase, "study_type": stype, "conditions": cond,
+                "interventions": interv, "enrollment_count": n, "start_date": start,
+                "primary_completion_date": comp, "completion_date": comp, "lead_sponsor": sponsor,
+                "has_results": results, "result_pmids": "", "reference_pmids": "",
+                "url": "https://clinicaltrials.gov/study/" + nct, "ongoing": ongoing}
+    return [
+        t("NCT05000001", "retatrutide", "Retatrutide", "Retatrutide for Obesity (Phase 3, TRIUMPH-style)",
+          "Recruiting", "Phase 3", "Interventional", "Obesity; Overweight", "Retatrutide; Placebo",
+          "600", "2024-02-01", "2026-12-01", "Demo Pharma", "", True),
+        t("NCT04000002", "retatrutide", "Retatrutide", "Retatrutide in Type 2 Diabetes",
+          "Completed", "Phase 2", "Interventional", "Type 2 Diabetes", "Retatrutide; Placebo",
+          "281", "2021-05-01", "2023-04-01", "Demo Pharma", "True", False),
+        t("NCT05000003", "tirzepatide", "Tirzepatide", "Tirzepatide Cardiovascular Outcomes",
+          "Active, not recruiting", "Phase 3", "Interventional", "Cardiovascular Disease; Obesity",
+          "Tirzepatide; Placebo", "12000", "2022-09-01", "2027-06-01", "Demo Pharma", "", True),
+        t("NCT03000004", "metformin", "Metformin", "Metformin for Prediabetes Prevention",
+          "Completed", "Phase 4", "Interventional", "Prediabetes", "Metformin", "1500",
+          "2018-01-01", "2022-01-01", "Academic Consortium", "True", False),
+        t("NCT05000005", "selank", "Selank", "Selank Intranasal for Generalized Anxiety (pilot)",
+          "Recruiting", "Phase 1", "Interventional", "Anxiety", "Selank", "40",
+          "2025-01-01", "2026-03-01", "Demo Neuro", "", True),
+        t("NCT05000006", "glutathione", "Glutathione", "Observational Glutathione Levels Study",
+          "Enrolling by invitation", "N/A", "Observational", "Oxidative Stress", "None (observational)",
+          "200", "2024-06-01", "2025-12-01", "Demo Labs", "", True),
+    ]
+
+
+def _build_one(out_path: str, variant: str, tag_hovers: bool = True) -> None:
+    import shutil
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)) or ".", exist_ok=True)
     with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as outdir:
         with open(os.path.join(src, "site_data.json"), "w", encoding="utf-8") as fh:
             json.dump(sample_feed(), fh)
-        _bps.build_site(src, outdir, mode="inline")
-        import shutil
-        shutil.copy(os.path.join(outdir, "index.html"), args.out)
-    print(f"Preview built with sample data -> {args.out}")
-    print("Open it in a browser (double-click, or `open " + args.out + "`).")
+        with open(os.path.join(src, "trials_data.json"), "w", encoding="utf-8") as fh:
+            json.dump({"generated_utc": "2026-08-15T00:00:00Z", "trials": sample_trials()}, fh)
+        _bps.build_site(src, outdir, mode="inline", variant=variant, tag_hovers=tag_hovers)
+        shutil.copy(os.path.join(outdir, "index.html"), out_path)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--out", default=os.path.join("exports", "preview.html"))
+    ap.add_argument("--variant", default="", help="one of: indigo, emerald, slate, warm (blank = Clinical base)")
+    ap.add_argument("--all", action="store_true", help="build all 5 stylistic variants -> exports/preview_<name>.html")
+    ap.add_argument("--open", action="store_true", help="open the file afterward (macOS `open`)")
+    args = ap.parse_args()
+
+    if args.all:
+        outdir = os.path.dirname(os.path.abspath(args.out)) or "."
+        built = []
+        for label, variant in VARIANTS:
+            p = os.path.join(outdir, f"preview_{label}.html")
+            _build_one(p, variant)
+            built.append(p)
+        print("Built 5 stylistic variants:")
+        for p in built:
+            print("  " + p)
+        if args.open:
+            try:
+                subprocess.run(["open"] + built, check=False)
+            except Exception:  # noqa: BLE001
+                pass
+        return
+
+    # Default: build TWO versions so the tag-hover behaviour can be compared side by side.
+    outdir = os.path.dirname(os.path.abspath(args.out)) or "."
+    with_hovers = os.path.join(outdir, "preview_tags_hover.html")
+    no_hovers = os.path.join(outdir, "preview_tags_plain.html")
+    _build_one(with_hovers, args.variant, tag_hovers=True)
+    _build_one(no_hovers, args.variant, tag_hovers=False)
+    # Also refresh the plain preview.html (with hovers) for continuity.
+    _build_one(args.out, args.variant, tag_hovers=True)
+    print("Built previews with sample data:")
+    print("  " + with_hovers + "   (card tags show a definition on hover)")
+    print("  " + no_hovers + "   (no tag hovers)")
+    print("  " + args.out + "   (default = with hovers)")
     if args.open:
         try:
-            subprocess.run(["open", args.out], check=False)
+            subprocess.run(["open", with_hovers, no_hovers], check=False)
         except Exception:  # noqa: BLE001
             pass
 
