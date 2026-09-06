@@ -13,6 +13,7 @@ study_type,Study type,guideline,Practice guideline,Formal recommendations issued
 study_type,Study type,in_vivo,Animal (in vivo),Done in living animals — an early step before human testing.
 study_type,Study type,in_vitro,Lab / cell (in vitro),Done in cells or a test tube outside a living body — the earliest kind of evidence.
 study_type,Study type,case_report,Case report / series,A description of one or a few individual patients — hypothesis-generating not proof.
+study_type,Study type,narrative_review,Narrative review,An expert overview of a topic that is not a systematic search — useful for context but more subjective.
 model_system,Study model,human,Human,The study was conducted in people.
 model_system,Study model,animal,Animal,The study was conducted in living animals.
 model_system,Study model,mouse,Mouse,Conducted in mice — a common early-stage animal model.
@@ -82,3 +83,17 @@ evidence_direction,Result direction,positive,Positive / beneficial,The study rep
 evidence_direction,Result direction,null,No effect,The study found no meaningful effect.
 evidence_direction,Result direction,mixed,Mixed,Results were mixed — beneficial on some measures not others.
 evidence_direction,Result direction,adverse,Adverse / harmful,The study reported a harmful or negative effect.
+terms,Common terms & abbreviations,hba1c,HbA1c,A blood test showing average blood sugar over the past 2-3 months; the standard measure of long-term diabetes control.
+terms,Common terms & abbreviations,bmi,BMI (body mass index),Weight relative to height; a rough screen for underweight overweight and obesity.
+terms,Common terms & abbreviations,rct,RCT (randomized controlled trial),A study that randomly assigns people to treatment or control — the strongest test of whether a treatment works.
+terms,Common terms & abbreviations,placebo,Placebo,A dummy treatment with no active drug used for comparison so real effects can be told apart from expectation.
+terms,Common terms & abbreviations,crp,CRP (C-reactive protein),A blood marker of inflammation in the body.
+terms,Common terms & abbreviations,ros,ROS (reactive oxygen species),Unstable molecules that can damage cells; part of oxidative stress.
+terms,Common terms & abbreviations,rcr,RCR (Relative Citation Ratio),How often a paper is cited compared with others in its field; 1.0 is average.
+terms,Common terms & abbreviations,icite,iCite,An NIH tool that provides citation-impact and clinical-influence signals for papers.
+terms,Common terms & abbreviations,pk,PK (pharmacokinetics),How the body absorbs distributes and clears a drug over time.
+terms,Common terms & abbreviations,percentile,Percentile,A 0-100 ranking; e.g. the 90th percentile means higher than 90% of comparable items.
+terms,Common terms & abbreviations,biomarker,Biomarker,A measurable biological signal (in blood or tissue) used to track health or a drug's effect.
+terms,Common terms & abbreviations,meta_analysis,Meta-analysis,A study that statistically combines results from many studies into one overall estimate.
+terms,Common terms & abbreviations,doi,DOI,A permanent identifier link that always points to a specific paper.
+terms,Common terms & abbreviations,pmid,PMID,A paper's ID number in PubMed the main biomedical literature database.

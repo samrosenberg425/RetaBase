@@ -105,46 +105,121 @@ def sample_feed():
             i += 1
             records.append(_record(mol_id, mol_name, i, cls, section, h, a, m, **extra))
 
-    molecules = [
-        {"molecule_id": "retatrutide", "molecule_name": "Retatrutide", "auto_published": "3",
-         "total_records": "4", "record_count": "4", "human_count": "3", "density_tier": "moderate",
-         "human_evidence": "3", "preclinical_evidence": "1", "max_reliability": "82",
-         "top_conditions": "obesity_weight(3)",
-         "regulatory_status": "investigational", "us_marketed": "False",
-         "access_pathways": "clinical-trial-only; research use only; grey market",
-         "max_trial_phase": "Phase 3", "trial_count": "18", "ongoing_trial_count": "9",
-         "trial_stages_by_use": "obesity: Phase 3; type 2 diabetes: Phase 3",
-         "reg_source": "curated demo", "reg_source_url": "https://clinicaltrials.gov/",
-         "reg_retrieved_utc": "2026-08-15"},
-        {"molecule_id": "metformin", "molecule_name": "Metformin", "auto_published": "1",
-         "total_records": "2", "record_count": "2", "human_count": "1", "density_tier": "saturated",
-         "human_evidence": "1", "preclinical_evidence": "1", "max_reliability": "78",
-         "regulatory_status": "approved", "fda_approved_indications": "type 2 diabetes mellitus",
-         "us_marketed": "True", "ex_us_status": "approved in EU; UK; Japan; and widely worldwide",
-         "access_pathways": "physician-prescribed",
-         "max_trial_phase": "Phase 4", "trial_count": "400",
-         "trial_stages_by_use": "prediabetes: Phase 3; aging: Phase 2",
-         "reg_source": "FDA Drugs@FDA", "reg_source_url": "https://www.accessdata.fda.gov/scripts/cder/daf/",
-         "reg_retrieved_utc": "2026-08-15"},
-        {"molecule_id": "tirzepatide", "molecule_name": "Tirzepatide", "auto_published": "1",
-         "total_records": "1", "record_count": "1", "human_count": "1", "density_tier": "moderate",
-         "human_evidence": "1", "max_reliability": "88",
-         "regulatory_status": "approved", "fda_approved_indications": "type 2 diabetes; chronic weight management",
-         "us_marketed": "True", "access_pathways": "physician-prescribed; compounding pharmacy (503A/503B)",
-         "max_trial_phase": "Phase 3", "trial_stages_by_use": "heart failure: Phase 3; NASH: Phase 2",
-         "reg_source": "FDA Drugs@FDA", "reg_source_url": "https://www.accessdata.fda.gov/scripts/cder/daf/",
-         "reg_retrieved_utc": "2026-08-15"},
-        {"molecule_id": "glutathione", "molecule_name": "Glutathione", "auto_published": "0",
-         "total_records": "1", "record_count": "1", "human_count": "0", "density_tier": "sparse",
-         "preclinical_evidence": "1", "max_reliability": "30",
-         "regulatory_status": "supplement", "access_pathways": "OTC",
-         "reg_source": "curated demo", "reg_retrieved_utc": "2026-08-15"},
-        {"molecule_id": "selank", "molecule_name": "Selank", "auto_published": "0",
-         "total_records": "1", "record_count": "1", "human_count": "0", "density_tier": "sparse",
-         "preclinical_evidence": "1", "max_reliability": "35",
-         "regulatory_status": "research-only", "access_pathways": "research use only; grey market",
-         "reg_source": "curated demo", "reg_retrieved_utc": "2026-08-15"},
+    # --- bulk generator: many more molecules + records for a realistic feed -----
+    # Deterministic (index-driven, no randomness) so builds are reproducible. All
+    # facet values are drawn from the real vocabulary (config/FACETS.csv).
+    IND = ["obesity_weight", "diabetes_glycemic", "cardiovascular", "liver_mash", "kidney",
+           "neurocognitive", "musculoskeletal", "inflammation_autoimmune", "aging_longevity", "oncology"]
+    END = ["body_weight", "glycemic_control", "lipids", "blood_pressure", "liver_histology",
+           "inflammation_markers", "oxidative_stress", "mitochondrial_function", "muscle_performance",
+           "mortality_survival", "pharmacokinetics"]
+    SEX = ["female; male", "female", "male", "both_sexes"]
+    POP = ["comorbid_metabolic", "older_adults", "comorbid_cardiorenal", "pediatric", "women_pregnancy", "male"]
+    ROUTE = ["subcutaneous", "oral", "intravenous", "intraperitoneal", "topical", "inhaled"]
+    FORM = ["long_acting", "oral_peptide", "nanoparticle", ""]
+    # (id, name, drug_class, primary indication, regulatory_status, us_marketed, access)
+    catalog = [
+        ("semaglutide", "Semaglutide", "glp1_agonist", "obesity_weight", "approved", "True", "physician-prescribed"),
+        ("cagrilintide", "Cagrilintide", "amylin_analog", "obesity_weight", "investigational", "False", "clinical-trial-only"),
+        ("survodutide", "Survodutide", "glucagon_agonist", "liver_mash", "investigational", "False", "clinical-trial-only"),
+        ("dulaglutide", "Dulaglutide", "glp1_agonist", "diabetes_glycemic", "approved", "True", "physician-prescribed"),
+        ("empagliflozin", "Empagliflozin", "sglt2_inhibitor", "cardiovascular", "approved", "True", "physician-prescribed"),
+        ("nmn", "NMN", "nad_precursor", "aging_longevity", "supplement", "True", "OTC"),
+        ("rapamycin", "Rapamycin", "mtor_inhibitor", "aging_longevity", "approved", "True", "physician-prescribed; off-label"),
+        ("bpc157", "BPC-157", "peptide_hormone", "injury_repair", "research-only", "False", "research use only; grey market"),
+        ("motsc", "MOTS-c", "mito_err_agonist", "aging_longevity", "research-only", "False", "research use only; grey market"),
+        ("semax", "Semax", "peptide_hormone", "neurocognitive", "research-only", "False", "research use only; grey market"),
+        ("epithalon", "Epithalon", "peptide_hormone", "aging_longevity", "research-only", "False", "research use only; grey market"),
+        ("follistatin", "Follistatin", "myostatin_inhibitor", "musculoskeletal", "research-only", "False", "research use only; grey market"),
     ]
+    # (class, section, species, model, study_type, rigor, directness, (human,animal,molec))
+    tiers = [
+        ("human_clinical_controlled", "Human evidence", "human", "human", "rct", 84, 95, (1, 0, 0)),
+        ("evidence_synthesis", "Reviews and overviews", "human", "human", "systematic_review", 78, 90, (1, 0, 0)),
+        ("human_observational", "Human evidence", "human", "human", "observational", 58, 66, (0.9, 0.1, 0)),
+        ("clinical_guideline", "Human evidence", "human", "human", "guideline", 0, 92, (1, 0, 0)),
+        ("preclinical_invivo", "Mechanisms and pathways", "mouse", "mouse", "in_vivo", 60, 45, (0, 1, 0)),
+        ("in_vitro", "Mechanisms and pathways", "cell_line", "in_vitro", "in_vitro", 45, 25, (0, 0, 1)),
+        ("narrative_review", "Background and context", "human", "human", "narrative_review", 40, 42, (0.8, 0.2, 0)),
+    ]
+    titles = {
+        "human_clinical_controlled": "phase 3 randomized trial",
+        "evidence_synthesis": "systematic review and meta-analysis",
+        "human_observational": "real-world cohort study",
+        "clinical_guideline": "clinical practice guideline",
+        "preclinical_invivo": "preclinical study in mice",
+        "in_vitro": "mechanistic cell study",
+        "narrative_review": "narrative review",
+    }
+    for mi, (mol_id, name, dc, ind, reg, usm, access) in enumerate(catalog):
+        nrec = 3 + (mi % 4)  # 3..6 records per molecule
+        for k in range(nrec):
+            cls, section, species, model, stype, rig, dirn, tri = tiers[(mi + k) % len(tiers)]
+            is_guide = cls == "clinical_guideline"
+            i += 1
+            rank = max(20, min(97, int(0.30 * dirn + 0.28 * rig + 18 + ((mi * 7 + k * 13) % 22))))
+            rtier = "not_applicable" if is_guide else ("high" if rig >= 70 else "moderate" if rig >= 50 else "limited")
+            extra = {
+                "t": titles[cls] + " in " + ind.replace("_", " "),
+                "year": 2019 + ((mi + k) % 7),
+                "rel": 0 if is_guide else rig, "rtier": rtier,
+                "dir": dirn, "dtier": "high" if dirn >= 80 else "moderate" if dirn >= 55 else "low",
+                "rank": rank, "rank_tier": "high" if rank >= 70 else "moderate" if rank >= 50 else "limited",
+                "species": species, "model_system": model, "study_type": stype,
+                "indication": ind + "; " + IND[(mi + k) % len(IND)],
+                "endpoint": END[(mi + k) % len(END)] + "; " + END[(mi + k + 3) % len(END)] + "; safety_tolerability",
+                "drug_class": dc,
+                "sex": "" if species == "cell_line" else SEX[(mi + k) % len(SEX)],
+                "population": "" if species != "human" else POP[(mi + k) % len(POP)],
+                "facet_route": "" if species == "cell_line" else ROUTE[(mi + k) % len(ROUTE)],
+                "formulation": FORM[(mi + k) % len(FORM)] if species == "human" else "",
+                "evidence_direction": ["positive", "positive", "mixed", "null"][(mi + k) % 4],
+                "pct": 37 + (mi * 5 + k * 11) % 60, "rcr": round(0.5 + ((mi + k) % 40) / 8.0, 1),
+                "cites": (mi * 37 + k * 17) % 320,
+                "label": "Clinical practice guideline" if is_guide else cls.replace("_", " ").title(),
+                "status": "featured" if (dirn >= 80 and rig >= 50) or is_guide or cls == "evidence_synthesis" else "listed",
+                "dose": "" if (is_guide or cls in ("evidence_synthesis", "narrative_review")) else "5 mg once weekly",
+            }
+            records.append(_record(mol_id, name, i, cls, section, tri[0], tri[1], tri[2], **extra))
+
+    # --- molecule cards aggregated from the records + regulatory demo data ------
+    from collections import defaultdict
+    reg_extra = {
+        "retatrutide": {"regulatory_status": "investigational", "us_marketed": "False",
+                        "access_pathways": "clinical-trial-only; research use only; grey market",
+                        "max_trial_phase": "Phase 3", "trial_count": "18", "ongoing_trial_count": "9",
+                        "reg_source": "curated demo", "reg_source_url": "https://clinicaltrials.gov/",
+                        "reg_retrieved_utc": "2026-08-15"},
+        "metformin": {"regulatory_status": "approved", "fda_approved_indications": "type 2 diabetes mellitus",
+                      "us_marketed": "True", "access_pathways": "physician-prescribed",
+                      "reg_source": "FDA Drugs@FDA", "reg_retrieved_utc": "2026-08-15"},
+        "tirzepatide": {"regulatory_status": "approved", "fda_approved_indications": "type 2 diabetes; chronic weight management",
+                        "us_marketed": "True", "access_pathways": "physician-prescribed; compounding pharmacy (503A/503B)",
+                        "reg_source": "FDA Drugs@FDA", "reg_retrieved_utc": "2026-08-15"},
+        "glutathione": {"regulatory_status": "supplement", "access_pathways": "OTC", "reg_source": "curated demo",
+                        "reg_retrieved_utc": "2026-08-15"},
+        "selank": {"regulatory_status": "research-only", "access_pathways": "research use only; grey market",
+                   "reg_source": "curated demo", "reg_retrieved_utc": "2026-08-15"},
+    }
+    for (mid, nm, dc, ind, reg, usm, access) in catalog:
+        reg_extra[mid] = {"regulatory_status": reg, "us_marketed": usm, "access_pathways": access,
+                          "reg_source": "curated demo", "reg_retrieved_utc": "2026-08-15"}
+    bymol = defaultdict(list)
+    for r in records:
+        bymol[r["molecule_id"]].append(r)
+    molecules = []
+    for mid, rs in bymol.items():
+        human = sum(1 for r in rs if r.get("facet_species") == "human")
+        featured = sum(1 for r in rs if r.get("publication_status") == "featured")
+        maxrel = max((int(r.get("reliability_score") or 0) for r in rs), default=0)
+        n = len(rs)
+        mol = {"molecule_id": mid, "molecule_name": rs[0]["molecule_name"],
+               "total_records": str(n), "record_count": str(n), "human_count": str(human),
+               "human_evidence": str(human), "preclinical_evidence": str(n - human),
+               "auto_published": str(featured), "max_reliability": str(maxrel),
+               "density_tier": "saturated" if n >= 6 else "moderate" if n >= 3 else "sparse"}
+        mol.update(reg_extra.get(mid, {}))
+        molecules.append(mol)
     return {
         "records": records, "molecules": molecules,
         "corpus_stats": {"total_papers": len(records), "total_evidence": len(records),
