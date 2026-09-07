@@ -157,7 +157,10 @@ CORPUS_STATS_FIELDS = [
     # Data-health coverage percentages (share of curated records with each signal
     # filled). Surfaced as a compact "Data health" line in the corpus strip.
     "pct_with_abstract", "pct_with_doi", "pct_with_icite",
-    # Full-corpus breakdowns for the home-page figures (lists of {label/rank/year, count}).
+    # Canonical browseable record count (deduped, capped feed) + feed-based breakdowns
+    # for the home figures. Kept in the allowlist so the inline build preserves them and
+    # the runtime (fetch mode) reads the same values from site_data.json's corpus_stats.
+    "records_indexed",
     "by_level", "by_year", "by_indication", "n_indications", "by_model", "by_journal", "completeness",
     # Per-molecule feed-cap disclosure ({focus_cap, other_cap, total_public_records,
     # published_records, capped_molecule_count, capped_molecules}); nested dict is

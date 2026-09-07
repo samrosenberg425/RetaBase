@@ -267,6 +267,13 @@ def build(db_path: str, out_dir: str, limit: int = 0) -> dict:
     # JSON stays light; the full corpus is retained in public_records.csv above.
     feed, feed_stats = _cap_site_feed(public)
     corpus_stats["feed"] = feed_stats
+    # Home figures must describe the SAME population as the canonical record count
+    # (the deduped, capped browseable feed). Recompute the count breakdowns over the
+    # feed and record its size, so the Overview/Timeline totals + bar sums all equal
+    # the number shown in the header (no 101k-vs-160k mismatch).
+    corpus_stats["records_indexed"] = len(feed)
+    corpus_stats.update(_record_breakdowns(feed))
+    corpus_stats["completeness"] = _completeness_rows(feed)
     if feed_stats["capped_molecule_count"]:
         print(f"  site feed capped : {feed_stats['published_records']} of "
               f"{feed_stats['total_public_records']} published "
@@ -472,6 +479,106 @@ def _corpus_stats(curated_rows: List[dict], papers: List[dict], evidence: List[d
         "by_journal": by_journal,
         "completeness": completeness,
     }
+
+
+# Placeholder tokens + per-field applicability sets, shared by the feed-based
+# breakdown/completeness helpers below (so the home figures describe the SAME
+# deduped, browseable population as the canonical record count).
+_PLACEHOLDER_VALS = {"", "n/a", "na", "not applicable", "not reported", "not specified",
+                     "none", "unknown", "unclear", "-", "nr", "not available"}
+_APPLY_DOSING = {"human_clinical_controlled", "human_clinical", "preclinical_invivo", "in_vitro"}
+_APPLY_NSAMPLE = {"human_clinical_controlled", "human_clinical", "human_observational", "preclinical_invivo"}
+_APPLY_HUMAN = {"human_clinical_controlled", "human_clinical", "human_observational"}
+_APPLY_PRIMARY = {"human_clinical_controlled", "human_clinical", "human_observational", "preclinical_invivo", "in_vitro"}
+
+
+def _record_breakdowns(rows: List[dict]) -> dict:
+    """Count-based breakdowns (by_level / by_year / by_model / by_indication / by_journal)
+    over a GIVEN record list -- called with the deduped, capped feed so every count sums
+    to the canonical browseable record total, not the larger pre-dedup curated set."""
+    from collections import Counter as _C
+    lvl: Dict[tuple, int] = {}
+    years: List[int] = []
+    for r in rows:
+        lab = (r.get("evidence_level_short") or r.get("evidence_level_label") or "Other").strip() or "Other"
+        rk = _int(r.get("evidence_level_rank")) or 99
+        lvl[(rk, lab)] = lvl.get((rk, lab), 0) + 1
+        y = _int(r.get("pub_year"))
+        if y and 1900 < y < 2100:
+            years.append(y)
+    by_level = [{"rank": rk, "label": lab, "count": c} for (rk, lab), c in sorted(lvl.items())]
+    yc = _C(years)
+    by_year = [{"year": y, "count": yc[y]} for y in sorted(yc)]
+
+    def _multi(field):
+        c = _C()
+        for r in rows:
+            for tok in str(r.get(field, "") or "").split(";"):
+                tok = tok.strip()
+                if tok:
+                    c[tok] += 1
+        return c
+    indc = _multi("facet_indication")
+    mod = _C()
+    for r in rows:
+        m = str(r.get("facet_model_system") or r.get("facet_species") or "").strip()
+        if m:
+            mod[m] += 1
+    jr = _C(str(r.get("journal", "") or "").strip() for r in rows if str(r.get("journal", "") or "").strip())
+    return {
+        "by_level": by_level, "by_year": by_year,
+        "by_indication": [{"label": k, "count": v} for k, v in indc.most_common(12)],
+        "n_indications": len(indc),
+        "by_model": [{"label": k, "count": v} for k, v in mod.most_common(9)],
+        "by_journal": [{"label": k, "count": v} for k, v in jr.most_common(10)],
+        "year_min": min(years) if years else None, "year_max": max(years) if years else None,
+    }
+
+
+def _completeness_rows(rows: List[dict]) -> list:
+    """Structured-field coverage over a GIVEN record list, with applicability-aware
+    denominators (present / applicable). Called with the pre-trim feed rows, which still
+    carry the full field set (abstract, refined_*, facets)."""
+    def _has(r, f):
+        return str(r.get(f, "") or "").strip().lower() not in _PLACEHOLDER_VALS
+
+    def _cls(r):
+        return str(r.get("evidence_class", "") or "").strip()
+
+    def _cov(field, applies):
+        denom = [r for r in rows if applies is None or _cls(r) in applies]
+        if not denom:
+            return None
+        present = sum(1 for r in denom if _has(r, field))
+        return {"pct": round(100.0 * present / len(denom), 1), "present": present,
+                "applicable": len(denom), "scoped": applies is not None}
+    out = []
+
+    def _add(label, field, applies):
+        c = _cov(field, applies)
+        if c is not None:
+            c["label"] = label
+            out.append(c)
+    _add("Abstract", "abstract", None)
+    _add("Study design", "evidence_class", None)
+    _add("Sample size", "refined_sample_size", _APPLY_NSAMPLE)
+    _add("Dose", "refined_dose", _APPLY_DOSING)
+    _add("Route", "refined_route", _APPLY_DOSING)
+    _add("Duration", "refined_duration", _APPLY_DOSING)
+    _add("Outcome", "refined_outcome_direction", _APPLY_PRIMARY)
+    _add("Population", "facet_population", _APPLY_HUMAN)
+    _add("DOI", "doi", None)
+
+    def _cited(v):
+        try:
+            return float(str(v).strip() or 0) > 0
+        except (TypeError, ValueError):
+            return False
+    n = len(rows)
+    filled = sum(1 for r in rows if _cited(r.get("citation_count")))
+    out.append({"label": "Citation data", "pct": round(100.0 * filled / n, 1) if n else 0.0,
+                "present": filled, "applicable": n, "scoped": False})
+    return out
 
 
 # Compact field set the browsable site needs (keeps site_data.json small).
