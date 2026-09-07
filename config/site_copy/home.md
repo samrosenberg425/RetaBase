@@ -2,6 +2,8 @@
 
 A transparent, rule-based evidence database for bioactives gaining new attention as emerging medications or novel use cases. Every paper is scored by an auditable rubric — no black-box model decides what ranks first — so you can see, and reproduce, why anything appears where it does.
 
+::charts::
+
 ## How to use it
 
 Pick a view:

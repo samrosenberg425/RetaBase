@@ -210,6 +210,19 @@ def run():
     check("RetaRats logo links to main site",
           "class=\"site-logo\"" in html_text and "data:image/png;base64" in html_text
           and "retarats.com" in html_text and 'target="_blank"' in html_text)
+    # Home data figures + rotating carousel (inline SVG, no external libs).
+    check("home evidence-stories: token + single-source selector + builders",
+          any(bk.get("t") == "token" and bk.get("name") == "charts" for bk in site._load_copy().get("home", []))
+          and "function renderCharts" in html_text and "function corpusSummary" in html_text
+          and "function buildStories" in html_text and "function chartStacked" in html_text
+          and "function chartCompletenessBars" in html_text)
+    check("evidence-stories: labelled tablist + editorial split (no dots/carousel-track)",
+          "estory-tab" in html_text and 'role", "tablist"' in html_text
+          and ".estory-panel" in html_text and ".carousel-track" not in html_text)
+    check("evidence-stories respect reduced-motion + are keyboard-navigable",
+          "prefers-reduced-motion" in html_text and 'e.key === "ArrowRight"' in html_text)
+    check("build exposes chart breakdowns in corpus stats allowlist",
+          all(k in site.CORPUS_STATS_FIELDS for k in ("by_level", "by_year", "by_model", "by_indication", "completeness")))
     # Config-driven site footer: loads from config/footer.json, renders in the shell,
     # and payload carries columns for renderFooter to build.
     _foot = site._load_footer()
@@ -868,9 +881,11 @@ def run():
         check("corpus_stats total_papers inlined", "36371" in feed3)
         check("corpus strip renderer present", "function renderCorpusStrip" in feed3)
         check("corpus strip uses thousands-sep formatter",
-              "fmtInt(CORPUS.total_papers)" in feed3)
+              "fmtInt(_count)" in feed3)
         check("corpus strip hidden when stats absent",
-              "if (!CORPUS || !CORPUS.total_papers)" in feed3)
+              "if (!CORPUS || (!_count && !CORPUS.molecules_with_data))" in feed3)
+        check("corpus strip leads with evidence records (not raw papers)",
+              "evidence records" in feed3 and "records_indexed" in feed3)
         # trial link safety: only http(s) allowed, encoded, no javascript:.
         check("safeLink rejects non-http(s) schemes",
               "/^https?:\\/\\//i.test(u)" in feed3)

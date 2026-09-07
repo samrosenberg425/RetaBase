@@ -104,6 +104,19 @@ Impact is time-normalized through the NIH [iCite](https://icite.od.nih.gov/) per
 
 :::
 
+## How to read the scores (and what not to read in)
+
+The scores are a **triage aid** — they order what's worth reading first. They are not a verdict on any single paper, and a few patterns are worth keeping in mind so they don't mislead you:
+
+- **A low Impact ring often just means "new," not "weak."** Impact is citation-based, and citations take years to accumulate — so a strong, recent paper can show a low Impact simply because the field hasn't cited it yet. We soften this two ways (Impact uses iCite's time- and field-normalized percentile, and it never drops a paper's rank to zero), but the effect can't be erased. A brand-new study with no citations shows Impact 0, which means *not yet measured*, not *no impact*.
+- **Older papers can look stronger on citations for the same reason** — they've had more time to be cited. That doesn't make newer work worse; it has just been around less long. Recency is a deliberate counterweight, but read citation-driven signals with the publication year in mind.
+- **Rigor is only comparable within a class.** A high-rigor in-vitro study is *not* stronger evidence than a lower-rigor human trial — they're scored on different curves. Compare rigor only between papers of the same type.
+- **Evidence level reflects study design, not this study's execution.** A flawed RCT still sits above a strong cohort by design. Use the level for the *kind* of evidence, then rigor and the paper itself to judge quality *within* that level.
+- **Absence of evidence is not evidence of absence — or of safety.** Few records for a bioactive, or no reported harms, usually means it is understudied, not that it is safe or ineffective.
+- **Venue barely moves the score, and obscurity isn't penalized.** Journal reputation is a small 4% factor, and unknown journals get a neutral value — a good study in a little-known journal is never sunk.
+
+The bottom line: the ordering points you at the strongest, most human-relevant evidence first, but it is not a substitute for reading the study. Every number on a card can be traced to its inputs, so you can always check *why* something ranks where it does.
+
 ## Evidence classes & guidelines
 
 Each record is classified from its PubMed publication type, study-design signals, and the human / animal / molecular classification (NLM's "Triangle of Biomedicine") that iCite provides. The class sets both the rigor rubric and the directness value.
@@ -125,8 +138,6 @@ On the Bioactive overview, a molecule's count of Featured records is surfaced as
 
 Every field is traceable to a public source, and each is refreshed by a scheduled job.
 
-:::detail Show every source and what it feeds
-
 - **Papers, abstracts & publication types** — PubMed via the NCBI E-utilities. The publication type is what determines the evidence level.
 - **Citation impact** — the NIH [iCite](https://icite.od.nih.gov/) API (percentile, Relative Citation Ratio, and the clinical-article flag), with [OpenAlex](https://openalex.org/) as a fallback raw citation count.
 - **Trials** — [ClinicalTrials.gov](https://clinicaltrials.gov/).
@@ -134,8 +145,6 @@ Every field is traceable to a public source, and each is refreshed by a schedule
 - **Regulatory status** — a curated table where every row carries its source and retrieval date, plus direct per-drug links into [DailyMed](https://dailymed.nlm.nih.gov/) (the FDA label) and [Drugs@FDA](https://www.accessdata.fda.gov/scripts/cder/daf/) (approvals).
 - **Chemical identity** — [PubChem](https://pubchem.ncbi.nlm.nih.gov/).
 - **Journal reputation (venue)** — a small curated allowlist of high-reputation biomedical journals, **not** a purchased impact factor; unknown journals get a neutral score and are never penalised.
-
-:::
 
 ## Regulatory information & safety
 

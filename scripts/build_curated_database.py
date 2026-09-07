@@ -366,6 +366,82 @@ def _corpus_stats(curated_rows: List[dict], papers: List[dict], evidence: List[d
     corpus_fingerprint = _hl.sha256(_sig.encode("utf-8")).hexdigest()[:12]
     build_sha = (os.environ.get("GITHUB_SHA") or "").strip()[:7] or "local"
 
+    # Full-corpus breakdowns for the home-page figures (computed over ALL curated
+    # rows, so the charts reflect the whole database, not the truncated inline list).
+    _lvl: Dict[tuple, int] = {}
+    for r in curated_rows:
+        lab = (r.get("evidence_level_short") or r.get("evidence_level_label") or "Other").strip() or "Other"
+        rk = _int(r.get("evidence_level_rank")) or 99
+        _lvl[(rk, lab)] = _lvl.get((rk, lab), 0) + 1
+    by_level = [{"rank": rk, "label": lab, "count": c} for (rk, lab), c in sorted(_lvl.items())]
+    _yc = _Counter(years)
+    by_year = [{"year": y, "count": _yc[y]} for y in sorted(_yc)]
+
+    def _multi(field):
+        c = _Counter()
+        for r in curated_rows:
+            for tok in str(r.get(field, "") or "").split(";"):
+                tok = tok.strip()
+                if tok:
+                    c[tok] += 1
+        return c
+    _indc = _multi("facet_indication")
+    # Keep the RAW canonical key; the client's pretty()/label map polishes it for display.
+    by_indication = [{"label": k, "count": v} for k, v in _indc.most_common(12)]
+    n_indications = len(_indc)
+    # Structured-field coverage (Story 4). Rigorous denominators: a field is only counted
+    # over records where it is APPLICABLE (e.g. dose/route/duration/sample size don't apply
+    # to guidelines, reviews or syntheses), and placeholder strings ("n/a", "not reported",
+    # ...) do NOT count as present. Each entry carries present / applicable so the % is
+    # "of records where the field applies", not "of the whole corpus".
+    _PLACEHOLDER = {"", "n/a", "na", "not applicable", "not reported", "not specified",
+                    "none", "unknown", "unclear", "-", "nr", "not available"}
+    _DOSING = {"human_clinical_controlled", "human_clinical", "preclinical_invivo", "in_vitro"}
+    _NSAMPLE = {"human_clinical_controlled", "human_clinical", "human_observational", "preclinical_invivo"}
+    _HUMANC = {"human_clinical_controlled", "human_clinical", "human_observational"}
+    _PRIMARY = {"human_clinical_controlled", "human_clinical", "human_observational", "preclinical_invivo", "in_vitro"}
+
+    def _hasv(r, f):
+        return str(r.get(f, "") or "").strip().lower() not in _PLACEHOLDER
+
+    def _cls(r):
+        return str(r.get("evidence_class", "") or "").strip()
+
+    def _cov(field, applies):
+        denom = [r for r in curated_rows if applies is None or _cls(r) in applies]
+        if not denom:
+            return None
+        present = sum(1 for r in denom if _hasv(r, field))
+        return {"pct": round(100.0 * present / len(denom), 1), "present": present,
+                "applicable": len(denom), "scoped": applies is not None}
+
+    completeness = []
+
+    def _addc(label, field, applies):
+        c = _cov(field, applies)
+        if c is not None:
+            c["label"] = label
+            completeness.append(c)
+    _addc("Abstract", "abstract", None)
+    _addc("Study design", "evidence_class", None)
+    _addc("Sample size", "refined_sample_size", _NSAMPLE)
+    _addc("Dose", "refined_dose", _DOSING)
+    _addc("Route", "refined_route", _DOSING)
+    _addc("Duration", "refined_duration", _DOSING)
+    _addc("Outcome", "refined_outcome_direction", _PRIMARY)
+    _addc("Population", "facet_population", _HUMANC)
+    _addc("DOI", "doi", None)
+    completeness.append({"label": "Citation data", "pct": pct_citations, "present": filled,
+                         "applicable": total_curated, "scoped": False})
+    _mod = _Counter()
+    for r in curated_rows:
+        m = str(r.get("facet_model_system") or r.get("facet_species") or "").strip()
+        if m:
+            _mod[m] += 1
+    by_model = [{"label": k, "count": v} for k, v in _mod.most_common(9)]
+    _jr = _Counter(str(r.get("journal", "") or "").strip() for r in curated_rows if str(r.get("journal", "") or "").strip())
+    by_journal = [{"label": k, "count": v} for k, v in _jr.most_common(10)]
+
     return {
         "generated_utc": _dt.datetime.utcnow().isoformat() + "Z",
         "build_sha": build_sha,
@@ -387,6 +463,14 @@ def _corpus_stats(curated_rows: List[dict], papers: List[dict], evidence: List[d
         "pct_with_icite": pct_with_icite,
         "featured": featured,
         "listed": listed,
+        # Full-corpus breakdowns for the home-page figures.
+        "by_level": by_level,
+        "by_year": by_year,
+        "by_indication": by_indication,
+        "n_indications": n_indications,
+        "by_model": by_model,
+        "by_journal": by_journal,
+        "completeness": completeness,
     }
 
 

@@ -254,13 +254,74 @@ def sample_feed():
                "density_tier": "saturated" if n >= 6 else "moderate" if n >= 3 else "sparse"}
         mol.update(reg_extra.get(mid, {}))
         molecules.append(mol)
+    # Full-corpus breakdowns for the home figures (computed from the sample records).
+    from collections import Counter as _Ctr
+    _lvl = {}
+    for r in records:
+        lab = (r.get("evidence_level_short") or r.get("evidence_level_label") or "Other").strip() or "Other"
+        rk = int(r.get("evidence_level_rank") or 99)
+        _lvl[(rk, lab)] = _lvl.get((rk, lab), 0) + 1
+    by_level = [{"rank": rk, "label": lab, "count": c} for (rk, lab), c in sorted(_lvl.items())]
+    _yrs = [int(r.get("pub_year")) for r in records if str(r.get("pub_year", "")).isdigit()]
+    _yc = _Ctr(_yrs)
+    by_year = [{"year": y, "count": _yc[y]} for y in sorted(_yc)]
+    featured = sum(1 for r in records if r.get("publication_status") == "featured")
+
+    def _multi(field):
+        c = _Ctr()
+        for r in records:
+            for tok in str(r.get(field, "") or "").split(";"):
+                tok = tok.strip()
+                if tok:
+                    c[tok] += 1
+        return c
+    _indc = _multi("facet_indication")
+    by_indication = [{"label": k, "count": v} for k, v in _indc.most_common(12)]  # raw key; client polishes
+    n_indications = len(_indc)
+
+    _DOSING = {"human_clinical_controlled", "human_clinical", "preclinical_invivo", "in_vitro"}
+    _NSAMPLE = {"human_clinical_controlled", "human_clinical", "human_observational", "preclinical_invivo"}
+    _HUMANC = {"human_clinical_controlled", "human_clinical", "human_observational"}
+    _PRIMARY = {"human_clinical_controlled", "human_clinical", "human_observational", "preclinical_invivo", "in_vitro"}
+
+    def _cov(field, applies):
+        denom = [r for r in records if applies is None or str(r.get("evidence_class", "") or "").strip() in applies]
+        if not denom:
+            return None
+        present = sum(1 for r in denom if str(r.get(field, "") or "").strip())
+        return {"label": "", "pct": round(100.0 * present / len(denom), 1), "present": present,
+                "applicable": len(denom), "scoped": applies is not None}
+    completeness = []
+    for lab, fld, ap in [("Abstract", "title", None), ("Study design", "evidence_class", None),
+                          ("Sample size", "refined_sample_size", _NSAMPLE), ("Dose", "refined_dose", _DOSING),
+                          ("Route", "refined_route", _DOSING), ("Duration", "refined_duration", _DOSING),
+                          ("Outcome", "refined_outcome_direction", _PRIMARY), ("Population", "facet_population", _HUMANC),
+                          ("DOI", "doi", None)]:
+        c = _cov(fld, ap)
+        if c:
+            c["label"] = lab
+            completeness.append(c)
+    completeness.append({"label": "Citation data", "pct": 71.0, "present": int(len(records) * 0.71),
+                         "applicable": len(records), "scoped": False})
+    _mod = _Ctr()
+    for r in records:
+        m = str(r.get("facet_model_system") or r.get("facet_species") or "").strip()
+        if m:
+            _mod[m] += 1
+    by_model = [{"label": k, "count": v} for k, v in _mod.most_common(9)]
+    _jr = _Ctr(str(r.get("journal", "") or "").strip() for r in records if str(r.get("journal", "") or "").strip())
+    by_journal = [{"label": k, "count": v} for k, v in _jr.most_common(10)]
     return {
         "records": records, "molecules": molecules,
         "corpus_stats": {"total_papers": len(records), "total_evidence": len(records),
                          "molecules_with_data": len(molecules), "generated_utc": "2026-08-15T00:00:00Z",
                          "corpus_fingerprint": "previewsample", "build_sha": "local",
-                         "zenodo_doi": "10.5281/zenodo.21207064", "pct_with_abstract": 100.0,
-                         "pct_with_doi": 100.0, "pct_citations_filled": 100.0, "pct_with_icite": 100.0},
+                         "zenodo_doi": "10.5281/zenodo.21207064", "pct_with_abstract": 96.0,
+                         "pct_with_doi": 88.0, "pct_citations_filled": 71.0, "pct_with_icite": 64.0,
+                         "year_min": min(_yrs) if _yrs else None, "year_max": max(_yrs) if _yrs else None,
+                         "featured": featured, "by_level": by_level, "by_year": by_year,
+                         "by_indication": by_indication, "n_indications": n_indications,
+                         "by_model": by_model, "by_journal": by_journal, "completeness": completeness},
     }
 
 

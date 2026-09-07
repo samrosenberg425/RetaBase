@@ -25,6 +25,7 @@ tests/e2e/test-results/
 # *.json above would otherwise hide them, and the deployed build would lose them.
 !config/footer.json
 !config/feedback.json
+!config/display_labels.json
 # Regulatory enrichment proposals are a review artifact, not committed as-is; the
 # curated config/regulatory.csv is what ships.
 config/regulatory_suggested.csv

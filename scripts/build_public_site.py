@@ -157,6 +157,8 @@ CORPUS_STATS_FIELDS = [
     # Data-health coverage percentages (share of curated records with each signal
     # filled). Surfaced as a compact "Data health" line in the corpus strip.
     "pct_with_abstract", "pct_with_doi", "pct_with_icite",
+    # Full-corpus breakdowns for the home-page figures (lists of {label/rank/year, count}).
+    "by_level", "by_year", "by_indication", "n_indications", "by_model", "by_journal", "completeness",
     # Per-molecule feed-cap disclosure ({focus_cap, other_cap, total_public_records,
     # published_records, capped_molecule_count, capped_molecules}); nested dict is
     # preserved verbatim and JSON-serialized for the "top N of M" UI note.
@@ -697,6 +699,20 @@ def _load_hierarchy() -> List[dict]:
     return out
 
 
+def _load_labels() -> dict:
+    """Editable canonical-key -> polished display-label map (config/display_labels.json).
+    Display only: raw facet values are still used for filtering/matching/counting. The
+    client's pretty() consults this first, then falls back to Title Case, so tags,
+    filters and charts across the site read as a polished taxonomy. Returns {} if absent."""
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "display_labels.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return {k: v for k, v in data.items() if not k.startswith("_")} if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
 def _load_feedback() -> dict:
     """Editable per-card feedback form (config/feedback.json): the intro copy, the
     list of flaggable aspects, and a ``submit`` block that selects where a report
@@ -755,6 +771,14 @@ def build_site(curated_dir: str, out_dir: str, mode: str = "inline",
         )
         data.records = data.records[:max_inline]
 
+    # Single canonical public count: the curated evidence records the site indexes and
+    # scores (what the hero subtitle shows). Injected so the corpus strip + home figures
+    # show the SAME number instead of the larger raw "papers scanned" total. Only added
+    # when corpus_stats already exists, so a feed with no stats still degrades to {}.
+    if data.corpus_stats:
+        data.corpus_stats = dict(data.corpus_stats)
+        data.corpus_stats["records_indexed"] = total_records
+
     payload = {
         "generated_utc": data.generated_utc,
         "records": data.records,
@@ -788,6 +812,8 @@ def build_site(curated_dir: str, out_dir: str, mode: str = "inline",
         "footer": _load_footer(),
         # Editable per-card feedback form (config/feedback.json).
         "feedback": _load_feedback(),
+        # Canonical-key -> polished display-label map (config/display_labels.json).
+        "labels": _load_labels(),
         "filters": [{"field": f, "label": lbl} for f, lbl in FILTER_FACETS],
         "multi": sorted(MULTI_VALUE_FIELDS),
         "aspects": [{"field": f, "cls": c, "label": lbl} for f, c, lbl in ASPECT_TAGS],
@@ -1089,14 +1115,14 @@ _TEMPLATE = """<!DOCTYPE html>
   .copy-detail > summary::before {{ content: "\\25b8  "; }}
   .copy-detail[open] > summary::before {{ content: "\\25be  "; }}
   .copy-detail-body {{ padding: 2px 14px 10px; }}
-  .equation {{ display: flex; flex-wrap: wrap; align-items: center; gap: 7px; justify-content: center;
-    background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin: 12px 0; }}
-  .eq-lhs {{ font-weight: 700; font-style: italic; color: var(--text); font-size: 15px; }}
-  .eq-op {{ color: var(--muted); font-weight: 700; }}
-  .eq-term {{ display: inline-flex; align-items: center; gap: 5px; }}
-  .eq-coef {{ font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: 6px;
-    padding: 1px 7px; font-variant-numeric: tabular-nums; }}
-  .eq-var {{ font-style: italic; color: var(--text); }}
+  .equation {{ display: flex; flex-wrap: wrap; align-items: center; gap: 8px 11px; justify-content: center;
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 14px; padding: 20px 22px; margin: 16px 0; }}
+  .eq-lhs {{ font-weight: 700; font-style: italic; color: var(--text); font-size: 16px; letter-spacing: .01em; }}
+  .eq-op {{ color: var(--muted); font-weight: 600; font-size: 14px; }}
+  .eq-term {{ display: inline-flex; align-items: center; gap: 6px; }}
+  .eq-coef {{ font-size: 12.5px; font-weight: 700; color: #fff; background: var(--accent); border-radius: 999px;
+    padding: 2px 10px; font-variant-numeric: tabular-nums; letter-spacing: .01em; }}
+  .eq-var {{ font-style: italic; font-size: 15px; color: var(--text); }}
   /* Site footer (config-driven; appears at the bottom of every tab, full-bleed) */
   .site-footer {{ margin: 44px -24px 0; padding: 40px 24px 22px; background: #111b24; color: #cdd7df; }}
   .foot-top {{ display: grid; grid-template-columns: 1.5fr repeat(4, 1fr); gap: 26px; max-width: 1200px; }}
@@ -1507,6 +1533,80 @@ _TEMPLATE = """<!DOCTYPE html>
   .corpus-strip .cs-label {{ text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }}
   .corpus-strip b {{ color: var(--text); }}
   .corpus-strip .cs-sep {{ color: var(--border); }}
+  /* Home "Evidence at a glance" data-story section (editorial, single surface).
+     Charts are HTML/CSS with a consistent px type scale (no SVG viewBox rescaling). */
+  .estory {{ margin: 8px 0 26px; max-width: 1200px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 12px; padding: 22px 26px; }}
+  .estory-eyebrow {{ font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); font-weight: 700; }}
+  .estory-h {{ font-size: clamp(20px, 2.2vw, 26px); font-weight: 800; color: var(--text); margin-top: 2px; }}
+  .estory-nav {{ display: flex; align-items: flex-end; gap: 6px; border-bottom: 1px solid var(--border); margin: 16px 0 20px; }}
+  .estory-tabs {{ display: flex; gap: 2px; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; scroll-behavior: smooth; }}
+  .estory-tabs::-webkit-scrollbar {{ display: none; }}
+  .estory-tab {{ font: inherit; font-size: 14.5px; font-weight: 600; color: var(--muted); background: none;
+    border: 0; border-bottom: 2px solid transparent; padding: 8px 10px; cursor: pointer; white-space: nowrap; margin-bottom: -1px; }}
+  .estory-tab:hover {{ color: var(--text); }}
+  .estory-tab.active {{ color: var(--accent); border-bottom-color: var(--accent); }}
+  /* Focus = subtle tint (no boxed outline -> the active tab never looks like a
+     selected spreadsheet column with side rails). */
+  .estory-tab:focus-visible {{ outline: none; background: var(--accent-soft); border-radius: 5px 5px 0 0; }}
+  .estory-arrow {{ font: inherit; font-size: 18px; line-height: 1; color: var(--muted); background: none;
+    border: 0; cursor: pointer; padding: 6px 8px; flex: 0 0 auto; align-self: stretch; }}
+  .estory-arrow:hover {{ color: var(--accent); }}
+  .estory-arrow:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }}
+  .estory-panel {{ display: grid; grid-template-columns: minmax(220px, 33%) 1fr; gap: 30px; align-items: center;
+    transition: opacity .2s ease; min-height: 275px; }}
+  .estory-panel.fading {{ opacity: 0; }}
+  .estory-cat {{ font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 700; }}
+  .estory-headline {{ font-size: clamp(19px, 2vw, 24px); line-height: 1.22; font-weight: 800; color: var(--text); margin: 6px 0 12px; }}
+  .estory-kn {{ display: flex; flex-direction: column; margin: 0 0 12px; }}
+  .estory-kn-num {{ font-size: clamp(38px, 4.4vw, 52px); font-weight: 800; color: var(--accent); line-height: 1; font-variant-numeric: tabular-nums; }}
+  .estory-kn-lbl {{ font-size: 13px; color: var(--muted); margin-top: 5px; max-width: 250px; }}
+  .estory-take {{ font-size: 15px; line-height: 1.55; color: var(--text); margin: 0 0 16px; max-width: 340px; }}
+  .estory-foot {{ display: flex; flex-direction: column; gap: 6px; }}
+  .estory-context {{ font-size: 12px; color: var(--muted); }}
+  .estory-link {{ align-self: flex-start; font: inherit; font-size: 13px; font-weight: 700; color: var(--accent);
+    background: none; border: 0; padding: 0; cursor: pointer; }}
+  .estory-link:hover {{ text-decoration: underline; }}
+  .estory-link:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }}
+  .estory-viz {{ min-width: 0; }}
+  .estory-caption {{ font-size: 12px; color: var(--muted); line-height: 1.45; margin-top: 10px; }}
+  /* HTML bar chart: wrapping label column + bar + right-aligned value column */
+  .hb {{ display: flex; flex-direction: column; gap: 7px; }}
+  .hb-row {{ display: grid; grid-template-columns: minmax(0, 42%) 1fr max-content; align-items: center; gap: 10px; }}
+  .hb-label {{ text-align: right; font-size: 13px; line-height: 1.25; color: var(--text); overflow-wrap: anywhere; }}
+  .hb-bar {{ height: 13px; }}
+  .hb-fill {{ height: 100%; border-radius: 7px; min-width: 3px; }}
+  .hb-val {{ font-size: 13px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }}
+  /* completeness meters (track = 100% denominator, kept intentionally) */
+  .cm {{ display: flex; flex-direction: column; gap: 8px; }}
+  .cm-row {{ display: grid; grid-template-columns: minmax(0, 40%) 1fr max-content; align-items: center; gap: 10px; }}
+  .cm-label {{ text-align: right; font-size: 13px; line-height: 1.25; color: var(--text); overflow-wrap: anywhere; }}
+  .cm-track {{ height: 11px; background: var(--border); border-radius: 6px; overflow: hidden; }}
+  .cm-fill {{ height: 100%; border-radius: 6px; min-width: 4px; }}
+  .cm-val {{ font-size: 13px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }}
+  /* 100% stacked composition bar + wrapping legend */
+  .sk-bar {{ display: flex; height: 42px; border-radius: 8px; overflow: hidden; }}
+  .sk-seg {{ display: flex; align-items: center; justify-content: center; min-width: 0; }}
+  .sk-seg-lbl {{ font-size: 12px; font-weight: 700; color: #fff; }}
+  .sk-legend {{ display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 14px; }}
+  .sk-leg {{ display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text); }}
+  .sk-chip {{ width: 11px; height: 11px; border-radius: 3px; flex: 0 0 auto; }}
+  /* timeline: HTML columns + axis + partial-year note */
+  .tl-bars {{ display: flex; align-items: flex-end; gap: 4px; height: 150px; }}
+  .tl-cell {{ flex: 1 1 0; display: flex; align-items: flex-end; justify-content: center; height: 100%; }}
+  .tl-bar {{ width: 68%; min-width: 4px; border-radius: 3px 3px 0 0; }}
+  .tl-bar.partial {{ background: transparent; border: 1.5px dashed var(--accent); }}
+  .tl-axis {{ display: flex; gap: 4px; margin-top: 6px; }}
+  .tl-axis-cell {{ flex: 1 1 0; text-align: center; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }}
+  .tl-note {{ font-size: 12px; color: var(--muted); margin-top: 8px; }}
+  @media (max-width: 820px) {{
+    .estory {{ padding: 18px 16px; }}
+    .estory-panel {{ grid-template-columns: 1fr; gap: 16px; align-items: start; min-height: 0; }}
+    .estory-take, .estory-kn-lbl {{ max-width: none; }}
+    .estory-tab {{ font-size: 14px; }}
+    .estory-arrow {{ padding: 8px 10px; }}
+    .hb-label, .cm-label {{ font-size: 13px; }}
+  }}
   /* trials + preprints tables/lists */
   .caution-banner {{
     background: var(--panel2); border: 1px solid var(--tier-limited); border-left: 4px solid var(--tier-limited);
@@ -2279,14 +2379,21 @@ _TEMPLATE = """<!DOCTYPE html>
   // Friendly DISPLAY label only: underscores -> spaces, title-case. The raw
   // value (with underscores) is preserved everywhere it is used for
   // filtering/matching/counting; only the visible text is prettified.
+  var LABELS = DATA.labels || {{}};
   function pretty(s) {{
-    return humanize(s).replace(/\\b\\w/g, function(c) {{ return c.toUpperCase(); }});
+    var k = String(s == null ? "" : s).trim();
+    if (LABELS[k]) return LABELS[k];
+    if (LABELS[k.toLowerCase()]) return LABELS[k.toLowerCase()];
+    // Fallback: also try the underscored form (charts may pass a humanized label).
+    var uk = k.toLowerCase().replace(/ /g, "_");
+    if (LABELS[uk]) return LABELS[uk];
+    return humanize(k).replace(/\\b\\w/g, function(c) {{ return c.toUpperCase(); }});
   }}
   function composeSummary(rec) {{
     var cls = rec.evidence_class_label || "";
     var mol = rec.molecule_name || "the molecule";
-    var ind = humanize(firstFacet(rec, "facet_indication"));
-    var end = humanize(firstFacet(rec, "facet_endpoint"));
+    var ind = pretty(firstFacet(rec, "facet_indication"));
+    var end = pretty(firstFacet(rec, "facet_endpoint"));
     var dir = PRETTY[(rec.refined_outcome_direction || "").trim()] || "";
     var parts = [];
     if (cls) parts.push(cls);
@@ -4470,9 +4577,12 @@ _TEMPLATE = """<!DOCTYPE html>
   function renderCorpusStrip() {{
     var strip = document.getElementById("corpus-strip");
     strip.textContent = "";
-    if (!CORPUS || !CORPUS.total_papers) {{ strip.style.display = "none"; return; }}
+    var _count = CORPUS && (CORPUS.records_indexed || CORPUS.total_records);
+    if (!CORPUS || (!_count && !CORPUS.molecules_with_data)) {{ strip.style.display = "none"; return; }}
     var parts = [];
-    parts.push(["Database", fmtInt(CORPUS.total_papers) + " papers"]);
+    // Single canonical figure: curated evidence records indexed (matches the hero
+    // subtitle), not the larger raw "papers scanned" count.
+    if (_count) parts.push(["Database", fmtInt(_count) + " evidence records"]);
     if (CORPUS.molecules_with_data)
       parts.push([null, fmtInt(CORPUS.molecules_with_data) + " bioactives with data"]);
     var ymin = CORPUS.year_min, ymax = CORPUS.year_max;
@@ -4593,11 +4703,316 @@ _TEMPLATE = """<!DOCTYPE html>
     }});
     return nav;
   }}
+  // ========================= Home data figures + carousel ====================
+  // Lightweight inline-SVG charts (no external libraries -> CSP-safe) built from the
+  // full-corpus aggregates in corpus_stats + the molecule index. Shown in a rotating
+  // carousel on the home page.
+  var SVGNS = "http://www.w3.org/2000/svg";
+  function sv(tag, attrs) {{
+    var e = document.createElementNS(SVGNS, tag);
+    if (attrs) Object.keys(attrs).forEach(function(k) {{ e.setAttribute(k, attrs[k]); }});
+    return e;
+  }}
+  function svText(x, y, s, cls, extra) {{
+    var t = sv("text", extra || {{}});
+    t.setAttribute("x", x); t.setAttribute("y", y);
+    if (cls) t.setAttribute("class", cls);
+    t.textContent = s;
+    return t;
+  }}
+  function trunc(s, n) {{ s = String(s || ""); return s.length > n ? s.slice(0, n - 1) + "\\u2026" : s; }}
+  // Semantic colour roles as CSS values (theme-aware via var()). Charts are HTML/CSS,
+  // so these go straight into element styles -- no viewBox text-scaling to fight.
+  // cat[] is a colour-blind-conscious categorical set (always paired with text labels).
+  function chartColors() {{
+    return {{ accent: "var(--accent)", accent2: "var(--accent2)", text: "var(--text)",
+      muted: "var(--muted)", border: "var(--border)",
+      cat: ["var(--accent)", "#c98a2b", "#5b6b9e", "var(--accent2)", "#b5566b", "#7a8b1f", "#8a6fb0", "#3aa0a0"] }};
+  }}
+  function _sum(a, key) {{ var s = 0; (a || []).forEach(function(x) {{ s += (key ? x[key] : x) || 0; }}); return s; }}
+  // Single source of truth for every home-page corpus statistic. Derives all numbers,
+  // percentages and denominators from the build-time corpus aggregates + molecule index
+  // so the stories always reflect the latest corpus with no hard-coded totals.
+  function corpusSummary() {{
+    var mols = (MOLECULES || []).map(function(m) {{ return {{
+      name: m.molecule_name || m.molecule_id || "?",
+      total: parseInt(m.total_records || m.record_count || "0", 10) || 0,
+      human: parseInt(m.human_count || m.human_evidence || "0", 10) || 0 }}; }});
+    var byLevel = (CORPUS.by_level || []).slice();
+    var tier = {{top: 0, mid: 0, low: 0}};
+    byLevel.forEach(function(l) {{ if (l.rank <= 4) tier.top += l.count; else if (l.rank <= 10) tier.mid += l.count; else tier.low += l.count; }});
+    var tierDenom = tier.top + tier.mid + tier.low;
+    var byModel = (CORPUS.by_model || []).slice();
+    var modelTotal = _sum(byModel, "count");
+    var human = _sum(byModel.filter(function(m) {{ return /human/i.test(m.label); }}), "count");
+    var byYear = (CORPUS.by_year || []).slice();
+    var yearTotal = _sum(byYear, "count");
+    var nowY = new Date().getFullYear();
+    var recent = _sum(byYear.filter(function(y) {{ return y.year >= nowY - 4; }}), "count");
+    var byInd = (CORPUS.by_indication || []).slice();
+    var totalRecords = parseInt(CORPUS.records_indexed || 0, 10) || _sum(mols, "total") || (typeof RECORDS !== "undefined" ? RECORDS.length : 0);
+    return {{
+      totalRecords: totalRecords, molecules: parseInt(CORPUS.molecules_with_data || 0, 10) || mols.length,
+      byLevel: byLevel, nCategories: byLevel.length, tier: tier, tierDenom: tierDenom,
+      tierTopPct: tierDenom ? Math.round(tier.top / tierDenom * 100) : null,
+      byModel: byModel, modelTotal: modelTotal, human: human,
+      humanPct: modelTotal ? Math.round(human / modelTotal * 100) : null,
+      byYear: byYear, yearTotal: yearTotal, recent: recent,
+      recentPct: yearTotal ? Math.round(recent / yearTotal * 100) : null, nowYear: nowY,
+      completeness: (CORPUS.completeness || []).slice(), byInd: byInd,
+      nIndications: parseInt(CORPUS.n_indications || 0, 10) || byInd.length,
+      yearMin: CORPUS.year_min, yearMax: CORPUS.year_max
+    }};
+  }}
+  // Charts are HTML/CSS (not SVG): real label columns that wrap, consistent px
+  // typography, no viewBox rescaling. Each returns a DOM node for the .estory-viz.
+  // Ranked horizontal bars: [wrapping label column][bar][value]. No decorative track.
+  function chartRankedBars(rows, opts) {{
+    opts = opts || {{}}; var C = chartColors();
+    rows = rows.slice(0, opts.limit || 11);
+    var max = 1; rows.forEach(function(r) {{ if (r.value > max) max = r.value; }});
+    var wrap = el("div", "hb");
+    rows.forEach(function(r) {{
+      var row = el("div", "hb-row");
+      var lab = el("div", "hb-label", r.label); lab.title = r.label;
+      var bar = el("div", "hb-bar");
+      var fill = el("div", "hb-fill"); fill.style.width = Math.max(1, r.value / max * 100) + "%";
+      fill.style.background = r.color || opts.color || C.accent; bar.appendChild(fill);
+      var val = el("div", "hb-val", fmtInt(r.value));
+      row.appendChild(lab); row.appendChild(bar); row.appendChild(val);
+      wrap.appendChild(row);
+    }});
+    return wrap;
+  }}
+  // 100% stacked composition bar + wrapping legend (swatch, label, count, %).
+  function chartStacked(segs) {{
+    var C = chartColors();
+    segs = segs.filter(function(s) {{ return s.value > 0; }});
+    var total = _sum(segs, "value") || 1;
+    var wrap = el("div", "sk");
+    var bar = el("div", "sk-bar");
+    segs.forEach(function(s, i) {{
+      var pct = s.value / total * 100, col = s.color || C.cat[i % C.cat.length];
+      var seg = el("div", "sk-seg"); seg.style.width = pct + "%"; seg.style.background = col;
+      seg.title = s.label + ": " + fmtInt(s.value) + " (" + Math.round(pct) + "%)";
+      if (pct >= 9) seg.appendChild(el("span", "sk-seg-lbl", Math.round(pct) + "%"));
+      bar.appendChild(seg);
+    }});
+    wrap.appendChild(bar);
+    var leg = el("div", "sk-legend");
+    segs.forEach(function(s, i) {{
+      var item = el("div", "sk-leg");
+      var chip = el("span", "sk-chip"); chip.style.background = s.color || C.cat[i % C.cat.length];
+      item.appendChild(chip);
+      item.appendChild(el("span", "sk-leg-txt", s.label + " \\u00b7 " + fmtInt(s.value) + " (" + Math.round(s.value / total * 100) + "%)"));
+      leg.appendChild(item);
+    }});
+    wrap.appendChild(leg);
+    return wrap;
+  }}
+  // Completeness meters 0-100%: the track IS meaningful (the 100% denominator), so it
+  // stays. Scoped fields are marked * and carry a present/applicable tooltip.
+  function chartCompletenessBars(rows) {{
+    var C = chartColors();
+    var wrap = el("div", "cm");
+    rows.forEach(function(r) {{
+      var pct = Math.max(0, Math.min(100, Math.round(r.value)));
+      var row = el("div", "cm-row");
+      row.appendChild(el("div", "cm-label", r.label + (r.scoped ? " *" : "")));
+      var track = el("div", "cm-track");
+      if (r.applicable) track.title = fmtInt(r.present) + " of " + fmtInt(r.applicable) + (r.scoped ? " applicable records" : " records");
+      var fill = el("div", "cm-fill"); fill.style.width = pct + "%";
+      fill.style.background = pct >= 80 ? C.accent2 : C.accent; track.appendChild(fill);
+      row.appendChild(track);
+      row.appendChild(el("div", "cm-val", pct + "%"));
+      wrap.appendChild(row);
+    }});
+    return wrap;
+  }}
+  // Year histogram (HTML columns). Baseline only; the current calendar year is drawn
+  // dashed with a small note, so an incomplete year never reads as a decline.
+  function chartYear(rows, opts) {{
+    opts = opts || {{}}; var C = chartColors();
+    var max = 1; rows.forEach(function(r) {{ if (r.value > max) max = r.value; }});
+    var nowY = opts.nowYear || new Date().getFullYear();
+    var n = rows.length || 1, step = n > 12 ? Math.ceil(n / 10) : 1;
+    var wrap = el("div", "tl");
+    var bars = el("div", "tl-bars"), axis = el("div", "tl-axis");
+    rows.forEach(function(r, i) {{
+      var partial = r.year >= nowY;
+      var cell = el("div", "tl-cell");
+      var bar = el("div", "tl-bar" + (partial ? " partial" : ""));
+      bar.style.height = Math.max(2, r.value / max * 100) + "%";
+      if (!partial) bar.style.background = opts.color || C.accent;
+      bar.title = r.year + ": " + fmtInt(r.value) + (partial ? " (partial \\u2014 still indexing)" : "");
+      cell.appendChild(bar); bars.appendChild(cell);
+      var ac = el("div", "tl-axis-cell", (i === 0 || i === n - 1 || i % step === 0) ? String(r.year) : "");
+      axis.appendChild(ac);
+    }});
+    wrap.appendChild(bars); wrap.appendChild(axis);
+    if (rows.some(function(r) {{ return r.year >= nowY; }}))
+      wrap.appendChild(el("div", "tl-note", nowY + " is partial \\u2014 still being indexed"));
+    return wrap;
+  }}
+  // Build the editorial data stories. Every number + takeaway comes from corpusSummary.
+  function buildStories() {{
+    var C = chartColors(), S = corpusSummary(), out = [];
+    if (S.byLevel.length) {{
+      out.push({{ nav: "Overview", eyebrow: "Corpus coverage",
+        headline: "A growing corpus spanning every level of evidence",
+        keyNumber: fmtInt(S.totalRecords), keyLabel: "indexed evidence records",
+        takeaway: "RetaBase indexes " + fmtInt(S.totalRecords) + " records across " + S.nCategories
+          + " study-type categories \\u2014 from systematic reviews and RCTs down to preclinical work.",
+        body: chartRankedBars(S.byLevel.map(function(l) {{ return {{label: l.label, value: l.count}}; }}), {{color: C.accent, limit: 14}}),
+        link: {{label: "Explore records", tab: "evidence"}} }});
+    }}
+    if (S.humanPct != null) {{
+      out.push({{ nav: "Model systems", eyebrow: "Translational directness",
+        headline: (S.humanPct >= 50 ? "Most indexed evidence is directly human" : "Human and preclinical evidence, side by side"),
+        keyNumber: S.humanPct + "%", keyLabel: "of classified records are human",
+        takeaway: S.humanPct + "% of records with a classified model system involve human participants ("
+          + fmtInt(S.human) + " of " + fmtInt(S.modelTotal) + ").",
+        body: chartStacked(S.byModel.map(function(m, i) {{ return {{label: pretty(m.label), value: m.count, color: C.cat[i % C.cat.length]}}; }})) }});
+    }}
+    if (S.tierDenom) {{
+      out.push({{ nav: "Evidence hierarchy", eyebrow: "Evidence structure",
+        headline: "Evidence spans multiple levels of the clinical hierarchy",
+        keyNumber: S.tierTopPct + "%", keyLabel: "is higher-tier clinical evidence",
+        takeaway: S.tierTopPct + "% of indexed records are higher-tier clinical evidence \\u2014 systematic reviews, "
+          + "meta-analyses, guidelines or RCTs (" + fmtInt(S.tier.top) + " of " + fmtInt(S.tierDenom)
+          + "). The hierarchy reflects evidence type, not the methodological quality of any single paper.",
+        body: chartRankedBars([
+          {{label: "Higher-tier clinical", value: S.tier.top, color: C.accent}},
+          {{label: "Other human studies", value: S.tier.mid, color: C.cat[2]}},
+          {{label: "Preclinical & narrative", value: S.tier.low, color: C.muted}}
+        ], {{labelW: 172}}),
+        link: {{label: "See methodology", tab: "methods"}} }});
+    }}
+    if (S.completeness.length) {{
+      var design = S.completeness.filter(function(c) {{ return /design/i.test(c.label); }})[0];
+      var scoped = S.completeness.filter(function(c) {{ return c.scoped; }});
+      out.push({{ nav: "Completeness", eyebrow: "Structured extraction",
+        headline: "Structured far beyond citation-level indexing",
+        keyNumber: design ? Math.round(design.pct) + "%" : String(S.completeness.length),
+        keyLabel: design ? "carry a structured study design" : "structured fields extracted",
+        takeaway: "Beyond title and abstract, RetaBase extracts study design, sample size, dose, route, duration, "
+          + "population and outcome \\u2014 so records can be filtered and compared, not just searched.",
+        body: chartCompletenessBars(S.completeness.map(function(c) {{
+          return {{label: c.label, value: parseFloat(c.pct), scoped: c.scoped, present: c.present, applicable: c.applicable}}; }})),
+        caption: scoped.length ? "* Measured only among records where the field applies (dose, route, duration, "
+          + "sample size, population, outcome) \\u2014 e.g. dose does not apply to guidelines or reviews. Hover a bar for the exact count." : "",
+        link: {{label: "Explore records", tab: "evidence"}} }});
+    }}
+    if (S.byYear.length) {{
+      // Use the ACTUAL calendar year; pad the axis to it so an un-indexed current year
+      // reads as "still being indexed", never as a decline, and is never inferred from data.
+      var yrRows = S.byYear.map(function(y) {{ return {{year: y.year, value: y.count}}; }});
+      if (!yrRows.some(function(r) {{ return r.year === S.nowYear; }})) yrRows.push({{year: S.nowYear, value: 0}});
+      yrRows.sort(function(a, b) {{ return a.year - b.year; }});
+      var curRow = yrRows.filter(function(r) {{ return r.year === S.nowYear; }})[0];
+      out.push({{ nav: "Timeline", eyebrow: "Recency",
+        headline: (S.recentPct != null && S.recentPct >= 50 ? "The evidence base is recent and still expanding" : "Evidence spanning decades of research"),
+        keyNumber: (S.recentPct != null ? S.recentPct + "%" : "\\u2014"), keyLabel: "published in the last 5 years",
+        takeaway: (S.recentPct != null ? S.recentPct + "% of indexed records were published in the last five calendar years ("
+          + fmtInt(S.recent) + " of " + fmtInt(S.yearTotal) + "). " : "")
+          + (curRow && curRow.value > 0 ? S.nowYear + " is shown dashed \\u2014 it is still being indexed."
+             : S.nowYear + " is shown dashed and still being indexed; the latest fully indexed year is " + (S.yearMax || "\\u2014") + "."),
+        body: chartYear(yrRows, {{color: C.accent, nowYear: S.nowYear}}) }});
+    }}
+    if (S.byInd.length) {{
+      out.push({{ nav: "Breadth", eyebrow: "Scope",
+        headline: "Evidence spans many compounds and clinical questions",
+        keyNumber: fmtInt(S.molecules), keyLabel: "bioactive compounds tracked",
+        takeaway: "The corpus covers " + fmtInt(S.molecules) + " bioactive compounds across "
+          + fmtInt(S.nIndications) + " indication areas \\u2014 from metabolic disease to longevity and injury repair.",
+        body: chartRankedBars(S.byInd.map(function(x) {{ return {{label: pretty(x.label), value: x.count}}; }}), {{color: C.accent2, limit: 10}}),
+        caption: (S.nIndications > 10 ? "Showing the 10 most common of " + fmtInt(S.nIndications) + " indication areas." : "") }});
+    }}
+    return out;
+  }}
+  // Editorial "Evidence at a glance": a labelled tablist of data stories in a
+  // story|visualization split. No autoplay; subtle fade on change; reduced-motion aware.
+  function renderCharts(root) {{
+    var stories = buildStories();
+    if (!stories.length) return;
+    var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var sec = el("div", "estory");
+    var head = el("div", "estory-head");
+    head.appendChild(el("div", "estory-eyebrow", "Evidence at a glance"));
+    head.appendChild(el("div", "estory-h", "What's inside RetaBase"));
+    sec.appendChild(head);
+    var navRow = el("div", "estory-nav");
+    var prev = el("button", "estory-arrow", "\\u2039"); prev.type = "button"; prev.setAttribute("aria-label", "Previous story");
+    var tablist = el("div", "estory-tabs"); tablist.setAttribute("role", "tablist"); tablist.setAttribute("aria-label", "Evidence stories");
+    var next = el("button", "estory-arrow", "\\u203a"); next.type = "button"; next.setAttribute("aria-label", "Next story");
+    var tabs = [];
+    stories.forEach(function(st, i) {{
+      var t = el("button", "estory-tab", st.nav); t.type = "button"; t.id = "estab-" + i;
+      t.setAttribute("role", "tab"); t.setAttribute("aria-selected", "false"); t.setAttribute("tabindex", "-1");
+      t.addEventListener("click", function() {{ go(i); tabs[idx].focus(); }});
+      t.addEventListener("keydown", function(e) {{
+        if (e.key === "ArrowRight") {{ e.preventDefault(); go((idx + 1) % n); tabs[idx].focus(); }}
+        else if (e.key === "ArrowLeft") {{ e.preventDefault(); go((idx - 1 + n) % n); tabs[idx].focus(); }}
+      }});
+      tablist.appendChild(t); tabs.push(t);
+    }});
+    navRow.appendChild(prev); navRow.appendChild(tablist); navRow.appendChild(next);
+    sec.appendChild(navRow);
+    var panel = el("div", "estory-panel"); panel.setAttribute("role", "tabpanel");
+    var story = el("div", "estory-copy"), viz = el("div", "estory-viz");
+    panel.appendChild(story); panel.appendChild(viz);
+    sec.appendChild(panel); root.appendChild(sec);
+    var idx = 0, n = stories.length;
+    function paint() {{
+      var st = stories[idx];
+      story.textContent = ""; viz.textContent = "";
+      story.appendChild(el("div", "estory-cat", st.eyebrow));
+      story.appendChild(el("div", "estory-headline", st.headline));
+      if (st.keyNumber) {{
+        var kn = el("div", "estory-kn");
+        kn.appendChild(el("span", "estory-kn-num", st.keyNumber));
+        if (st.keyLabel) kn.appendChild(el("span", "estory-kn-lbl", st.keyLabel));
+        story.appendChild(kn);
+      }}
+      if (st.takeaway) story.appendChild(el("p", "estory-take", st.takeaway));
+      var foot = el("div", "estory-foot");
+      foot.appendChild(el("span", "estory-context", "Based on the current indexed RetaBase corpus"));
+      if (st.link) {{
+        var a = el("button", "estory-link", st.link.label + " \\u2192"); a.type = "button";
+        a.addEventListener("click", function() {{ showTab(st.link.tab); var c = document.querySelector("section.content"); if (c) c.scrollTo({{top: 0, behavior: "smooth"}}); }});
+        foot.appendChild(a);
+      }}
+      story.appendChild(foot);
+      viz.appendChild(st.body);
+      if (st.caption) viz.appendChild(el("div", "estory-caption", st.caption));
+      panel.setAttribute("aria-labelledby", "estab-" + idx);
+      tabs.forEach(function(t, i) {{ var on = i === idx; t.className = "estory-tab" + (on ? " active" : "");
+        t.setAttribute("aria-selected", on ? "true" : "false"); t.setAttribute("tabindex", on ? "0" : "-1"); }});
+      // Keep the active tab visible by scrolling the tab strip only (never the page),
+      // and only when it is actually out of view -- so the first tab is never clipped.
+      var at = tabs[idx];
+      if (at) {{
+        var l = at.offsetLeft, r = l + at.offsetWidth;
+        if (l < tablist.scrollLeft) tablist.scrollLeft = Math.max(0, l - 8);
+        else if (r > tablist.scrollLeft + tablist.clientWidth) tablist.scrollLeft = r - tablist.clientWidth + 8;
+      }}
+    }}
+    function go(i) {{
+      i = (i % n + n) % n; if (i === idx && story.childNodes.length) return; idx = i;
+      if (reduce) {{ paint(); return; }}
+      panel.classList.add("fading");
+      setTimeout(function() {{ paint(); panel.classList.remove("fading"); }}, 150);
+    }}
+    prev.addEventListener("click", function() {{ go(idx - 1); }});
+    next.addEventListener("click", function() {{ go(idx + 1); }});
+    paint();
+  }}
   function renderHome() {{
     var root = document.getElementById("home-body");
     root.textContent = "";
     if (!(COPY.home && COPY.home.length)) {{ root.appendChild(el("p", null, "Welcome to RetaBase.")); return; }}
     renderBlocks(root, COPY.home, {{
+      "charts": function(r) {{ renderCharts(r); }},
       "nav": function(r) {{ r.appendChild(buildHomeNav()); }},
       "rings": function(r) {{ r.appendChild(scoreRings({{rank_score: "88", reliability_score: "82", evidence_directness: "95", icite_nih_percentile: "76", evidence_class: ""}})); }},
       "methods-link": function(r) {{
