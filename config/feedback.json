@@ -1,0 +1,36 @@
+{
+  "enabled": true,
+  "intro": "See something off? RetaBase is community-checked — a quick flag helps us keep it accurate. No account needed, takes a few seconds.",
+  "aspects": [
+    {"key": "evidence_level", "label": "Evidence level / study type"},
+    {"key": "rigor", "label": "Rigor score"},
+    {"key": "directness", "label": "Directness score"},
+    {"key": "indication", "label": "Indication / condition tags"},
+    {"key": "molecule", "label": "Which bioactive it's about"},
+    {"key": "regulatory", "label": "Regulatory status"},
+    {"key": "duplicate_retracted", "label": "Duplicate or retracted paper"},
+    {"key": "other", "label": "Something else"}
+  ],
+  "suggest_label": "What should it be? (optional)",
+  "note_label": "Anything else we should know? (optional)",
+  "thanks": "Thanks — this goes into our review queue. Verified corrections are applied on the next rebuild.",
+  "banner": {
+    "enabled": true,
+    "dismissible": true,
+    "title": "Help keep RetaBase accurate",
+    "text": "This is a community-checked resource. If a paper looks mis-classified, use the ⚑ Report link on its card — it takes a few seconds and directly improves the data for everyone."
+  },
+  "data_use": {
+    "summary": "How your report is used",
+    "points": [
+      "We record only what you flag: the paper, which aspect looks off, and any note you add. No account or personal information is required.",
+      "Reports are grouped by paper and reviewed. Some can be auto-checked against the original source (for example, a paper's PubMed publication type); the rest are flagged for human review.",
+      "A reviewer can add a manual override that corrects the automated classification for that paper — human judgment takes precedence over the rule when they disagree.",
+      "Verified corrections are applied on the next rebuild and stay auditable in the project's public config."
+    ]
+  },
+  "submit": {
+    "mode": "sheet",
+    "endpoint": "https://script.google.com/macros/s/AKfycbxP4PgKDmuZCanLFbnZhVh1PnmshxXBBvrVmZNLefAt8sXu8qcDmDKpW7BjZuAqeVKLAw/exec"
+  }
+}

@@ -21,9 +21,10 @@ tests/e2e/test-results/
 # ...but the E2E package.json MUST be committed (the blanket *.json above would
 # otherwise hide it, which broke the e2e workflow with "ENOENT package.json").
 !tests/e2e/package.json
-# The site footer is config, not a build artifact — the blanket *.json above would
-# otherwise hide it, and the deployed build would render with no footer.
+# The site footer + feedback form are config, not build artifacts — the blanket
+# *.json above would otherwise hide them, and the deployed build would lose them.
 !config/footer.json
+!config/feedback.json
 # Regulatory enrichment proposals are a review artifact, not committed as-is; the
 # curated config/regulatory.csv is what ships.
 config/regulatory_suggested.csv

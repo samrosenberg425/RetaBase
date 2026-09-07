@@ -86,6 +86,8 @@ def run():
     # Defense-in-depth headers (dim #5): CSP + referrer policy.
     check("CSP meta present", "Content-Security-Policy" in html_text)
     check("CSP allows same-origin fetch of the feed", "connect-src 'self'" in html_text)
+    check("CSP allows the feedback collector endpoints",
+          "https://script.google.com" in html_text and "https://api.web3forms.com" in html_text)
     check("CSP blocks framing (clickjacking)", "frame-ancestors 'none'" in html_text)
     check("referrer policy set", 'name="referrer"' in html_text and "no-referrer" in html_text)
     # Phase 4: light scientific theme + clinical blue-teal accent + masthead.
@@ -218,6 +220,20 @@ def run():
     check("footer external links are http(s) (safeLink-eligible)",
           all(str(l.get("url", "http")).startswith("http")
               for col in _foot.get("columns", []) for l in col.get("links", []) if "url" in l))
+    # Per-card feedback: config loads, the modal + renderer + report button are in the
+    # shell, and the collector mode is a recognized value.
+    _fb = site._load_feedback()
+    check("feedback config loads with aspects",
+          isinstance(_fb.get("aspects"), list) and len(_fb["aspects"]) >= 2
+          and all(a.get("key") for a in _fb["aspects"]))
+    check("feedback modal + renderer + report button present",
+          'id="fb-bg"' in html_text and "openFeedback" in html_text
+          and "reportButton" in html_text and "buildGoogleFormUrl" in html_text)
+    check("feedback submit mode is a known collector",
+          (_fb.get("submit", {}).get("mode") or "stub") in ("stub", "googleform", "formbackend", "sheet"))
+    check("help-keep-accurate banner present + config-driven",
+          'id="help-banner"' in html_text and "renderHelpBanner" in html_text
+          and isinstance(_fb.get("banner"), dict) and bool(_fb["banner"].get("text")))
     # Methods documentation: rigor variables, weight rationale, sources, hierarchy citation
     check("methods define rigor variables + points",
           "Human trials & observational studies" in COPY_TEXT and "Orthogonal methods" in COPY_TEXT

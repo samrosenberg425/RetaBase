@@ -305,16 +305,45 @@ def sample_trials():
     ]
 
 
-def _build_one(out_path: str, variant: str, tag_hovers: bool = True) -> None:
+def _googleform_feedback():
+    """A feedback config in 'googleform' mode: the per-card report reroutes to a
+    PREFILLED Google Form (one response row per report). The form_url + entry IDs are
+    placeholders to swap for a real form; auto_open is off so the demo shows the built
+    reroute URL instead of launching a 404. Reuses the real aspects/intro from config."""
+    base = json.loads(json.dumps(_bps._load_feedback() or {}))
+    base["submit"] = {
+        "mode": "googleform",
+        "form_url": "https://docs.google.com/forms/d/e/1FAIpQLSc_EXAMPLE_REPLACE_ME/viewform",
+        "auto_open": False,  # demo: show the link rather than open a placeholder form
+        "entry_map": {
+            "report_id": "entry.1000000", "pmid": "entry.1000001", "molecule": "entry.1000002",
+            "title": "entry.1000003", "aspects_text": "entry.1000004", "suggested": "entry.1000005",
+            "note": "entry.1000006", "current_evidence_level": "entry.1000007",
+            "current_rigor": "entry.1000008", "current_directness": "entry.1000009",
+            "current_rank": "entry.1000010",
+        },
+    }
+    base["thanks"] = ("Thanks — in production this opens a prefilled Google Form so you can "
+                      "submit in one click. (Example form: replace the URL + entry IDs with your own.)")
+    return base
+
+
+def _build_one(out_path: str, variant: str, tag_hovers: bool = True, feedback_override=None) -> None:
     import shutil
     os.makedirs(os.path.dirname(os.path.abspath(out_path)) or ".", exist_ok=True)
-    with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as outdir:
-        with open(os.path.join(src, "site_data.json"), "w", encoding="utf-8") as fh:
-            json.dump(sample_feed(), fh)
-        with open(os.path.join(src, "trials_data.json"), "w", encoding="utf-8") as fh:
-            json.dump({"generated_utc": "2026-08-15T00:00:00Z", "trials": sample_trials()}, fh)
-        _bps.build_site(src, outdir, mode="inline", variant=variant, tag_hovers=tag_hovers)
-        shutil.copy(os.path.join(outdir, "index.html"), out_path)
+    _orig_fb = _bps._load_feedback
+    if feedback_override is not None:
+        _bps._load_feedback = lambda: feedback_override
+    try:
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as outdir:
+            with open(os.path.join(src, "site_data.json"), "w", encoding="utf-8") as fh:
+                json.dump(sample_feed(), fh)
+            with open(os.path.join(src, "trials_data.json"), "w", encoding="utf-8") as fh:
+                json.dump({"generated_utc": "2026-08-15T00:00:00Z", "trials": sample_trials()}, fh)
+            _bps.build_site(src, outdir, mode="inline", variant=variant, tag_hovers=tag_hovers)
+            shutil.copy(os.path.join(outdir, "index.html"), out_path)
+    finally:
+        _bps._load_feedback = _orig_fb
 
 
 def main() -> None:
@@ -350,13 +379,19 @@ def main() -> None:
     _build_one(no_hovers, args.variant, tag_hovers=False)
     # Also refresh the plain preview.html (with hovers) for continuity.
     _build_one(args.out, args.variant, tag_hovers=True)
+    # Feedback prototype: a second copy whose per-card "Report an issue" reroutes to a
+    # prefilled Google Form (vs. the default preview.html, which uses the stub collector).
+    gform = os.path.join(outdir, "preview_feedback_gform.html")
+    _build_one(gform, args.variant, tag_hovers=True, feedback_override=_googleform_feedback())
+    _fbmode = (_bps._load_feedback().get("submit", {}) or {}).get("mode", "stub")
     print("Built previews with sample data:")
     print("  " + with_hovers + "   (card tags show a definition on hover)")
     print("  " + no_hovers + "   (no tag hovers)")
-    print("  " + args.out + "   (default = with hovers)")
+    print("  " + args.out + "   (default = with hovers; feedback collector = " + _fbmode + ")")
+    print("  " + gform + "   (feedback reroutes to a prefilled Google Form)")
     if args.open:
         try:
-            subprocess.run(["open", with_hovers, no_hovers], check=False)
+            subprocess.run(["open", args.out, gform], check=False)
         except Exception:  # noqa: BLE001
             pass
 

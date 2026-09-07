@@ -697,6 +697,21 @@ def _load_hierarchy() -> List[dict]:
     return out
 
 
+def _load_feedback() -> dict:
+    """Editable per-card feedback form (config/feedback.json): the intro copy, the
+    list of flaggable aspects, and a ``submit`` block that selects where a report
+    goes. ``submit.mode`` is the single swap point: ``stub`` (prototype: assemble +
+    show the payload, no network), ``formbackend`` (POST to ``endpoint``), or
+    ``googleform`` (open a prefilled ``form_url``). Returns {} if the file is absent."""
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "feedback.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
 def _load_footer() -> dict:
     """Editable site footer (config/footer.json): brand tagline, link columns, and a
     bottom note/links bar. Links are either internal (``tab``: switch to a tab) or
@@ -771,6 +786,8 @@ def build_site(curated_dir: str, out_dir: str, mode: str = "inline",
         "tag_hovers": bool(tag_hovers),
         # Editable multi-column site footer (config/footer.json).
         "footer": _load_footer(),
+        # Editable per-card feedback form (config/feedback.json).
+        "feedback": _load_feedback(),
         "filters": [{"field": f, "label": lbl} for f, lbl in FILTER_FACETS],
         "multi": sorted(MULTI_VALUE_FIELDS),
         "aspects": [{"field": f, "cls": c, "label": lbl} for f, c, lbl in ASPECT_TAGS],
@@ -924,7 +941,11 @@ def _apply_csp(html_out: str) -> str:
     script_src = "script-src 'self' " + script_hash if script_hash else "script-src 'self' 'unsafe-inline'"
     policy = (
         "default-src 'self'; " + script_src + "; style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data:; connect-src 'self'; "
+        # connect-src also allows the community-feedback collector endpoints: a Google
+        # Apps Script Web App (writes each report into a QC spreadsheet; it 302-redirects
+        # to script.googleusercontent.com) and, as an alternative, the Web3Forms API.
+        # Only reached when a person submits the report form; no data is sent otherwise.
+        "img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://api.web3forms.com; "
         # The feed parser runs in a Web Worker built from an inline Blob (blob: URL).
         # Without an explicit worker-src, CSP falls back to default-src 'self', which
         # does NOT include blob: -- so the worker was blocked and silently fell back to
@@ -1095,6 +1116,59 @@ _TEMPLATE = """<!DOCTYPE html>
   .foot-note {{ font-size: 11.5px; color: #8395a2; line-height: 1.5; max-width: 720px; margin: 0; }}
   .foot-meta {{ font-size: 11.5px; color: #7d8f9c; display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }}
   .foot-copy {{ font-size: 11.5px; color: #64727e; margin: 16px 0 0; max-width: 1200px; }}
+  /* "Help keep this accurate" community banner (dismissible, config-driven) */
+  .help-banner {{ display: flex; align-items: flex-start; gap: 12px; background: var(--accent-soft);
+    border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px;
+    padding: 11px 14px; margin: 4px 0 12px; }}
+  .help-banner-ico {{ font-size: 16px; line-height: 1.4; color: var(--accent); flex: 0 0 auto; }}
+  .help-banner-body {{ flex: 1; min-width: 0; }}
+  .help-banner-title {{ font-size: 13px; font-weight: 700; color: var(--text); margin: 0 0 2px; }}
+  .help-banner-text {{ font-size: 12.5px; color: var(--muted); line-height: 1.5; margin: 0; }}
+  .help-banner-x {{ font: inherit; font-size: 18px; line-height: 1; color: var(--muted); background: none;
+    border: 0; cursor: pointer; padding: 0 2px; flex: 0 0 auto; }}
+  .help-banner-x:hover {{ color: var(--text); }}
+  .help-banner-x:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 2px; }}
+  /* "How your report is used" disclosure (shared by the banner + the report form) */
+  .data-use {{ margin: 8px 0 0; }}
+  .data-use > summary {{ cursor: pointer; list-style: none; font-size: 12.5px; font-weight: 600; color: var(--accent); }}
+  .data-use > summary::-webkit-details-marker {{ display: none; }}
+  .data-use > summary::before {{ content: "\\25b8  "; }}
+  .data-use[open] > summary::before {{ content: "\\25be  "; }}
+  .data-use > summary:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 2px; }}
+  .data-use ul {{ margin: 8px 0 2px; padding-left: 18px; }}
+  .data-use li {{ font-size: 12.5px; color: var(--muted); line-height: 1.5; margin: 0 0 6px; }}
+  /* Per-card "Report an issue" affordance + feedback modal */
+  .report-link {{ font: inherit; font-size: 12.5px; color: var(--muted); background: none; border: 0;
+    padding: 0; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }}
+  .report-link:hover {{ color: var(--accent); text-decoration: underline; }}
+  .report-link:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 2px; }}
+  .fb-modal {{ max-width: 460px; }}
+  .fb-intro {{ font-size: 13px; color: var(--muted); line-height: 1.5; margin: 4px 0 12px; }}
+  .fb-rec {{ font-size: 12px; color: var(--muted); background: var(--panel2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 11px; margin: 0 0 14px; }}
+  .fb-rec b {{ color: var(--text); }}
+  .fb-legend {{ font-size: 12.5px; font-weight: 700; color: var(--text); margin: 0 0 8px; }}
+  .fb-checks {{ display: grid; grid-template-columns: 1fr 1fr; gap: 7px 14px; margin: 0 0 14px; }}
+  .fb-check {{ display: flex; align-items: flex-start; gap: 7px; font-size: 13px; color: var(--text); cursor: pointer; }}
+  .fb-check input {{ width: auto; margin: 2px 0 0; flex: 0 0 auto; }}
+  .fb-field {{ margin: 0 0 12px; }}
+  .fb-field label {{ display: block; font-size: 12.5px; font-weight: 600; color: var(--text); margin: 0 0 4px; }}
+  .fb-field input, .fb-field textarea {{ width: 100%; box-sizing: border-box; font: inherit; font-size: 13px;
+    padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--text); }}
+  .fb-field textarea {{ min-height: 58px; resize: vertical; }}
+  .fb-actions {{ display: flex; gap: 10px; align-items: center; margin-top: 4px; }}
+  .fb-submit {{ font: inherit; font-size: 13px; font-weight: 700; color: #fff; background: var(--accent);
+    border: 1px solid var(--accent); border-radius: 8px; padding: 8px 18px; cursor: pointer; }}
+  .fb-submit:hover {{ filter: brightness(1.06); }}
+  .fb-submit:disabled {{ opacity: .5; cursor: not-allowed; }}
+  .fb-cancel {{ font: inherit; font-size: 13px; color: var(--muted); background: none; border: 0; cursor: pointer; }}
+  .fb-cancel:hover {{ color: var(--text); text-decoration: underline; }}
+  .fb-err {{ font-size: 12px; color: #b4232a; margin: 8px 0 0; }}
+  .fb-thanks {{ font-size: 14px; color: var(--text); line-height: 1.55; }}
+  .fb-payload {{ margin-top: 12px; }}
+  .fb-payload summary {{ cursor: pointer; font-size: 12px; color: var(--muted); }}
+  .fb-payload pre {{ font-size: 11.5px; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 8px 0 0; color: var(--text); }}
   /* Guide tab (plain-language glossary) */
   .guide {{ max-width: 820px; }}
   .guide-h {{ font-size: 22px; font-weight: 800; color: var(--text); margin: 6px 0 6px; }}
@@ -1662,6 +1736,7 @@ _TEMPLATE = """<!DOCTYPE html>
     </div>
     <div id="browser-view" role="tabpanel" aria-labelledby="tab-evidence" tabindex="0" style="display:none">
       <button class="filters-toggle" id="filters-toggle" aria-expanded="false" aria-controls="sidebar">&#9776; Filters</button>
+      <div class="help-banner" id="help-banner" style="display:none"></div>
       <div class="tab-desc" id="browser-desc"></div>
       <div class="count" id="records-count">
         <span id="showing" aria-live="polite"></span>
@@ -1762,6 +1837,10 @@ _TEMPLATE = """<!DOCTYPE html>
 
 <div class="modal-bg" id="modal-bg">
   <div class="modal" id="modal" role="dialog" aria-modal="true"></div>
+</div>
+
+<div class="modal-bg" id="fb-bg">
+  <div class="modal fb-modal" id="fb-modal" role="dialog" aria-modal="true" aria-labelledby="fb-title"></div>
 </div>
 
 <script type="application/json" id="site-data">{data_json}</script>
@@ -2670,6 +2749,7 @@ _TEMPLATE = """<!DOCTYPE html>
       d.addEventListener("click", function(e) {{ e.stopPropagation(); }});
       links.appendChild(d);
     }}
+    if (feedbackEnabled()) links.appendChild(reportButton(r));
     if (links.childNodes.length) card.appendChild(links);
 
     if (INTERNAL) card.appendChild(approvalRow(r, card));
@@ -2859,6 +2939,7 @@ _TEMPLATE = """<!DOCTYPE html>
     var links = el("div", "links"); links.style.marginTop = "12px";
     if (r.pmid) {{ var a = el("a", null, "PubMed"); a.href = PUBMED + encodeURIComponent(r.pmid) + "/"; a.target = "_blank"; a.rel = "noopener noreferrer"; links.appendChild(a); }}
     if (r.doi) {{ var d = el("a", null, "DOI"); d.href = "https://doi.org/" + encodeURIComponent(r.doi); d.target = "_blank"; d.rel = "noopener noreferrer"; links.appendChild(d); }}
+    if (feedbackEnabled()) links.appendChild(reportButton(r));
     if (links.childNodes.length) m.appendChild(links);
 
     var rc = parseComp(dval(r, "reliability_components"));
@@ -2921,6 +3002,7 @@ _TEMPLATE = """<!DOCTYPE html>
   window.closeModal = closeModal;
   function _modalOpen() {{ var b = document.getElementById("modal-bg"); return b && b.className.indexOf("open") !== -1; }}
   document.addEventListener("keydown", function(e) {{
+    if (e.key === "Escape" && _fbOpen()) {{ closeFeedback(); return; }}  // feedback sits on top
     if (e.key === "Escape") {{ closeModal(); return; }}
     // Focus trap: while the dialog is open, keep Tab inside it (wrap at the ends).
     if (e.key === "Tab" && _modalOpen()) {{
@@ -3918,6 +4000,242 @@ _TEMPLATE = """<!DOCTYPE html>
       + (f.brand || "RetaBase") + ". Rule-based, auto-updating, and open to inspection."));
     host.style.display = "";
   }}
+  // ---- Per-card feedback (config/feedback.json) --------------------------------
+  // A card carries a "Report an issue" button; it opens a small structured form
+  // (which aspects look wrong + an optional suggested value / note). Submission is
+  // routed by FEEDBACK.submit.mode -- the single swap point between the prototype
+  // stub, a form-backend POST, or a prefilled Google Form. Nothing here parses feed
+  // content as HTML (textContent only), matching the rest of the app.
+  var FEEDBACK = DATA.feedback || {{}};
+  var _fbRec = null, _fbOpener = null;
+  function feedbackEnabled() {{
+    return !!(FEEDBACK && FEEDBACK.enabled !== false && FEEDBACK.aspects && FEEDBACK.aspects.length);
+  }}
+  // Shared "How your report is used" disclosure (config: FEEDBACK.data_use) -- used
+  // by both the community banner and the report form so the data-handling + human-
+  // review-override policy is transparent wherever a person is about to contribute.
+  function dataUseDetails() {{
+    var du = (FEEDBACK && FEEDBACK.data_use) || {{}};
+    if (!du.points || !du.points.length) return null;
+    var det = document.createElement("details"); det.className = "data-use";
+    det.appendChild(el("summary", null, du.summary || "How your report is used"));
+    var ul = el("ul");
+    du.points.forEach(function(p) {{ ul.appendChild(el("li", null, p)); }});
+    det.appendChild(ul);
+    return det;
+  }}
+  function reportButton(r) {{
+    var b = el("button", "report-link", "\\u2691 Report an issue");
+    b.type = "button";
+    b.setAttribute("aria-label", "Report an issue with this record");
+    b.addEventListener("click", function(e) {{ e.stopPropagation(); openFeedback(r); }});
+    return b;
+  }}
+  function _fbOpen() {{ var b = document.getElementById("fb-bg"); return b && b.className.indexOf("open") !== -1; }}
+  function closeFeedback() {{
+    var bg = document.getElementById("fb-bg");
+    if (bg) bg.className = "modal-bg";
+    _fbRec = null;
+    if (_fbOpener && typeof _fbOpener.focus === "function") _fbOpener.focus();
+    _fbOpener = null;
+  }}
+  function fbCurrentValues(r) {{
+    return {{
+      evidence_level: r.evidence_level_short || r.evidence_level_label || "",
+      rigor: r.reliability_score, directness: r.evidence_directness, rank: r.rank_score,
+      evidence_class: r.evidence_class_label || "", website_section: r.website_section || ""
+    }};
+  }}
+  function openFeedback(r) {{
+    if (!feedbackEnabled()) return;
+    _fbRec = r; _fbOpener = document.activeElement;
+    var m = document.getElementById("fb-modal");
+    m.textContent = "";
+    var close = el("button", "close", "Close");
+    close.addEventListener("click", closeFeedback);
+    m.appendChild(close);
+    var h = el("h2", null, "Report an issue"); h.id = "fb-title"; m.appendChild(h);
+    if (FEEDBACK.intro) m.appendChild(el("p", "fb-intro", FEEDBACK.intro));
+    var rec = el("div", "fb-rec");
+    rec.appendChild(el("b", null, r.title || "(untitled)"));
+    rec.appendChild(document.createTextNode(
+      " \\u2014 " + (r.molecule_name || "?") + (r.pmid ? " \\u00b7 PMID " + r.pmid : "")));
+    m.appendChild(rec);
+    m.appendChild(el("div", "fb-legend", "What looks wrong? (pick any)"));
+    var checks = el("div", "fb-checks"), boxes = [];
+    (FEEDBACK.aspects || []).forEach(function(a) {{
+      var lab = el("label", "fb-check");
+      var cb = document.createElement("input"); cb.type = "checkbox"; cb.value = a.key; boxes.push(cb);
+      lab.appendChild(cb); lab.appendChild(document.createTextNode(a.label || a.key));
+      checks.appendChild(lab);
+    }});
+    m.appendChild(checks);
+    var sf = el("div", "fb-field");
+    sf.appendChild(el("label", null, FEEDBACK.suggest_label || "What should it be? (optional)"));
+    var si = document.createElement("input"); si.type = "text"; sf.appendChild(si); m.appendChild(sf);
+    var nf = el("div", "fb-field");
+    nf.appendChild(el("label", null, FEEDBACK.note_label || "Anything else? (optional)"));
+    var ni = document.createElement("textarea"); nf.appendChild(ni); m.appendChild(nf);
+    var err = el("div", "fb-err"); err.style.display = "none"; m.appendChild(err);
+    var actions = el("div", "fb-actions");
+    var submit = el("button", "fb-submit", "Send feedback"); submit.type = "button";
+    var cancel = el("button", "fb-cancel", "Cancel"); cancel.type = "button";
+    cancel.addEventListener("click", closeFeedback);
+    submit.addEventListener("click", function() {{
+      var picked = boxes.filter(function(b) {{ return b.checked; }}).map(function(b) {{ return b.value; }});
+      var suggest = (si.value || "").trim(), note = (ni.value || "").trim();
+      if (!picked.length && !suggest && !note) {{
+        err.textContent = "Pick at least one thing, or add a note."; err.style.display = ""; return;
+      }}
+      submit.disabled = true;
+      submitFeedback(r, {{aspects: picked, suggested: suggest, note: note}});
+    }});
+    actions.appendChild(submit); actions.appendChild(cancel);
+    m.appendChild(actions);
+    var du = dataUseDetails();
+    if (du) m.appendChild(du);
+    document.getElementById("fb-bg").className = "modal-bg open";
+    (boxes[0] || si).focus();
+  }}
+  // Flat, one-row-per-report payload -- keyed by paper (pmid) and with the flagged
+  // aspects both as an array and as a QC-filterable "; "-joined string, plus a
+  // snapshot of what the site showed at report time (so a reviewer can tell whether
+  // it has since changed). Flat keys map 1:1 onto Google-Form entry IDs / sheet columns.
+  function fbPayload(r, input) {{
+    var cur = fbCurrentValues(r);
+    return {{
+      schema: "retabase-feedback/1",
+      report_id: (r.pmid || "na") + "-" + Date.now().toString(36),
+      ts: new Date().toISOString(),
+      pmid: r.pmid || "", molecule_id: r.molecule_id || "", molecule: r.molecule_name || "",
+      title: r.title || "",
+      aspects: input.aspects,                       // array (programmatic filtering)
+      aspects_text: input.aspects.join("; "),       // QC: filter by "contains <aspect>"
+      suggested: input.suggested, note: input.note,
+      current_evidence_level: cur.evidence_level, current_rigor: cur.rigor,
+      current_directness: cur.directness, current_rank: cur.rank, evidence_class: cur.evidence_class,
+      page: (typeof location !== "undefined" && location.href) || ""
+    }};
+  }}
+  // Build a Google Forms prefill URL: base viewform URL + ?usp=pp_url&entry.N=value,
+  // driven by an editable field->entry-id map. Arrays are joined so a paper's flags
+  // land in one cell; text questions keep it robust to option-label drift.
+  function buildGoogleFormUrl(base, entryMap, payload) {{
+    var u = base + (base.indexOf("?") === -1 ? "?" : "&") + "usp=pp_url";
+    Object.keys(entryMap || {{}}).forEach(function(field) {{
+      var v = payload[field];
+      if (v == null || v === "") return;
+      if (Object.prototype.toString.call(v) === "[object Array]") v = v.join("; ");
+      u += "&" + encodeURIComponent(entryMap[field]) + "=" + encodeURIComponent(v);
+    }});
+    return u;
+  }}
+  function submitFeedback(r, input) {{
+    var payload = fbPayload(r, input);
+    var sc = FEEDBACK.submit || {{}}, mode = sc.mode || "stub";
+    if (mode === "googleform" && sc.form_url) {{
+      var url = buildGoogleFormUrl(sc.form_url, sc.entry_map, payload);
+      if (/^https?:\\/\\//i.test(url)) {{
+        // In production this auto-opens the prefilled form; the thanks panel also
+        // shows the link so the reroute target is visible in this prototype.
+        if (sc.auto_open !== false) window.open(url, "_blank", "noopener");
+        showFeedbackThanks(payload, url); return;
+      }}
+    }}
+    if (mode === "sheet" && sc.endpoint) {{
+      // Google Apps Script Web App -> appends one row per report to a QC spreadsheet.
+      // text/plain avoids a CORS preflight; no-cors resolves opaquely (the row is still
+      // written) so we optimistically thank -- Apps Script doesn't return CORS headers.
+      try {{ fetch(sc.endpoint, {{method: "POST", mode: "no-cors",
+        headers: {{"Content-Type": "text/plain;charset=utf-8"}}, body: JSON.stringify(payload)}}); }} catch (e) {{}}
+      showFeedbackThanks(payload); return;
+    }}
+    if (mode === "formbackend" && sc.endpoint) {{
+      // Web3Forms (or similar): reads the JSON response, so we can show a real error.
+      var body = {{}}; Object.keys(payload).forEach(function(k) {{ body[k] = payload[k]; }});
+      if (sc.access_key) body.access_key = sc.access_key;
+      body.subject = sc.subject || ("RetaBase feedback \\u2014 PMID " + (payload.pmid || "n/a"));
+      body.from_name = sc.from_name || "RetaBase feedback";
+      fetch(sc.endpoint, {{method: "POST", headers: {{"Content-Type": "application/json", "Accept": "application/json"}},
+        body: JSON.stringify(body)}})
+        .then(function(res) {{ return res.json().then(function(j) {{ return j; }}, function() {{ return {{}}; }}); }})
+        .then(function(j) {{ if (j && j.success === false) showFeedbackError(r, payload); else showFeedbackThanks(payload); }})
+        .catch(function() {{ showFeedbackError(r, payload); }});
+      return;
+    }}
+    try {{ console.log("[RetaBase feedback]", payload); }} catch (e) {{}}  // prototype stub: no network
+    showFeedbackThanks(payload);
+  }}
+  function showFeedbackError(r, payload) {{
+    var m = document.getElementById("fb-modal"); m.textContent = "";
+    var close = el("button", "close", "Close");
+    close.addEventListener("click", closeFeedback); m.appendChild(close);
+    m.appendChild(el("h2", null, "Couldn\\u2019t send that"));
+    m.appendChild(el("p", "fb-thanks", "Something went wrong sending your report. Please try again in a "
+      + "moment \\u2014 your inputs are shown below so nothing is lost."));
+    var det = document.createElement("details"); det.className = "fb-payload"; det.open = true;
+    det.appendChild(el("summary", null, "Your report"));
+    det.appendChild(el("pre", null, JSON.stringify(payload, null, 2)));
+    m.appendChild(det);
+    var actions = el("div", "fb-actions");
+    var retry = el("button", "fb-submit", "Try again"); retry.type = "button";
+    retry.addEventListener("click", function() {{ openFeedback(r); }});
+    var cancel = el("button", "fb-cancel", "Close"); cancel.type = "button";
+    cancel.addEventListener("click", closeFeedback);
+    actions.appendChild(retry); actions.appendChild(cancel); m.appendChild(actions);
+    retry.focus();
+  }}
+  function showFeedbackThanks(payload, formUrl) {{
+    var m = document.getElementById("fb-modal");
+    m.textContent = "";
+    var close = el("button", "close", "Close");
+    close.addEventListener("click", closeFeedback);
+    m.appendChild(close);
+    m.appendChild(el("h2", null, "Thanks for the flag"));
+    m.appendChild(el("p", "fb-thanks", FEEDBACK.thanks || "Thanks \\u2014 this goes into our review queue."));
+    // Google-Form mode: surface the prefilled reroute target so it's inspectable.
+    if (formUrl) {{
+      var fl = safeLink("Open the prefilled Google Form \\u2192", formUrl);
+      if (fl) {{ var p = el("p", "fb-intro"); p.appendChild(fl); m.appendChild(p); }}
+    }}
+    // Prototype: show exactly the one-row-per-report structure that gets sent.
+    var det = document.createElement("details"); det.className = "fb-payload";
+    det.appendChild(el("summary", null, "What we captured (one row per report)"));
+    det.appendChild(el("pre", null, JSON.stringify(payload, null, 2)));
+    m.appendChild(det);
+    var actions = el("div", "fb-actions");
+    var done = el("button", "fb-submit", "Done"); done.type = "button";
+    done.addEventListener("click", closeFeedback);
+    actions.appendChild(done); m.appendChild(actions);
+    done.focus();
+  }}
+  // "Help keep this accurate" banner on the evidence browser. Config-driven
+  // (FEEDBACK.banner); dismissible, with the dismissal remembered in localStorage.
+  function renderHelpBanner() {{
+    var b = (FEEDBACK && FEEDBACK.banner) || {{}};
+    var host = document.getElementById("help-banner");
+    if (!host || !feedbackEnabled() || b.enabled === false || !(b.text || b.title)) return;
+    var KEY = "retabase_help_banner_off";
+    try {{ if (b.dismissible !== false && localStorage.getItem(KEY) === "1") return; }} catch (e) {{}}
+    host.textContent = "";
+    host.appendChild(el("span", "help-banner-ico", "\\u2691"));
+    var body = el("div", "help-banner-body");
+    if (b.title) body.appendChild(el("div", "help-banner-title", b.title));
+    if (b.text) body.appendChild(el("p", "help-banner-text", b.text));
+    var du = dataUseDetails();
+    if (du) body.appendChild(du);
+    host.appendChild(body);
+    if (b.dismissible !== false) {{
+      var x = el("button", "help-banner-x", "\\u00d7");
+      x.type = "button"; x.setAttribute("aria-label", "Dismiss");
+      x.addEventListener("click", function() {{
+        host.style.display = "none";
+        try {{ localStorage.setItem(KEY, "1"); }} catch (e) {{}}
+      }});
+      host.appendChild(x);
+    }}
+    host.style.display = "";
+  }}
   // Populate a molecule <select> from the distinct molecule_name values in a feed.
   function fillMolSelect(sel, rows) {{
     var seen = {{}}, names = [];
@@ -4476,6 +4794,8 @@ _TEMPLATE = """<!DOCTYPE html>
     ["pp-mol", "pp-sort"].forEach(function(id) {{ on(id, "change", function() {{ renderPreprints(); }}); }});
     var mb = document.getElementById("modal-bg");
     if (mb) mb.addEventListener("click", function(e) {{ if (e.target === mb) closeModal(); }});
+    var fbb = document.getElementById("fb-bg");
+    if (fbb) fbb.addEventListener("click", function(e) {{ if (e.target === fbb) closeFeedback(); }});
     on("export-decisions", "click", function() {{ exportDecisions("json"); }});
   }}
 
@@ -4485,6 +4805,7 @@ _TEMPLATE = """<!DOCTYPE html>
     if (INTERNAL) updateApSummary();
     renderCorpusStrip();
     renderFooter();
+    renderHelpBanner();
     // Land on Home (instant, needs no feed). Other tabs render lazily on first open;
     // the evidence feed + shards stream in the background so it's ready on switch.
     showTab("home");
