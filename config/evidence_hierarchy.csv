@@ -1,0 +1,15 @@
+level,key,label,short,definition
+1,systematic_review,Systematic review,Systematic review,A structured search that gathers and appraises all studies on a question — the top of the evidence pyramid.
+2,meta_analysis,Meta-analysis,Meta-analysis,Statistically pools the results of many studies into one combined estimate.
+3,clinical_practice_guideline,Clinical practice guideline,Guideline,Formal recommendations from an expert body that synthesize the evidence for clinicians.
+4,rct,Randomized controlled trial,RCT,People are randomly assigned to treatment vs control — the strongest single-study test of cause and effect.
+5,nonrandomized_trial,Non-randomized / controlled trial,Controlled trial,An interventional trial without randomization (or a controlled clinical trial); weaker than an RCT.
+6,cohort,Prospective cohort study,Cohort,Follows groups over time to see who develops outcomes; strong observational design.
+7,case_control,Case-control study,Case-control,Compares people with and without an outcome looking back at exposures.
+8,observational_other,Cross-sectional / other observational,Observational,A snapshot in time or other observational study without a comparison over time.
+9,case_series,Case series,Case series,A description of several similar patients with no control group.
+10,case_report,Case report,Case report,A description of a single patient — useful for signals but not proof.
+11,narrative_review,Narrative review / expert opinion,Narrative review,A non-systematic overview or opinion; useful for context but subjective.
+12,preclinical_invivo,Preclinical — animal (in vivo),Animal,Done in living animals — an early step before human evidence.
+13,in_vitro,In vitro / mechanistic,Lab / cell,Done in cells or a test tube outside a living body — the earliest kind of evidence.
+14,other,Other / unclear,Other,Design not determined from the available information.

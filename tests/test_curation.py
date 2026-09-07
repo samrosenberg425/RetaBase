@@ -563,6 +563,21 @@ def run():
     check("guideline is featured", g_dec.auto_publish_eligible and g_dec.publication_status == "featured")
     check("guideline -> Human evidence section", g_dec.website_section == "Human evidence")
 
+    # --- evidence hierarchy (the pyramid): a separate axis, primary ordering ----
+    from retarats_pipeline.curation.reliability import evidence_level, EVIDENCE_HIERARCHY
+    check("hierarchy ladder loaded", len(EVIDENCE_HIERARCHY) >= 12)
+    check("systematic review outranks meta-analysis (house ordering)",
+          EVIDENCE_HIERARCHY["systematic_review"]["rank"] < EVIDENCE_HIERARCHY["meta_analysis"]["rank"])
+    check("meta-analysis outranks RCT", EVIDENCE_HIERARCHY["meta_analysis"]["rank"] < EVIDENCE_HIERARCHY["rct"]["rank"])
+    check("RCT outranks case report", EVIDENCE_HIERARCHY["rct"]["rank"] < EVIDENCE_HIERARCHY["case_report"]["rank"])
+    check("meta-analysis pubtype detected", evidence_level({}, {"pubtypes": ["Meta-Analysis"]}) == "meta_analysis")
+    check("systematic review beats co-tagged meta-analysis",
+          evidence_level({}, {"pubtypes": ["Systematic Review", "Meta-Analysis"]}) == "systematic_review")
+    check("RCT pubtype detected", evidence_level({}, {"pubtypes": ["Randomized Controlled Trial"]}) == "rct")
+    check("case report pubtype detected", evidence_level({}, {"pubtypes": ["Case Reports"], "title": "a case report"}) == "case_report")
+    check("guideline record carries its evidence level", g_rel.evidence_level_key == "clinical_practice_guideline")
+    check("RCT record carries rct level (rank 4)", rel.evidence_level_key == "rct" and rel.evidence_level_rank == EVIDENCE_HIERARCHY["rct"]["rank"])
+
     # a methods record is INCLUDED (listed or review), never excluded as noise
     methods = methods_noise(); methods.update(assess_reliability(methods, None).to_dict())
     mdec = decide_publication(methods)

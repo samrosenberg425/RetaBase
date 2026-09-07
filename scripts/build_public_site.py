@@ -57,6 +57,7 @@ RECORD_FIELDS = _record_fields()
 # facet_* fields are semicolon-joined multi-values; the UI splits on "; ".
 FILTER_FACETS = [
     ("molecule_name", "Bioactive"),
+    ("evidence_level_short", "Evidence level"),
     ("facet_species", "Species"),
     ("facet_indication", "Indication"),
     ("facet_endpoint", "Endpoint"),
@@ -543,7 +544,7 @@ def _md_spans(text: str) -> List[dict]:
 
 def _md_is_block_start(s: str) -> bool:
     return (s.startswith("#") or s.startswith(">") or s.startswith("- ")
-            or s.startswith("|") or s.startswith("```")
+            or s.startswith("|") or s.startswith("```") or s.startswith(":::")
             or (s.startswith("::") and s.endswith("::")))
 
 
@@ -565,6 +566,18 @@ def _parse_copy_md(text: str) -> List[dict]:
                 i += 1
             i += 1
             blocks.append({"t": "formula", "text": "\n".join(buf).strip()})
+            continue
+        if s.startswith(":::"):                       # ':::detail Summary' ... ':::' fold
+            summ = s[3:].strip()
+            if summ.lower().startswith("detail"):
+                summ = summ[6:].strip()
+            i += 1
+            inner = []
+            while i < n and lines[i].strip() != ":::":
+                inner.append(lines[i]); i += 1
+            i += 1  # skip closing :::
+            blocks.append({"t": "detail", "summary": summ or "Show the full detail",
+                           "blocks": _parse_copy_md("\n".join(inner))})
             continue
         if s.startswith("::") and s.endswith("::") and len(s) > 4:
             blocks.append({"t": "token", "name": s[2:-2].strip()})
@@ -660,6 +673,56 @@ def _load_glossary() -> dict:
     return {"categories": cats, "byKey": by_key}
 
 
+def _load_hierarchy() -> List[dict]:
+    """Editable evidence-pyramid ladder (config/evidence_hierarchy.csv) for the card
+    badge + the Guide pyramid. Ordered top (rank 1) to bottom."""
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "evidence_hierarchy.csv")
+    out: List[dict] = []
+    try:
+        with open(path, newline="", encoding="utf-8") as fh:
+            for row in csv.DictReader(fh):
+                key = (row.get("key") or "").strip()
+                if not key:
+                    continue
+                try:
+                    lvl = int(row.get("level") or 0)
+                except ValueError:
+                    lvl = len(out) + 1
+                out.append({"rank": lvl, "key": key, "label": (row.get("label") or key).strip(),
+                            "short": (row.get("short") or row.get("label") or key).strip(),
+                            "def": (row.get("definition") or "").strip()})
+    except OSError:
+        pass
+    out.sort(key=lambda x: x["rank"])
+    return out
+
+
+def _load_footer() -> dict:
+    """Editable site footer (config/footer.json): brand tagline, link columns, and a
+    bottom note/links bar. Links are either internal (``tab``: switch to a tab) or
+    external (``url``: http(s) only, opened in a new tab). Drop a column or link into
+    the JSON to extend it — no code change needed. Returns {} if the file is absent."""
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "footer.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _logo_data_uri() -> str:
+    """RetaRats header logo (assets/retarats-logo.png) as a base64 data URI, so it is
+    self-contained + CSP-safe (img-src data:). Drop a new PNG there to replace it."""
+    import base64
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "retarats-logo.png")
+    try:
+        with open(path, "rb") as fh:
+            return "data:image/png;base64," + base64.b64encode(fh.read()).decode("ascii")
+    except OSError:
+        return ""
+
+
 def build_site(curated_dir: str, out_dir: str, mode: str = "inline",
                max_inline: int = 4000, internal: bool = False, variant: str = "",
                tag_hovers: bool = True) -> Dict[str, int]:
@@ -702,8 +765,12 @@ def build_site(curated_dir: str, out_dir: str, mode: str = "inline",
         "copy": _load_copy(),
         # Plain-language glossary (config/glossary.csv) for the Guide tab + tag hovers.
         "glossary": _load_glossary(),
+        # Evidence-hierarchy ladder (config/evidence_hierarchy.csv) for the card badge + Guide pyramid.
+        "hierarchy": _load_hierarchy(),
         # Whether card aspect-tags show a definition tooltip on hover (build toggle).
         "tag_hovers": bool(tag_hovers),
+        # Editable multi-column site footer (config/footer.json).
+        "footer": _load_footer(),
         "filters": [{"field": f, "label": lbl} for f, lbl in FILTER_FACETS],
         "multi": sorted(MULTI_VALUE_FIELDS),
         "aspects": [{"field": f, "cls": c, "label": lbl} for f, c, lbl in ASPECT_TAGS],
@@ -802,6 +869,22 @@ def _render_html(json_block: str, record_count: int, molecule_count: int,
     # Stylistic variant: a body class that re-points design tokens (test-run skins).
     _VALID_VARIANTS = {"indigo", "emerald", "slate", "warm"}
     body_class = ("v-" + variant) if variant in _VALID_VARIANTS else ""
+    # Top-right RetaRats brand link: logo image (if present) + "Main site" label, opening
+    # the main site in a new tab. Falls back to a text link if the logo asset is missing.
+    _logo = _logo_data_uri()
+    if _logo:
+        retarats_link = (
+            '<a class="site-link" href="https://www.retarats.com/" target="_blank" rel="noopener noreferrer" '
+            'aria-label="RetaRats main website (opens in a new tab)" title="Go to the RetaRats main website">'
+            '<img class="site-logo" src="' + _logo + '" alt="RetaRats" height="30">'
+            '<span class="site-link-txt">Main site <span aria-hidden="true">&#8599;</span></span></a>'
+        )
+    else:
+        retarats_link = (
+            '<a class="site-link" href="https://www.retarats.com/" target="_blank" rel="noopener noreferrer" '
+            'title="Opens the RetaRats main website in a new tab">RetaRats main website '
+            '<span aria-hidden="true">&#8599;</span></a>'
+        )
     rendered = _TEMPLATE.format(
         title=title,
         subtitle=subtitle,
@@ -812,6 +895,7 @@ def _render_html(json_block: str, record_count: int, molecule_count: int,
         export_btn=export_btn,
         preload_hint=preload_hint,
         body_class=body_class,
+        retarats_link=retarats_link,
     )
     return _apply_csp(rendered)
 
@@ -905,9 +989,13 @@ _TEMPLATE = """<!DOCTYPE html>
   .tabs .ap-summary {{ font-size: 12px; color: var(--muted); }}
   .tabs .ap-summary b {{ color: var(--text); }}
   .tabs .exp {{ background: var(--accent); color: #ffffff; border: none; font-weight: 600; border-radius: 6px; padding: 6px 12px; }}
-  .site-link {{ flex: 0 0 auto; white-space: nowrap; font-size: 12.5px; font-weight: 600; color: var(--accent);
-    text-decoration: none; border: 1px solid var(--accent); border-radius: 999px; padding: 5px 12px; margin-left: 6px; }}
-  .site-link:hover {{ background: var(--accent); color: #ffffff; }}
+  .site-link {{ flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+    font-size: 12.5px; font-weight: 600; color: var(--text); text-decoration: none;
+    border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px 4px 8px; margin-left: 8px; }}
+  .site-link:hover {{ border-color: var(--accent); background: var(--accent-soft); }}
+  .site-logo {{ height: 30px; width: auto; display: block; }}
+  .site-link-txt {{ color: var(--accent); }}
+  @media (max-width: 760px) {{ .site-link-txt {{ display: none; }} .site-link {{ padding: 4px 8px; }} }}
   /* Home / landing */
   #home-view {{ max-width: 900px; margin: 0 auto; }}
   .hero {{ padding: 10px 0 6px; }}
@@ -948,10 +1036,71 @@ _TEMPLATE = """<!DOCTYPE html>
   .copy-ver {{ font-size: 12px; color: var(--muted); margin-top: 16px; }}
   #home-body a, .about a {{ color: var(--accent); text-decoration: none; }}
   #home-body a:hover, .about a:hover {{ text-decoration: underline; }}
+  /* Methods: navigable collapsible sections + designed equations + detail folds */
+  .methods-title {{ font-size: 24px; font-weight: 800; margin: 4px 0 4px; color: var(--text); }}
+  .methods-lede {{ font-size: 14px; color: var(--muted); max-width: 720px; margin: 0 0 14px; line-height: 1.55; }}
+  .methods-nav {{ position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 6px;
+    padding: 8px 0; margin-bottom: 8px; background: var(--bg);
+    border-bottom: 1px solid var(--border); box-shadow: 0 3px 6px rgba(20,33,43,.05); }}
+  .methods-navbtn {{ font-size: 12.5px; font-weight: 600; color: var(--muted); background: var(--panel2);
+    border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; cursor: pointer; white-space: nowrap; }}
+  .methods-navbtn:hover {{ border-color: var(--accent); color: var(--accent); }}
+  .methods-navbtn.active {{ background: var(--accent); border-color: var(--accent); color: #fff; }}
+  .methods-navbtn:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 2px; }}
+  .methods-sec {{ border: 1px solid var(--border); border-radius: 12px; margin: 10px 0; background: var(--panel);
+    overflow: hidden; scroll-margin-top: 72px; }}
+  .methods-sec-h {{ cursor: pointer; list-style: none; padding: 14px 16px; font-size: 17px; font-weight: 700;
+    color: var(--text); display: flex; align-items: center; justify-content: space-between; gap: 10px; }}
+  .methods-sec-h:focus-visible {{ outline: 2px solid var(--accent); outline-offset: -2px; }}
+  .methods-sec-h::-webkit-details-marker {{ display: none; }}
+  .methods-sec-h::after {{ content: "\\25be"; color: var(--muted); font-size: 12px; }}
+  .methods-sec[open] .methods-sec-h::after {{ content: "\\25b4"; }}
+  .methods-sec-h:hover {{ color: var(--accent); }}
+  .methods-sec-body {{ padding: 4px 18px 16px; border-top: 1px solid var(--border); }}
+  .methods-sec-body h3 {{ font-size: 15px; color: var(--accent); margin: 14px 0 4px; }}
+  .methods-sec-body h4 {{ font-size: 12.5px; color: var(--accent2); text-transform: uppercase; letter-spacing: .03em; margin: 12px 0 4px; }}
+  .methods-foot {{ margin-top: 16px; color: var(--muted); font-size: 12px; }}
+  .copy-detail {{ border: 1px solid var(--border); border-left: 3px solid var(--accent2); border-radius: 8px;
+    margin: 10px 0; background: var(--panel2); }}
+  .copy-detail > summary {{ cursor: pointer; list-style: none; padding: 9px 13px; font-size: 13px; font-weight: 700; color: var(--accent2); }}
+  .copy-detail > summary:focus-visible {{ outline: 2px solid var(--accent2); outline-offset: -2px; }}
+  .copy-detail > summary::-webkit-details-marker {{ display: none; }}
+  .copy-detail > summary::before {{ content: "\\25b8  "; }}
+  .copy-detail[open] > summary::before {{ content: "\\25be  "; }}
+  .copy-detail-body {{ padding: 2px 14px 10px; }}
+  .equation {{ display: flex; flex-wrap: wrap; align-items: center; gap: 7px; justify-content: center;
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin: 12px 0; }}
+  .eq-lhs {{ font-weight: 700; font-style: italic; color: var(--text); font-size: 15px; }}
+  .eq-op {{ color: var(--muted); font-weight: 700; }}
+  .eq-term {{ display: inline-flex; align-items: center; gap: 5px; }}
+  .eq-coef {{ font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: 6px;
+    padding: 1px 7px; font-variant-numeric: tabular-nums; }}
+  .eq-var {{ font-style: italic; color: var(--text); }}
+  /* Site footer (config-driven; appears at the bottom of every tab, full-bleed) */
+  .site-footer {{ margin: 44px -24px 0; padding: 40px 24px 22px; background: #111b24; color: #cdd7df; }}
+  .foot-top {{ display: grid; grid-template-columns: 1.5fr repeat(4, 1fr); gap: 26px; max-width: 1200px; }}
+  .foot-brand-name {{ font-size: 18px; font-weight: 800; color: #fff; margin: 0 0 8px; }}
+  .foot-tagline {{ font-size: 13px; line-height: 1.55; color: #9fb0bd; max-width: 340px; margin: 0; }}
+  .foot-col-h {{ font-size: 13px; font-weight: 700; color: #5bc0e8; margin: 0 0 12px; }}
+  .foot-col ul {{ list-style: none; margin: 0; padding: 0; }}
+  .foot-col li {{ margin: 0 0 9px; }}
+  .foot-link {{ font: inherit; font-size: 13px; color: #cdd7df; text-decoration: none; cursor: pointer;
+    background: none; border: 0; padding: 0; text-align: left; }}
+  .foot-link:hover {{ color: #fff; text-decoration: underline; }}
+  .foot-link:focus-visible {{ outline: 2px solid #5bc0e8; outline-offset: 2px; }}
+  .foot-ext::after {{ content: " \\2197"; color: #7d8f9c; font-size: 11px; }}
+  .foot-div {{ border: 0; border-top: 1px solid #26333d; margin: 26px 0 16px; max-width: 1200px; }}
+  .foot-bottom {{ display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: baseline;
+    justify-content: space-between; max-width: 1200px; }}
+  .foot-note {{ font-size: 11.5px; color: #8395a2; line-height: 1.5; max-width: 720px; margin: 0; }}
+  .foot-meta {{ font-size: 11.5px; color: #7d8f9c; display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }}
+  .foot-copy {{ font-size: 11.5px; color: #64727e; margin: 16px 0 0; max-width: 1200px; }}
   /* Guide tab (plain-language glossary) */
   .guide {{ max-width: 820px; }}
   .guide-h {{ font-size: 22px; font-weight: 800; color: var(--text); margin: 6px 0 6px; }}
   .guide-intro {{ font-size: 14px; color: var(--muted); margin: 0 0 12px; max-width: 680px; line-height: 1.55; }}
+  .guide-src {{ font-size: 12px; color: var(--muted); margin: 4px 0 18px; }}
+  .guide-src a {{ color: var(--accent); }}
   .guide-toggle {{ display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text);
     background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 0 0 14px; cursor: pointer; }}
   .guide-select {{ font-size: 15px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px;
@@ -1056,6 +1205,27 @@ _TEMPLATE = """<!DOCTYPE html>
   .ring-impact .ring-arc {{ stroke: var(--t-ind); }}
   .ring-item.hl .ring-lbl-side {{ color: var(--accent); }}
   .ring-item.hl {{ background: var(--panel); border-radius: 8px; }}
+  /* evidence-hierarchy level badge */
+  .evlevel {{ display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700;
+    border-radius: 999px; padding: 2px 10px 2px 3px; cursor: help; border: 1px solid; white-space: nowrap; }}
+  .evlevel-num {{ font-size: 10px; font-weight: 800; border-radius: 999px; padding: 1px 6px; color: #fff; }}
+  .evlevel-hi {{ color: var(--tier-high); border-color: var(--tier-high); background: rgba(21,127,74,.08); }}
+  .evlevel-hi .evlevel-num {{ background: var(--tier-high); }}
+  .evlevel-mid {{ color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }}
+  .evlevel-mid .evlevel-num {{ background: var(--accent); }}
+  .evlevel-lo {{ color: var(--muted); border-color: var(--border); background: var(--panel2); }}
+  .evlevel-lo .evlevel-num {{ background: var(--muted); }}
+  /* Guide: evidence pyramid */
+  .ev-pyramid {{ display: flex; flex-direction: column; align-items: center; gap: 3px; margin: 6px 0 18px; }}
+  .ev-prow {{ display: flex; align-items: center; gap: 8px; justify-content: center; padding: 6px 12px;
+    border-radius: 6px; font-size: 12.5px; font-weight: 600; cursor: help; border: 1px solid var(--border); }}
+  .ev-prow-num {{ font-size: 10px; font-weight: 800; color: #fff; border-radius: 999px; padding: 1px 6px; }}
+  .ev-band-hi {{ background: rgba(21,127,74,.12); color: var(--tier-high); }}
+  .ev-band-hi .ev-prow-num {{ background: var(--tier-high); }}
+  .ev-band-mid {{ background: var(--accent-soft); color: var(--accent); }}
+  .ev-band-mid .ev-prow-num {{ background: var(--accent); }}
+  .ev-band-lo {{ background: var(--panel2); color: var(--muted); }}
+  .ev-band-lo .ev-prow-num {{ background: var(--muted); }}
 
   /* =========================================================================
      STYLISTIC VARIANTS (test-run skins). A body class swaps design tokens (and a
@@ -1351,6 +1521,11 @@ _TEMPLATE = """<!DOCTYPE html>
   @media (max-width: 760px) {{
     .topbar {{ padding: 0 12px; gap: 12px; }}
     .tabs {{ -webkit-overflow-scrolling: touch; }}
+    /* Methods jump-nav: single scrolling row instead of a tall wrapped block. */
+    .methods-nav {{ flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }}
+    .methods-navbtn {{ flex: 0 0 auto; }}
+    /* Footer stacks to two columns on tablet, one on phone. */
+    .foot-top {{ grid-template-columns: 1fr 1fr; gap: 22px; }}
     .hero h1 {{ font-size: 23px; }}
     .home-nav {{ grid-template-columns: 1fr; }}
     main {{ flex-direction: column; }}
@@ -1399,8 +1574,7 @@ _TEMPLATE = """<!DOCTYPE html>
     <button id="tab-methods" role="tab" aria-selected="false" aria-controls="methods-view" tabindex="-1">Methods</button>
     <span class="spacer"></span>
     <span class="ap-summary" id="ap-summary"></span>{export_btn}
-    <a class="site-link" href="https://www.retarats.com/" target="_blank" rel="noopener noreferrer"
-       title="Opens the RetaRats main website in a new tab">RetaRats main website <span aria-hidden="true">&#8599;</span></a>
+    {retarats_link}
   </nav>
 </header>
 <main id="main-content" tabindex="-1">
@@ -1494,7 +1668,8 @@ _TEMPLATE = """<!DOCTYPE html>
         <span id="load-progress" class="load-progress" aria-live="polite"></span>
         <label style="text-transform:none;display:inline-flex;gap:6px;align-items:center;color:var(--muted)">Sort
           <select id="sort">
-            <option value="rank">Rank (best first)</option>
+            <option value="rank">Rank (evidence level first)</option>
+            <option value="rank_mixed">Rank (mix all levels)</option>
             <option value="reliability">Automated rigor</option>
             <option value="directness">Directness</option>
             <option value="citations">Times cited (most)</option>
@@ -1581,6 +1756,7 @@ _TEMPLATE = """<!DOCTYPE html>
     <div id="methods-view" role="tabpanel" aria-labelledby="tab-methods" tabindex="0" style="display:none">
       <div class="about" id="methods-body"></div>
     </div>
+    <footer class="site-footer" id="site-footer" style="display:none"></footer>
   </section>
 </main>
 
@@ -1697,6 +1873,9 @@ _TEMPLATE = """<!DOCTYPE html>
   var MODE = DATA.mode || "fetch";  // "inline" bundles carry everything; "fetch" streams
   var COPY = DATA.copy || {{}};      // editable Home + Methods blocks (config/site_copy/*.md)
   var GLOSS = DATA.glossary || {{categories: [], byKey: {{}}}};  // plain-language glossary
+  var HIER = DATA.hierarchy || [];                                // evidence-pyramid ladder (top first)
+  var HIER_MAX = HIER.length;
+  var HIER_BY = (function() {{ var m = {{}}; HIER.forEach(function(h) {{ m[h.key] = h; }}); return m; }})();
   // Render a parsed-markdown block list into `root` (textContent/el only -- no innerHTML).
   // ctx maps ::token:: names to functions that append interactive content (nav, rings).
   function renderSpans(parent, spans) {{
@@ -1713,6 +1892,31 @@ _TEMPLATE = """<!DOCTYPE html>
       }}
     }});
   }}
+  function spansText(spans) {{
+    return (spans || []).map(function(sp) {{ return sp.v || ""; }}).join("");
+  }}
+  // Render a "lhs = a x b + c x d ..." formula as a designed equation (coefficient
+  // chips x variable labels) rather than a plain monospace box.
+  function renderEquation(root, text) {{
+    var wrap = el("div", "equation");
+    var eq = text.indexOf("=");
+    if (eq === -1) {{ wrap.appendChild(el("span", "eq-var", text)); root.appendChild(wrap); return; }}
+    wrap.appendChild(el("span", "eq-lhs", text.slice(0, eq).trim()));
+    wrap.appendChild(el("span", "eq-op", "="));
+    // Split on + and the U+2212 minus so both operators get equal styling.
+    var parts = text.slice(eq + 1).trim().split(/\\s*([+\\u2212])\\s*/);
+    parts.forEach(function(t, i) {{
+      t = t.trim();
+      if (!t) return;
+      if (t === "+" || t === "\\u2212") {{ wrap.appendChild(el("span", "eq-op", t)); return; }}
+      var term = el("span", "eq-term");
+      var m = t.match(/^([0-9.]+)\\s*[\\u00b7*x\\u00d7]\\s*(.+)$/);
+      if (m) {{ term.appendChild(el("span", "eq-coef", m[1])); term.appendChild(el("span", "eq-var", m[2].trim())); }}
+      else term.appendChild(el("span", "eq-var", t));
+      wrap.appendChild(term);
+    }});
+    root.appendChild(wrap);
+  }}
   function renderBlocks(root, blocks, ctx) {{
     ctx = ctx || {{}};
     (blocks || []).forEach(function(b) {{
@@ -1723,7 +1927,13 @@ _TEMPLATE = """<!DOCTYPE html>
       }} else if (b.t === "note") {{
         var nb = el("div", "copy-note"); renderSpans(nb, b.spans); root.appendChild(nb);
       }} else if (b.t === "formula") {{
-        root.appendChild(el("div", "formula", b.text));
+        renderEquation(root, b.text);
+      }} else if (b.t === "detail") {{
+        var det = document.createElement("details"); det.className = "copy-detail";
+        var sm = document.createElement("summary"); sm.textContent = b.summary || "Show the full detail";
+        det.appendChild(sm);
+        var db = el("div", "copy-detail-body"); renderBlocks(db, b.blocks, ctx); det.appendChild(db);
+        root.appendChild(det);
       }} else if (b.t === "ul") {{
         var ul = el("ul", "copy-ul");
         (b.items || []).forEach(function(it) {{ var li = el("li"); renderSpans(li, it); ul.appendChild(li); }});
@@ -2060,8 +2270,12 @@ _TEMPLATE = """<!DOCTYPE html>
         + "trial, the other 70 for a mouse study."],
       ["Directness", "How directly the finding applies to humans (human RCT high \\u2192 in-vitro low). "
         + "This is the human-relevance axis that rigor deliberately ignores \\u2014 read the two together."],
-      ["Rank", "The best-first ordering of the feed: a blend of directness, rigor, topical relevance, recency, "
-        + "citation impact and journal venue."],
+      ["Rank", "The best-first score WITHIN an evidence level: a blend of directness, rigor, topical relevance, "
+        + "recency, citation impact and journal venue. The feed is ordered by EVIDENCE LEVEL first (see the "
+        + "\\u201cL#\\u201d badge and the pyramid in the Guide), then by this rank within a level."],
+      ["Evidence level", "The study's place on the evidence pyramid (L1 = systematic review, down to lab/in-vitro). "
+        + "This is the PRIMARY ordering \\u2014 a case report never outranks an RCT. Detected from the PubMed "
+        + "publication type; see the Guide for the full ladder."],
       ["Practice guidelines", "Clinical practice guidelines (flagged by their PubMed publication type) are "
         + "authoritative synthesized recommendations, not primary studies \\u2014 so rigor is shown as n/a "
         + "rather than graded on study conduct. They are treated as high-directness and ranked near the top."]
@@ -2143,6 +2357,20 @@ _TEMPLATE = """<!DOCTYPE html>
     var tier = tierClass(rec.directness_tier);
     var b = el("span", "badge tier-" + tier,
               "directness " + (rec.evidence_directness || "?") + (rec.directness_tier ? " (" + rec.directness_tier + ")" : ""));
+    return b;
+  }}
+
+  // Evidence-hierarchy badge: the paper's place on the pyramid (the PRIMARY ordering).
+  function evidenceLevelBadge(rec) {{
+    var h = HIER_BY[rec.evidence_level_key || ""];
+    if (!h) return null;
+    var band = h.rank <= 3 ? "hi" : h.rank <= 8 ? "mid" : "lo";
+    var b = el("span", "evlevel evlevel-" + band);
+    b.appendChild(el("span", "evlevel-num", "L" + h.rank));
+    b.appendChild(el("span", "evlevel-lbl", h.short));
+    attachTip(b, "Evidence level " + h.rank + " of " + HIER_MAX + " \\u2014 " + h.label + ". "
+      + (h["def"] || "") + " The feed is ordered by evidence level first (top of the pyramid first), "
+      + "then by the rank score within a level.", tagTipsOn);
     return b;
   }}
 
@@ -2390,6 +2618,9 @@ _TEMPLATE = """<!DOCTYPE html>
     function pillTip(node, text) {{ node.classList.add("pill-tip"); attachTip(node, text, tagTipsOn); return node; }}
     // Prominent caution badge first so a retracted paper is unmistakable.
     if (isRetracted(r)) meta.appendChild(el("span", "pill retracted", "\\u26a0 RETRACTED"));
+    // Evidence-hierarchy level up front (the primary ordering signal).
+    var evb = evidenceLevelBadge(r);
+    if (evb) meta.appendChild(evb);
     if (r.molecule_name) meta.appendChild(el("span", "pill", r.molecule_name));
     if (r.pub_year) meta.appendChild(el("span", "pill", r.pub_year));
     if (r.evidence_class_label) meta.appendChild(pillTip(el("span", "pill", r.evidence_class_label),
@@ -2566,11 +2797,11 @@ _TEMPLATE = """<!DOCTYPE html>
 
     // Scope Score: the ring cluster + a side "what these mean" panel that
     // cross-highlights the metric you hover (rings <-> panel rows).
-    if (isRetracted(r)) {{
-      var rrow = el("div", "meta");
-      rrow.appendChild(el("span", "pill retracted", "\\u26a0 RETRACTED"));
-      m.appendChild(rrow);
-    }}
+    var mrow2 = el("div", "meta");
+    if (isRetracted(r)) mrow2.appendChild(el("span", "pill retracted", "\\u26a0 RETRACTED"));
+    var mevb = evidenceLevelBadge(r);
+    if (mevb) mrow2.appendChild(mevb);
+    if (mrow2.childNodes.length) m.appendChild(mrow2);
     m.appendChild(scorePanel(r));
 
     var grid = el("div", "grid");
@@ -2822,8 +3053,19 @@ _TEMPLATE = """<!DOCTYPE html>
     else if (!on && i !== -1) arr.splice(i, 1);
   }}
 
+  function levelRank(r) {{ var n = parseInt(r.evidence_level_rank, 10); return isNaN(n) ? 99 : n; }}
   function sortRecords(list, mode) {{
-    var key = {{rank: "rank_score", reliability: "reliability_score", directness: "evidence_directness",
+    // DEFAULT "rank" = evidence hierarchy FIRST (level 1 = top of the pyramid), then the
+    // blended rank score WITHIN a level. So a case report never outranks an RCT here.
+    if (mode === "rank" || !mode) {{
+      return list.map(function(r, i) {{ return [r, i]; }}).sort(function(a, b) {{
+        var dl = levelRank(a[0]) - levelRank(b[0]);
+        if (dl !== 0) return dl;
+        var dr = num(b[0].rank_score) - num(a[0].rank_score);
+        return dr !== 0 ? dr : a[1] - b[1];
+      }}).map(function(x) {{ return x[0]; }});
+    }}
+    var key = {{rank_mixed: "rank_score", reliability: "reliability_score", directness: "evidence_directness",
                 citations: "citation_count", year: "pub_year",
                 percentile: "icite_nih_percentile", apt: "icite_apt",
                 clinical_influence: "icite_clinical_influence"}}[mode] || "rank_score";
@@ -3624,6 +3866,58 @@ _TEMPLATE = """<!DOCTYPE html>
     a.target = "_blank"; a.rel = "noopener noreferrer";
     return a;
   }}
+  // Config-driven footer (DATA.footer from config/footer.json). Internal links
+  // (link.tab) switch tabs + scroll to top; external links (link.url) go through
+  // safeLink (http(s) only, new tab). Rendered once on load; extend by editing JSON.
+  function renderFooter() {{
+    var f = DATA.footer || {{}};
+    var host = document.getElementById("site-footer");
+    if (!host) return;
+    if (!(f.columns && f.columns.length) && !f.tagline) return;
+    host.textContent = "";
+    function mkLink(link) {{
+      if (link.url) {{
+        var a = safeLink(link.label, link.url);
+        if (a) {{ a.className = "foot-link foot-ext"; return a; }}
+        return el("span", "foot-link", link.label);
+      }}
+      var b = el("button", "foot-link", link.label);
+      b.type = "button";
+      if (link.tab) b.addEventListener("click", function() {{
+        showTab(link.tab);
+        var c = document.querySelector("section.content");
+        if (c) c.scrollTo({{top: 0, behavior: "smooth"}});
+      }});
+      return b;
+    }}
+    var top = el("div", "foot-top");
+    var brand = el("div", "foot-brand");
+    brand.appendChild(el("div", "foot-brand-name", f.brand || "RetaBase"));
+    if (f.tagline) brand.appendChild(el("p", "foot-tagline", f.tagline));
+    top.appendChild(brand);
+    (f.columns || []).forEach(function(col) {{
+      var c = el("div", "foot-col");
+      c.appendChild(el("div", "foot-col-h", col.title || ""));
+      var ul = el("ul");
+      (col.links || []).forEach(function(link) {{
+        var li = el("li"); li.appendChild(mkLink(link)); ul.appendChild(li);
+      }});
+      c.appendChild(ul); top.appendChild(c);
+    }});
+    host.appendChild(top);
+    host.appendChild(el("hr", "foot-div"));
+    var bottom = el("div", "foot-bottom");
+    if (f.bottom_note) bottom.appendChild(el("p", "foot-note", f.bottom_note));
+    if (f.bottom_links && f.bottom_links.length) {{
+      var meta = el("div", "foot-meta");
+      f.bottom_links.forEach(function(link) {{ meta.appendChild(mkLink(link)); }});
+      bottom.appendChild(meta);
+    }}
+    host.appendChild(bottom);
+    host.appendChild(el("p", "foot-copy", "\\u00a9 " + new Date().getFullYear() + " "
+      + (f.brand || "RetaBase") + ". Rule-based, auto-updating, and open to inspection."));
+    host.style.display = "";
+  }}
   // Populate a molecule <select> from the distinct molecule_name values in a feed.
   function fillMolSelect(sel, rows) {{
     var seen = {{}}, names = [];
@@ -4003,6 +4297,32 @@ _TEMPLATE = """<!DOCTYPE html>
     root.textContent = "";
     var cats = (GLOSS && GLOSS.categories) || [];
     root.appendChild(el("h2", "guide-h", "Guide to the tags"));
+    // Evidence pyramid (the hierarchy that primarily orders the feed).
+    if (HIER.length) {{
+      root.appendChild(el("h3", "guide-cat-h", "Evidence hierarchy (the pyramid)"));
+      root.appendChild(el("p", "guide-intro", "Study designs are not equal. RetaBase orders the feed by "
+        + "this pyramid FIRST (top = strongest), then by quality within a level \\u2014 so a case report never "
+        + "outranks an RCT. Each card shows its level as an \\u201cL#\\u201d badge."));
+      var pyr = el("div", "ev-pyramid");
+      HIER.forEach(function(h) {{
+        var band = h.rank <= 3 ? "hi" : h.rank <= 8 ? "mid" : "lo";
+        var row = el("div", "ev-prow ev-band-" + band);
+        row.style.width = (42 + h.rank * 4) + "%";
+        row.appendChild(el("span", "ev-prow-num", "L" + h.rank));
+        row.appendChild(el("span", "ev-prow-lbl", h.label));
+        attachTip(row, h.label + " \\u2014 " + (h["def"] || ""), tagTipsOn);
+        pyr.appendChild(row);
+      }});
+      root.appendChild(pyr);
+      var src = el("p", "guide-src");
+      src.appendChild(document.createTextNode("Based on the Oxford CEBM "));
+      src.appendChild(safeLink("2011 Levels of Evidence", "https://www.cebm.net/wp-content/uploads/2014/06/CEBM-Levels-of-Evidence-2.1.pdf"));
+      src.appendChild(document.createTextNode(" and the standard "));
+      src.appendChild(safeLink("evidence pyramid", "https://guides.library.ucdavis.edu/systematic-reviews/levels-of-evidence"));
+      src.appendChild(document.createTextNode(", extended to the preclinical tiers. See Methods for detail."));
+      root.appendChild(src);
+      root.appendChild(el("h3", "guide-cat-h", "The tags on a card"));
+    }}
     root.appendChild(el("p", "guide-intro", "Plain-language definitions of every descriptor you'll see "
       + "on a card \\u2014 what each category means and what its options are. Pick a category:"));
     // Site-wide toggle for the on-card definition hovers (persists in this browser).
@@ -4039,19 +4359,60 @@ _TEMPLATE = """<!DOCTYPE html>
   function renderMethods() {{
     var root = document.getElementById("methods-body");
     root.textContent = "";
-    if (!(COPY.methods && COPY.methods.length)) {{ root.appendChild(el("p", null, "Methods content is being updated.")); return; }}
-    renderBlocks(root, COPY.methods, {{}});
+    var blocks = (COPY.methods && COPY.methods.length) ? COPY.methods : null;
+    if (!blocks) {{ root.appendChild(el("p", null, "Methods content is being updated.")); return; }}
+    // Group the flat block list into SECTIONS by top-level heading, then render each
+    // as a collapsible panel with a sticky jump-nav -- so it reads as a navigable
+    // reference rather than one long scroll.
+    var sections = [], cur = null;
+    blocks.forEach(function(b) {{
+      if (b.t === "h2") {{ cur = {{title: spansText(b.spans), blocks: []}}; sections.push(cur); }}
+      else {{ if (!cur) {{ cur = {{title: "Overview", blocks: []}}; sections.push(cur); }} cur.blocks.push(b); }}
+    }});
+    root.appendChild(el("h2", "methods-title", "Methods"));
+    root.appendChild(el("p", "methods-lede", "How every score is computed \\u2014 in plain language up top, with the "
+      + "full technical detail one click away. Jump to a section, or expand \\u201cShow the detail\\u201d for the numbers and sources."));
+    var nav = el("div", "methods-nav");
+    var panels = [];
+    // Jump to a section: open it (leave others as the reader left them, so a pill
+    // click never collapses what they were reading) and mark its nav pill active.
+    function openSection(idx, scroll) {{
+      if (panels[idx]) panels[idx].open = true;
+      nav.querySelectorAll("button").forEach(function(btn, i) {{ btn.className = "methods-navbtn" + (i === idx ? " active" : ""); }});
+      if (scroll && panels[idx]) panels[idx].scrollIntoView({{behavior: "smooth", block: "start"}});
+    }}
+    sections.forEach(function(s, idx) {{
+      var btn = el("button", "methods-navbtn" + (idx === 0 ? " active" : ""), s.title);
+      btn.addEventListener("click", function() {{ openSection(idx, true); }});
+      nav.appendChild(btn);
+    }});
+    root.appendChild(nav);
+    var host = el("div", "methods-sections");
+    root.appendChild(host);
+    sections.forEach(function(s, idx) {{
+      var det = document.createElement("details"); det.className = "methods-sec"; if (idx === 0) det.open = true;
+      var sm = document.createElement("summary"); sm.className = "methods-sec-h"; sm.textContent = s.title;
+      det.appendChild(sm);
+      var body = el("div", "methods-sec-body"); renderBlocks(body, s.blocks, {{}}); det.appendChild(body);
+      det.addEventListener("toggle", function() {{
+        if (det.open) nav.querySelectorAll("button").forEach(function(btn, i) {{ btn.className = "methods-navbtn" + (i === idx ? " active" : ""); }});
+      }});
+      host.appendChild(det); panels.push(det);
+    }});
+    // Version / citation footer.
     var vparts = [];
     if (CORPUS.corpus_fingerprint) vparts.push("corpus fingerprint " + CORPUS.corpus_fingerprint);
     if (CORPUS.build_sha && CORPUS.build_sha !== "local") vparts.push("build " + CORPUS.build_sha);
     if (CORPUS.generated_utc) vparts.push("generated " + String(CORPUS.generated_utc).slice(0, 10));
-    if (vparts.length) root.appendChild(el("p", "copy-ver", "This build: " + vparts.join(" \\u00b7 ") + "."));
+    var foot = el("div", "methods-foot");
+    if (vparts.length) foot.appendChild(el("p", "copy-ver", "This build: " + vparts.join(" \\u00b7 ") + "."));
     if (CORPUS.zenodo_doi) {{
       var cite = el("p", null, "How to cite: RetaBase, DOI ");
       cite.appendChild(safeLink(CORPUS.zenodo_doi, "https://doi.org/" + encodeURIComponent(CORPUS.zenodo_doi)));
       cite.appendChild(document.createTextNode(" (see CITATION.cff in the repository)."));
-      root.appendChild(cite);
+      foot.appendChild(cite);
     }}
+    root.appendChild(foot);
   }}
 
   // All interactivity is wired here via addEventListener -- there are NO inline
@@ -4123,6 +4484,7 @@ _TEMPLATE = """<!DOCTYPE html>
     buildFilters();
     if (INTERNAL) updateApSummary();
     renderCorpusStrip();
+    renderFooter();
     // Land on Home (instant, needs no feed). Other tabs render lazily on first open;
     // the evidence feed + shards stream in the background so it's ready on switch.
     showTab("home");

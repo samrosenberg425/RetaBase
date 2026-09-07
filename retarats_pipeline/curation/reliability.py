@@ -34,6 +34,7 @@ no LLM, no network.
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import asdict, dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -84,6 +85,11 @@ class Reliability:
     reliability_components: str     # JSON of quality sub-scores
     reliability_rationale: str
     quality_components: Dict[str, int] = field(default_factory=dict)
+    # Evidence-hierarchy axis (the pyramid): the PRIMARY feed ordering. rank 1 = top.
+    evidence_level_key: str = "other"
+    evidence_level_rank: int = 99
+    evidence_level_label: str = "Other / unclear"
+    evidence_level_short: str = "Other"
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -295,6 +301,84 @@ def is_guideline(evidence: dict, paper: Optional[dict] = None) -> bool:
     return bool(_GUIDELINE_TITLE_RE.search(title) and not _GUIDELINE_TITLE_NEG.search(title))
 
 
+# --- evidence hierarchy (the pyramid) ---------------------------------------
+# The design-strength ladder, loaded from an editable config so placements can be
+# retuned without code changes. rank 1 = strongest (top of the pyramid). This is a
+# SEPARATE axis from directness (human-relevance) and rigor (within-class quality):
+# it is the PRIMARY ordering of the feed; the other scores only order WITHIN a level.
+def _load_hierarchy() -> "OrderedDict":
+    from collections import OrderedDict
+    import csv as _csv
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                        "config", "evidence_hierarchy.csv")
+    out = OrderedDict()
+    try:
+        with open(path, newline="", encoding="utf-8") as fh:
+            for row in _csv.DictReader(fh):
+                key = (row.get("key") or "").strip()
+                if not key:
+                    continue
+                try:
+                    lvl = int(row.get("level") or 0)
+                except ValueError:
+                    lvl = len(out) + 1
+                out[key] = {"rank": lvl, "label": (row.get("label") or key).strip(),
+                            "short": (row.get("short") or row.get("label") or key).strip()}
+    except OSError:
+        pass
+    return out
+
+
+EVIDENCE_HIERARCHY = _load_hierarchy()
+_HIER_FALLBACK = {"rank": 99, "label": "Other / unclear", "short": "Other"}
+
+
+def hierarchy_of(key: str) -> dict:
+    return EVIDENCE_HIERARCHY.get(key, _HIER_FALLBACK)
+
+
+def evidence_level(evidence: dict, paper: Optional[dict] = None, cls: Optional[str] = None) -> str:
+    """Rule-based place on the evidence pyramid -> a config key. PubMed publication
+    types are the primary, auditable signal; evidence_class + title cues fill gaps."""
+    pt = _pubtypes_of(evidence, paper)
+    title = str((paper or {}).get("title", "") or evidence.get("title", "") or "").lower()
+    if cls is None:
+        cls = classify_evidence(evidence)
+    if is_guideline(evidence, paper):
+        return "clinical_practice_guideline"
+    # Synthesis: systematic review outranks meta-analysis (per house ordering); a paper
+    # tagged both counts as a systematic review.
+    if "systematic review" in pt or "systematic review" in title:
+        return "systematic_review"
+    if "meta-analysis" in pt or "meta-analysis" in title or "meta analysis" in title:
+        return "meta_analysis"
+    if cls == "evidence_synthesis":
+        return "systematic_review"
+    if "randomized controlled trial" in pt or cls == "human_clinical_controlled":
+        return "rct"
+    if "controlled clinical trial" in pt or "clinical trial" in pt or cls == "human_clinical":
+        return "nonrandomized_trial"
+    if "case reports" in pt or "case report" in title:
+        return "case_report"
+    if "case series" in title:
+        return "case_series"
+    if cls == "human_observational" or "observational study" in pt or "comparative study" in pt:
+        if "cohort" in title:
+            return "cohort"
+        if "case-control" in title or "case control" in title:
+            return "case_control"
+        if "cross-sectional" in title or "cross sectional" in title:
+            return "observational_other"
+        return "observational_other"
+    if cls == "narrative_review" or ("review" in pt and cls not in ("evidence_synthesis",)):
+        return "narrative_review"
+    if cls == "preclinical_invivo":
+        return "preclinical_invivo"
+    if cls == "in_vitro":
+        return "in_vitro"
+    return "other"
+
+
 def classify_evidence(evidence: dict) -> str:
     role = str(evidence.get("role_category", "") or "")
     model = str(evidence.get("model_type", "") or "").lower()
@@ -492,6 +576,11 @@ def _directness_tier(score: int) -> str:
 def assess_reliability(evidence: dict, paper: Optional[dict] = None) -> Reliability:
     cls = classify_evidence(evidence)
     text = _blob(evidence, paper)
+    # Evidence-hierarchy level (the pyramid). Computed once and attached to every path.
+    _lk = evidence_level(evidence, paper, cls)
+    _lh = hierarchy_of(_lk)
+    _lvl = dict(evidence_level_key=_lk, evidence_level_rank=_lh["rank"],
+                evidence_level_label=_lh["label"], evidence_level_short=_lh["short"])
 
     if cls == "off_topic":
         return Reliability(
@@ -504,6 +593,7 @@ def assess_reliability(evidence: dict, paper: Optional[dict] = None) -> Reliabil
             reliability_components=json.dumps({}),
             reliability_rationale="Off-topic (non-biomedical) record; not scored as therapeutic evidence.",
             quality_components={},
+            **_lvl,
         )
 
     # Clinical practice guidelines: authoritative synthesized recommendations. We do
@@ -526,6 +616,7 @@ def assess_reliability(evidence: dict, paper: Optional[dict] = None) -> Reliabil
                 "synthesized recommendations. Rigor is not graded on study-conduct "
                 "criteria; treated as a high-directness, authoritative source."),
             quality_components={},
+            **_lvl,
         )
 
     if cls in ("human_clinical_controlled", "human_clinical", "human_observational"):
@@ -556,6 +647,7 @@ def assess_reliability(evidence: dict, paper: Optional[dict] = None) -> Reliabil
         reliability_components=json.dumps(comps),
         reliability_rationale=rationale,
         quality_components=comps,
+        **_lvl,
     )
 
 
@@ -575,4 +667,8 @@ RELIABILITY_FIELDS = [
     "directness_tier",
     "reliability_components",
     "reliability_rationale",
+    "evidence_level_key",
+    "evidence_level_rank",
+    "evidence_level_label",
+    "evidence_level_short",
 ]

@@ -131,6 +131,35 @@
   **This whole multi-round redesign is uncommitted on a clean main** — one commit ships it. New
   files: config/glossary.csv, config/site_copy/{home,methods}.md. Deploy = commit + push + run
   update.yml (fetch build loads glossary/copy from config/, inlines them; tag_hovers defaults ON).
+- **EVIDENCE HIERARCHY (uncommitted, on top of the shipped redesign):** new dedicated axis =
+  the evidence pyramid, PRIMARY feed ordering; other scores compare only WITHIN a level (Sam's
+  principle). Editable ladder `config/evidence_hierarchy.csv` (14 levels: systematic review >
+  meta-analysis > guideline > RCT > non-RCT > cohort > case-control > cross-sectional > case series
+  > case report > narrative review > preclinical > in vitro > other). `reliability.py`:
+  `evidence_level()` detects the level from PubMed pubtypes + class + title cues; adds
+  evidence_level_{key,rank,label,short} to Reliability + RELIABILITY_FIELDS; registered in
+  field_registry (site_json). `build_curated_database` sorts feed (level asc, rank desc) in both
+  places. Client: default "rank" sort is hierarchy-first (`levelRank`), an "L#" badge on card +
+  modal (`evidenceLevelBadge`, banded hi/mid/lo), a pyramid in the Guide, and the score-legend +
+  methods.md explain it. Preview sample spans levels 1-13 (64 records). All green: curation 209,
+  site 418, extractors 98, sources 53, freshness 18; e2e fixture parses. Ships with the next
+  update.yml run (rebuild re-scores the real corpus with levels). NOTE: retune placements by
+  editing evidence_hierarchy.csv (e.g., move guidelines).
+- **ROUND: logo + sort/filter + hierarchy source + methods docs (uncommitted):**
+  (1) RetaRats LOGO top-right: `assets/retarats-logo.png` (optimized 193x80, white->transparent)
+  -> `_logo_data_uri()` inlined as a data URI in a clickable "logo + Main site" link to
+  https://www.retarats.com/ (new tab, accessible). (2) SORT: added "Rank (mix all levels)"
+  (pure rank, ignores hierarchy) alongside default "Rank (evidence level first)"; sortRecords
+  handles rank_mixed. (3) FILTER: "Evidence level" added to FILTER_FACETS (evidence_level_short)
+  so people can include/exclude levels. (4) HIERARCHY SOURCE: cited OCEBM 2011 (Oxford CEBM) for
+  the human levels + the classic evidence pyramid for the preclinical extension, GRADE noted as
+  the appraisal layer we don't do — links in the Guide pyramid + methods.md. (5) METHODS docs:
+  methods.md now enumerates every rigor variable + points per class, the rank weight rationale
+  (venue-vs-impact decision, recency floor), how each axis is derived, and a "Where the data comes
+  from" section (PubMed/E-utilities, iCite, OpenAlex, ClinicalTrials, Europe PMC, DailyMed/
+  Drugs@FDA, PubChem, curated journal table). All green: site 425, curation 209, extractors 98,
+  sources 53, freshness 18; e2e fixture parses. Logo is inlined (no update.yml asset copy needed).
+  New files: assets/retarats-logo.png. Ships with next update.yml run.
 - **Next action (was):** 6.5 (duration rule gap #2) — harden the duration extractor regex and
   add synthetic unit tests here; the actual ~400-record re-extraction needs the corpus DB
   in the Actions cache (runs in CI, not sandbox). One-time user step for full dep hashing:

@@ -1,0 +1,44 @@
+{
+  "brand": "RetaBase",
+  "tagline": "A rules-based, auto-updating evidence database for retatrutide-family bioactives — connecting the published literature, trials, and the regulatory record so the strongest evidence is easy to find.",
+  "columns": [
+    {
+      "title": "Explore",
+      "links": [
+        {"label": "Evidence browser", "tab": "evidence"},
+        {"label": "Bioactive overview", "tab": "molecules"},
+        {"label": "Trials registry", "tab": "trials"},
+        {"label": "Preprints", "tab": "preprints"}
+      ]
+    },
+    {
+      "title": "Understand",
+      "links": [
+        {"label": "How the scores work", "tab": "methods"},
+        {"label": "Plain-language guide", "tab": "guide"},
+        {"label": "Experimental candidates", "tab": "experimental"}
+      ]
+    },
+    {
+      "title": "Data sources",
+      "links": [
+        {"label": "PubMed", "url": "https://pubmed.ncbi.nlm.nih.gov/"},
+        {"label": "NIH iCite", "url": "https://icite.od.nih.gov/"},
+        {"label": "ClinicalTrials.gov", "url": "https://clinicaltrials.gov/"},
+        {"label": "Europe PMC", "url": "https://europepmc.org/"},
+        {"label": "DailyMed (FDA labels)", "url": "https://dailymed.nlm.nih.gov/"}
+      ]
+    },
+    {
+      "title": "RetaRats",
+      "links": [
+        {"label": "Main site", "url": "https://www.retarats.com/"}
+      ]
+    }
+  ],
+  "bottom_note": "Not medical advice. RetaBase documents the published literature and public registries; it is not a guide to obtaining any substance. Regulatory status varies by country, carries its source and retrieval date, and may be out of date.",
+  "bottom_links": [
+    {"label": "Methods & sources", "tab": "methods"},
+    {"label": "Safety & regulatory", "tab": "methods"}
+  ]
+}

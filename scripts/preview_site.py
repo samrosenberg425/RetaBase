@@ -36,6 +36,25 @@ sys.modules["build_public_site"] = _bps
 _spec.loader.exec_module(_bps)
 
 
+_HIER = {h["key"]: h for h in _bps._load_hierarchy()}
+
+
+def _level_key(cls, study_type):
+    """Map a sample record's class/study-type to an evidence-hierarchy ladder key."""
+    st = (study_type or "").strip()
+    if st in _HIER:
+        return st
+    alias = {"guideline": "clinical_practice_guideline", "observational": "observational_other",
+             "in_vivo": "preclinical_invivo"}
+    if st in alias:
+        return alias[st]
+    m = {"clinical_guideline": "clinical_practice_guideline", "evidence_synthesis": "systematic_review",
+         "human_clinical_controlled": "rct", "human_clinical": "nonrandomized_trial",
+         "human_observational": "observational_other", "preclinical_invivo": "preclinical_invivo",
+         "in_vitro": "in_vitro", "narrative_review": "narrative_review"}
+    return m.get(cls, "other")
+
+
 def _record(mol_id, mol_name, i, cls, section, human, animal, molec, **extra):
     r = {
         "molecule_id": mol_id, "molecule_name": mol_name, "pmid": str(40000000 + i),
@@ -72,6 +91,13 @@ def _record(mol_id, mol_name, i, cls, section, human, animal, molec, **extra):
         "facet_all": f"{mol_name} {section}".lower(),
     }
     r.update(extra)
+    # Evidence-hierarchy level (so the L# badge + hierarchy-first sort work in preview).
+    _lk = _level_key(cls, r.get("facet_study_type", ""))
+    _h = _HIER.get(_lk, {"rank": 99, "label": "Other / unclear", "short": "Other"})
+    r["evidence_level_key"] = _lk
+    r["evidence_level_rank"] = str(_h["rank"])
+    r["evidence_level_label"] = _h["label"]
+    r["evidence_level_short"] = _h["short"]
     return r
 
 
@@ -133,23 +159,31 @@ def sample_feed():
         ("follistatin", "Follistatin", "myostatin_inhibitor", "musculoskeletal", "research-only", "False", "research use only; grey market"),
     ]
     # (class, section, species, model, study_type, rigor, directness, (human,animal,molec))
+    # Spans the pyramid: systematic review > meta-analysis > guideline > RCT > cohort >
+    # case-control > case report > narrative review > preclinical > in vitro.
     tiers = [
-        ("human_clinical_controlled", "Human evidence", "human", "human", "rct", 84, 95, (1, 0, 0)),
-        ("evidence_synthesis", "Reviews and overviews", "human", "human", "systematic_review", 78, 90, (1, 0, 0)),
-        ("human_observational", "Human evidence", "human", "human", "observational", 58, 66, (0.9, 0.1, 0)),
+        ("evidence_synthesis", "Reviews and overviews", "human", "human", "systematic_review", 82, 90, (1, 0, 0)),
+        ("evidence_synthesis", "Reviews and overviews", "human", "human", "meta_analysis", 78, 90, (1, 0, 0)),
         ("clinical_guideline", "Human evidence", "human", "human", "guideline", 0, 92, (1, 0, 0)),
+        ("human_clinical_controlled", "Human evidence", "human", "human", "rct", 84, 95, (1, 0, 0)),
+        ("human_observational", "Human evidence", "human", "human", "cohort", 62, 66, (0.9, 0.1, 0)),
+        ("human_observational", "Human evidence", "human", "human", "case_control", 52, 66, (0.9, 0.1, 0)),
+        ("human_observational", "Human evidence", "human", "human", "case_report", 40, 66, (0.8, 0.2, 0)),
+        ("narrative_review", "Background and context", "human", "human", "narrative_review", 40, 42, (0.8, 0.2, 0)),
         ("preclinical_invivo", "Mechanisms and pathways", "mouse", "mouse", "in_vivo", 60, 45, (0, 1, 0)),
         ("in_vitro", "Mechanisms and pathways", "cell_line", "in_vitro", "in_vitro", 45, 25, (0, 0, 1)),
-        ("narrative_review", "Background and context", "human", "human", "narrative_review", 40, 42, (0.8, 0.2, 0)),
     ]
     titles = {
-        "human_clinical_controlled": "phase 3 randomized trial",
-        "evidence_synthesis": "systematic review and meta-analysis",
-        "human_observational": "real-world cohort study",
-        "clinical_guideline": "clinical practice guideline",
-        "preclinical_invivo": "preclinical study in mice",
-        "in_vitro": "mechanistic cell study",
+        "systematic_review": "systematic review",
+        "meta_analysis": "meta-analysis",
+        "guideline": "clinical practice guideline",
+        "rct": "phase 3 randomized trial",
+        "cohort": "prospective cohort study",
+        "case_control": "case-control study",
+        "case_report": "case report",
         "narrative_review": "narrative review",
+        "in_vivo": "preclinical study in mice",
+        "in_vitro": "mechanistic cell study",
     }
     for mi, (mol_id, name, dc, ind, reg, usm, access) in enumerate(catalog):
         nrec = 3 + (mi % 4)  # 3..6 records per molecule
@@ -160,7 +194,7 @@ def sample_feed():
             rank = max(20, min(97, int(0.30 * dirn + 0.28 * rig + 18 + ((mi * 7 + k * 13) % 22))))
             rtier = "not_applicable" if is_guide else ("high" if rig >= 70 else "moderate" if rig >= 50 else "limited")
             extra = {
-                "t": titles[cls] + " in " + ind.replace("_", " "),
+                "t": titles.get(stype, cls.replace("_", " ")) + " in " + ind.replace("_", " "),
                 "year": 2019 + ((mi + k) % 7),
                 "rel": 0 if is_guide else rig, "rtier": rtier,
                 "dir": dirn, "dtier": "high" if dirn >= 80 else "moderate" if dirn >= 55 else "low",

@@ -236,9 +236,10 @@ def build(db_path: str, out_dir: str, limit: int = 0) -> dict:
         + APPRAISAL_FIELDS
         + REFINED_FIELDS
     )
-    # Order everything best-first by the combined rank so downstream consumers
-    # (CSV, site) surface the most reliable + impactful evidence at the top.
-    curated_rows.sort(key=lambda r: _int(r.get("rank_score")), reverse=True)
+    # Order everything by the EVIDENCE HIERARCHY first (rank 1 = top of the pyramid),
+    # then best-first by the combined rank score WITHIN each level. This makes the
+    # hierarchy the primary ordering while quality/impact only compare within a level.
+    curated_rows.sort(key=lambda r: ((_int(r.get("evidence_level_rank")) or 99), -_int(r.get("rank_score"))))
     _write_csv(os.path.join(out_dir, "curated_evidence.csv"), curated_rows, curated_cols)
 
     # --- facets_long.csv ---
@@ -561,7 +562,8 @@ def _cap_site_feed(records: List[dict], focus_cap: int = FEED_FOCUS_CAP, other_c
             capped[mol] = {"total": len(recs), "published": len(chosen), "landmark": len(landmark),
                            "focus": min(len(focus), focus_cap), "other": min(len(other), other_cap)}
 
-    kept.sort(key=lambda r: _int(r.get("rank_score")), reverse=True)
+    # Same hierarchy-first ordering for the published feed (level, then rank within level).
+    kept.sort(key=lambda r: ((_int(r.get("evidence_level_rank")) or 99), -_int(r.get("rank_score"))))
     stats = {
         "focus_cap": focus_cap,
         "other_cap": other_cap,

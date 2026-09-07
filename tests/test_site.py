@@ -99,9 +99,10 @@ def run():
     check("score bar has a quick hover example", "can both score ~70" in html_text and "wrap.title" in html_text)
     check("score bar has a '?' info popover", "info-dot" in html_text and "How to read these scores" in html_text
           and "openScoreLegend" in html_text)
-    check("legend explains within-class rigor + directness + rank",
+    check("legend explains within-class rigor + directness + rank + evidence level",
           "its OWN evidence class" in html_text and "human-relevance axis" in html_text
-          and "best-first ordering of the feed" in html_text)
+          and "best-first score WITHIN an evidence level" in html_text
+          and "place on the evidence pyramid" in html_text)
     check("inputs get accent focus rings", "box-shadow: 0 0 0 3px var(--accent-soft)" in html_text)
     # split feed: modal-only detail lazy-loads from site_detail.json via DETAIL/dval
     check("detail sidecar is fetched on demand", 'fetchJson("site_detail.json")' in html_text)
@@ -147,8 +148,16 @@ def run():
     check("unknown variant is ignored (safe)", 'class=""' in _bad)
     # editable copy: markdown parsed into blocks, rendered via a no-innerHTML renderer
     _copy = site._load_copy()
-    _mtypes = [b["t"] for b in _copy["methods"]]
-    check("methods copy parsed with a table + formula", "table" in _mtypes and "formula" in _mtypes)
+    def _all_types(blocks):
+        out = []
+        for b in blocks:
+            out.append(b["t"])
+            if b.get("t") == "detail":
+                out.extend(_all_types(b.get("blocks", [])))
+        return out
+    _mtypes = _all_types(_copy["methods"])
+    check("methods copy parsed with a table + formula (incl. detail folds)",
+          "table" in _mtypes and "formula" in _mtypes and "detail" in _mtypes)
     check("home copy uses nav + rings tokens",
           any(b.get("name") == "nav" for b in _copy["home"])
           and any(b.get("name") == "rings" for b in _copy["home"]))
@@ -179,6 +188,46 @@ def run():
     check("metric pills carry definition tips", "function pillTip" in html_text
           and "Relative Citation Ratio" in html_text and "Total times this paper has been cited" in html_text)
     check("guide has a hover on/off toggle", "Show these definitions when I hover" in html_text)
+    # evidence hierarchy: badge + hierarchy-first default sort + pyramid in Guide
+    check("evidence-level badge present", "function evidenceLevelBadge" in html_text
+          and "evlevel" in html_text and 'var HIER' in html_text)
+    check("default sort is hierarchy-first (level then rank)",
+          "evidence hierarchy FIRST" in html_text and "function levelRank" in html_text)
+    check("Guide renders the evidence pyramid", "ev-pyramid" in html_text
+          and "Evidence hierarchy (the pyramid)" in html_text)
+    _hier = site._load_hierarchy()
+    check("hierarchy ladder: systematic review at top, in-vitro near bottom",
+          _hier[0]["key"] == "systematic_review" and _hier[0]["rank"] == 1
+          and any(h["key"] == "in_vitro" for h in _hier))
+    # sort: hierarchy vs mixed + a level filter facet
+    check("sort offers hierarchy-first AND mix-all-levels",
+          'value="rank"' in html_text and 'value="rank_mixed"' in html_text and "mix all levels" in html_text)
+    check("Evidence level is a sidebar filter facet",
+          ("evidence_level_short", "Evidence level") in site.FILTER_FACETS)
+    # RetaRats logo top-right, clickable to the main site
+    check("RetaRats logo links to main site",
+          "class=\"site-logo\"" in html_text and "data:image/png;base64" in html_text
+          and "retarats.com" in html_text and 'target="_blank"' in html_text)
+    # Config-driven site footer: loads from config/footer.json, renders in the shell,
+    # and payload carries columns for renderFooter to build.
+    _foot = site._load_footer()
+    check("footer config loads with columns + tagline",
+          isinstance(_foot.get("columns"), list) and len(_foot["columns"]) >= 1 and bool(_foot.get("tagline")))
+    check("footer container + renderer present in shell",
+          'id="site-footer"' in html_text and "renderFooter" in html_text and ".foot-col-h" in html_text)
+    check("footer external links are http(s) (safeLink-eligible)",
+          all(str(l.get("url", "http")).startswith("http")
+              for col in _foot.get("columns", []) for l in col.get("links", []) if "url" in l))
+    # Methods documentation: rigor variables, weight rationale, sources, hierarchy citation
+    check("methods define rigor variables + points",
+          "Human trials & observational studies" in COPY_TEXT and "Orthogonal methods" in COPY_TEXT
+          and "Sample size" in COPY_TEXT)
+    check("methods give weighting rationale + venue derivation",
+          "Why these weights" in COPY_TEXT and "curated journal-reputation table" in COPY_TEXT)
+    check("methods list data sources", "Where the data comes from" in COPY_TEXT
+          and "E-utilities" in COPY_TEXT and "iCite" in COPY_TEXT and "ClinicalTrials.gov" in COPY_TEXT)
+    check("methods cite OCEBM + evidence pyramid + GRADE",
+          "Levels of Evidence" in COPY_TEXT and "evidence pyramid" in COPY_TEXT and "GRADE" in COPY_TEXT)
     check("glossary covers all facet tag values (curated + FACETS merge)",
           all((c + "|" + v) in _gloss["byKey"] for (c, v) in
               [("route", "subcutaneous"), ("endpoint", "glycemic_control"), ("drug_class", "sglt2_inhibitor")]))

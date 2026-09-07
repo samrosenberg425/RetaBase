@@ -57,6 +57,9 @@ FIELDS: List[Field] = [
     _F("first_author"), _F("author_count"), _F("citation_count"),
     _F("journal_reputation"), _F("journal_tier"), _F("reliability_score"),
     _F("reliability_tier"), _F("evidence_directness"), _F("directness_tier"),
+    # Evidence-hierarchy axis (the pyramid): primary feed ordering + card badge.
+    _F("evidence_level_key"), _F("evidence_level_rank"),
+    _F("evidence_level_label"), _F("evidence_level_short"),
     # detail=True: modal-only fields, moved out of the list feed into the
     # lazy-loaded site_detail.json so the initial download stays small.
     _F("reliability_components", detail=True), _F("rank_components", detail=True),
