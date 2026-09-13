@@ -212,12 +212,15 @@ class IdentifierMetadataClient:
         data, source = self.http.get_json("unpaywall", doi, url, params={"email": self.config.contact_email})
         return data, source
 
-    def europepmc_search(self, query: str, page_size: int = 5) -> Tuple[Optional[dict], str]:
+    def europepmc_search(self, query: str, page_size: int = 5, result_type: str = "lite") -> Tuple[Optional[dict], str]:
         query = clean_text(query)
         if not query:
             return None, "empty_query"
-        params = {"query": query, "format": "json", "pageSize": page_size}
-        data, source = self.http.get_json("europepmc_search", query[:180] + f"_{page_size}", EUROPEPMC_SEARCH, params=params)
+        params = {"query": query, "format": "json", "pageSize": page_size, "resultType": result_type}
+        # result_type is part of the cache key so "core" (abstract + commentCorrection
+        # links) caches separately from the default "lite" search.
+        ck = query[:180] + f"_{page_size}_{result_type}"
+        data, source = self.http.get_json("europepmc_search", ck, EUROPEPMC_SEARCH, params=params)
         return data, source
 
     def openalex_cited_by(self, doi: str = "", pmid: str = "") -> Tuple[Optional[int], str]:

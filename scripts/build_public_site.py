@@ -154,6 +154,13 @@ TRIAL_FIELDS = [
 PREPRINT_FIELDS = [
     "id", "molecule_id", "molecule_name", "title", "authors_short",
     "server", "date", "doi", "url",
+    # Richer structuring (populated by the enriched EuropePMC fetch): abstract, the
+    # published-version link (once the preprint is published), and the same facet tags
+    # papers carry. No rank/rigor/directness -- preprints are not peer-reviewed.
+    "abstract", "published_pmid", "published_doi",
+    "facet_species", "facet_indication", "facet_endpoint", "facet_study_type",
+    "facet_model_system", "facet_route", "facet_drug_class", "facet_population",
+    "facet_sex", "facet_formulation", "facet_evidence_direction",
 ]
 
 # Corpus-wide summary numbers (``corpus_stats`` inside site_data.json) shown as a
@@ -701,6 +708,28 @@ def _load_glossary() -> dict:
     return {"categories": cats, "byKey": by_key}
 
 
+def _load_connections() -> List[dict]:
+    """Editable manual cross-links (config/connections.csv) between papers, preprints
+    and trials. Each row is a symmetric a<->b edge; the client merges these with the
+    edges derived automatically from trial PMIDs + preprint published-version links.
+    Columns: type_a,id_a,type_b,id_b,relation  (type in paper|preprint|trial; id is a
+    PMID for papers, a DOI/preprint-id for preprints, an NCT id for trials)."""
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "connections.csv")
+    out: List[dict] = []
+    try:
+        with open(path, newline="", encoding="utf-8") as fh:
+            for row in csv.DictReader(fh):
+                ta, ia = (row.get("type_a") or "").strip().lower(), (row.get("id_a") or "").strip()
+                tb, ib = (row.get("type_b") or "").strip().lower(), (row.get("id_b") or "").strip()
+                ok = {"paper", "preprint", "trial"}
+                if ta in ok and tb in ok and ia and ib:
+                    out.append({"type_a": ta, "id_a": ia, "type_b": tb, "id_b": ib,
+                                "relation": (row.get("relation") or "").strip()})
+    except OSError:
+        pass
+    return out
+
+
 def _load_hierarchy() -> List[dict]:
     """Editable evidence-pyramid ladder (config/evidence_hierarchy.csv) for the card
     badge + the Guide pyramid. Ordered top (rank 1) to bottom."""
@@ -840,6 +869,8 @@ def build_site(curated_dir: str, out_dir: str, mode: str = "inline",
         "feedback": _load_feedback(),
         # Canonical-key -> polished display-label map (config/display_labels.json).
         "labels": _load_labels(),
+        # Manual cross-links (config/connections.csv) merged with auto-derived edges.
+        "connections": _load_connections(),
         "filters": [{"field": f, "label": lbl} for f, lbl in FILTER_FACETS],
         "multi": sorted(MULTI_VALUE_FIELDS),
         "aspects": [{"field": f, "cls": c, "label": lbl} for f, c, lbl in ASPECT_TAGS],
@@ -1622,11 +1653,11 @@ _TEMPLATE = """<!DOCTYPE html>
   .tl-scroll::-webkit-scrollbar {{ height: 6px; }}
   .tl-scroll::-webkit-scrollbar-thumb {{ background: var(--border); border-radius: 3px; }}
   .tl-bars {{ display: flex; align-items: flex-end; gap: 3px; height: 150px; }}
-  .tl-cell {{ flex: 1 0 16px; display: flex; align-items: flex-end; justify-content: center; height: 100%; }}
+  .tl-cell {{ flex: 1 0 16px; min-width: 0; display: flex; align-items: flex-end; justify-content: center; height: 100%; }}
   .tl-bar {{ width: 70%; min-width: 3px; border-radius: 3px 3px 0 0; }}
   .tl-bar.partial {{ background: transparent; border: 1.5px dashed var(--accent); }}
   .tl-axis {{ display: flex; gap: 3px; margin-top: 6px; }}
-  .tl-axis-cell {{ flex: 1 0 16px; text-align: center; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }}
+  .tl-axis-cell {{ flex: 1 0 16px; min-width: 0; text-align: center; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: visible; }}
   .tl-note {{ font-size: 12px; color: var(--muted); margin-top: 8px; }}
   @media (max-width: 820px) {{
     .estory {{ padding: 18px 16px; }}
@@ -1663,6 +1694,39 @@ _TEMPLATE = """<!DOCTYPE html>
   .trial-grid .k {{ color: var(--muted); }}
   .trial-pubs {{ display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12px; margin: 6px 0 2px; }}
   .trial-pubs .k {{ color: var(--muted); }}
+  /* Preprint status badges */
+  .pp-badge {{ font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 9px; background: var(--tier-limited); color: #fff; letter-spacing: .02em; }}
+  .pp-published {{ font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 9px; background: var(--accent-soft); color: var(--accent); }}
+  /* Related-evidence cross-links (papers <-> preprints <-> trials): collapsed dropdown */
+  .related {{ margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--border); }}
+  summary.related-h {{ cursor: pointer; list-style: none; display: flex; align-items: center; gap: 10px;
+    font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }}
+  summary.related-h::-webkit-details-marker {{ display: none; }}
+  summary.related-h::after {{ content: "\\25be"; margin-left: auto; font-size: 11px; color: var(--muted); }}
+  .related[open] summary.related-h::after {{ content: "\\25b4"; }}
+  summary.related-h:hover {{ color: var(--accent); }}
+  summary.related-h:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }}
+  .related-h-lbl {{ font-weight: 700; }}
+  .related-h-count {{ text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--text); }}
+  .related-body {{ margin-top: 8px; }}
+  .related-row {{ display: flex; align-items: baseline; gap: 10px; padding: 5px 0; border-top: 1px solid var(--border); }}
+  .related-row:first-of-type {{ border-top: 0; }}
+  .related-type {{ flex: 0 0 auto; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+    border-radius: 4px; padding: 2px 6px; align-self: center; }}
+  .rt-paper {{ background: var(--accent-soft); color: var(--accent); }}
+  .rt-trial {{ background: #eef4e9; color: #4d6b1f; }}
+  .rt-preprint {{ background: #f3edfa; color: #6b4ea0; }}
+  .related-main {{ flex: 1 1 auto; min-width: 0; }}
+  .related-title {{ font-size: 13px; color: var(--text); }}
+  button.related-title.link {{ font: inherit; font-size: 13px; background: none; border: 0; padding: 0; margin: 0;
+    color: var(--accent); text-align: left; cursor: pointer; }}
+  button.related-title.link:hover {{ text-decoration: underline; }}
+  button.related-title.link:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }}
+  .related-rel {{ display: block; font-size: 11.5px; color: var(--muted); margin-top: 1px; }}
+  .related-ext {{ flex: 0 0 auto; font-size: 12px; white-space: nowrap; }}
+  /* brief highlight when jumping to a card */
+  .card-flash {{ animation: cardflash 1.6s ease-out; }}
+  @keyframes cardflash {{ 0% {{ box-shadow: 0 0 0 3px var(--accent); }} 100% {{ box-shadow: 0 0 0 0 rgba(0,0,0,0); }} }}
   /* include/exclude multi-select filter groups */
   .fgroup {{ margin-bottom: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel2); }}
   .fgroup > summary {{
@@ -3125,6 +3189,8 @@ _TEMPLATE = """<!DOCTYPE html>
     }}
     m.appendChild(el("h4", null, "Aspects"));
     m.appendChild(aspectTags(r, function(f, v) {{ closeModal(); applyTagFilter(f, v); }}));
+    var relPaper = relatedSection("paper", r);
+    if (relPaper) m.appendChild(relPaper);
     if (INTERNAL) {{
       m.appendChild(el("div", "note-hint",
         "Notes are for curators: record why you approved/rejected this record " +
@@ -4454,6 +4520,169 @@ _TEMPLATE = """<!DOCTYPE html>
     if (s && e) return s + " \\u2192 " + e;
     return s || e || "";
   }}
+  // ================= Cross-links: papers <-> preprints <-> trials =============
+  // Edges come from (1) trial result_pmids/reference_pmids, (2) a preprint's
+  // published-version PMID/DOI, and (3) manual config (config/connections.csv).
+  // A "Related" section on each card lists connected items with an external link and,
+  // when the item is in RetaBase, a jump-to-card action.
+  var CONNECTIONS = DATA.connections || [];
+  var _cx = null;
+  function _cssId(s) {{ return String(s || "").replace(/[^a-zA-Z0-9_-]/g, "_"); }}
+  function connIndex() {{
+    var nT = (typeof TRIALS !== "undefined" ? TRIALS.length : 0);
+    var nP = (typeof PREPRINTS !== "undefined" ? PREPRINTS.length : 0);
+    var nR = (typeof RECORDS !== "undefined" ? RECORDS.length : 0);
+    if (_cx && _cx.nR === nR && _cx.nT === nT && _cx.nP === nP) return _cx;
+    var paperByPmid = {{}}, paperByDoi = {{}};
+    (RECORDS || []).forEach(function(r) {{
+      var p = String(r.pmid || "").trim(); if (p && !paperByPmid[p]) paperByPmid[p] = r;
+      var d = String(r.doi || "").trim().toLowerCase(); if (d && !paperByDoi[d]) paperByDoi[d] = r;
+    }});
+    var trialByNct = {{}}, trialsByPmid = {{}};
+    (TRIALS || []).forEach(function(t) {{
+      var n = String(t.nct_id || "").trim().toUpperCase(); if (n) trialByNct[n] = t;
+      [["result", t.result_pmids], ["reference", t.reference_pmids]].forEach(function(kv) {{
+        String(kv[1] || "").split(";").forEach(function(s) {{
+          s = s.trim(); if (/^\\d+$/.test(s)) (trialsByPmid[s] = trialsByPmid[s] || []).push({{trial: t, rel: kv[0]}});
+        }});
+      }});
+    }});
+    var preprintById = {{}}, ppByPubPmid = {{}}, ppByPubDoi = {{}};
+    (PREPRINTS || []).forEach(function(p) {{
+      var id = String(p.doi || p.id || "").trim().toLowerCase(); if (id) preprintById[id] = p;
+      var pp = String(p.published_pmid || "").trim(); if (pp) (ppByPubPmid[pp] = ppByPubPmid[pp] || []).push(p);
+      var pd = String(p.published_doi || "").trim().toLowerCase(); if (pd) (ppByPubDoi[pd] = ppByPubDoi[pd] || []).push(p);
+    }});
+    _cx = {{nR: nR, nT: nT, nP: nP, paperByPmid: paperByPmid, paperByDoi: paperByDoi,
+      trialByNct: trialByNct, trialsByPmid: trialsByPmid, preprintById: preprintById,
+      ppByPubPmid: ppByPubPmid, ppByPubDoi: ppByPubDoi}};
+    return _cx;
+  }}
+  function jumpToTrial(nct) {{
+    closeModal(); showTab("trials");
+    requestAnimationFrame(function() {{ scrollToCard("trial-" + _cssId(String(nct).toUpperCase())); }});
+  }}
+  function jumpToPreprint(id) {{
+    closeModal(); showTab("preprints");
+    requestAnimationFrame(function() {{ scrollToCard("pp-" + _cssId(String(id).toLowerCase())); }});
+  }}
+  function scrollToCard(elId) {{
+    var e = document.getElementById(elId);
+    if (!e) return;
+    e.scrollIntoView({{behavior: "smooth", block: "center"}});
+    e.classList.add("card-flash");
+    setTimeout(function() {{ e.classList.remove("card-flash"); }}, 1600);
+  }}
+  // Resolve a (type,id) to a related-item descriptor. Items in RetaBase get a jump()
+  // action; items only known externally still get an outbound link.
+  function _resolvePaper(pmid, doi, relation) {{
+    var ix = connIndex();
+    pmid = String(pmid || "").trim(); doi = String(doi || "").trim();
+    var rec = (pmid && ix.paperByPmid[pmid]) || (doi && ix.paperByDoi[doi.toLowerCase()]) || null;
+    // Prefer the resolved record's own ids for the URL + de-dup key, so a PMID edge and a
+    // DOI edge that point at the same paper collapse to one row.
+    var rpmid = rec ? String(rec.pmid || "").trim() : pmid;
+    var rdoi = rec ? String(rec.doi || "").trim() : doi;
+    var url = rpmid ? (PUBMED + encodeURIComponent(rpmid) + "/") : (rdoi ? "https://doi.org/" + encodeURIComponent(rdoi) : "");
+    return {{key: "paper:" + (rpmid || rdoi.toLowerCase()), type: "paper",
+      title: rec ? (rec.title || "Paper") : ("PMID " + (pmid || doi)),
+      extUrl: url, extLabel: rpmid ? "PubMed" : "DOI", relation: relation,
+      inSite: !!rec, jump: rec ? function() {{ openModal(rec); }} : null}};
+  }}
+  function _resolveTrial(t, relation) {{
+    return {{key: "trial:" + t.nct_id, type: "trial", title: t.brief_title || t.nct_id,
+      extUrl: t.url, extLabel: "ClinicalTrials.gov", relation: relation, inSite: true,
+      jump: function() {{ jumpToTrial(t.nct_id); }}}};
+  }}
+  function _resolvePreprint(p, relation) {{
+    var url = p.url || (p.doi ? "https://doi.org/" + p.doi : "");
+    return {{key: "preprint:" + (p.doi || p.id), type: "preprint", title: p.title || "Preprint",
+      extUrl: url, extLabel: p.doi ? "DOI" : "View", relation: relation, inSite: true,
+      jump: function() {{ jumpToPreprint(p.doi || p.id); }}}};
+  }}
+  function _manualFor(type, id) {{
+    var idl = String(id).toLowerCase(), out = [];
+    CONNECTIONS.forEach(function(c) {{
+      var other = null;
+      if (c.type_a === type && c.id_a.toLowerCase() === idl) other = {{t: c.type_b, i: c.id_b, rel: c.relation}};
+      else if (c.type_b === type && c.id_b.toLowerCase() === idl) other = {{t: c.type_a, i: c.id_a, rel: c.relation}};
+      if (other) out.push(other);
+    }});
+    return out;
+  }}
+  function _resolveKey(t, id, relation) {{
+    var ix = connIndex();
+    if (t === "paper") return _resolvePaper(/^\\d+$/.test(id) ? id : "", /^\\d+$/.test(id) ? "" : id, relation || "related paper");
+    if (t === "trial") {{ var tr = ix.trialByNct[String(id).toUpperCase()];
+      return tr ? _resolveTrial(tr, relation || "related trial")
+        : {{key: "trial:" + id, type: "trial", title: id, extUrl: "https://clinicaltrials.gov/study/" + encodeURIComponent(id), extLabel: "ClinicalTrials.gov", relation: relation || "related trial", inSite: false, jump: null}}; }}
+    if (t === "preprint") {{ var pp = ix.preprintById[String(id).toLowerCase()];
+      return pp ? _resolvePreprint(pp, relation || "related preprint")
+        : {{key: "preprint:" + id, type: "preprint", title: id, extUrl: id.indexOf("/") >= 0 ? "https://doi.org/" + id : "", extLabel: "DOI", relation: relation || "related preprint", inSite: false, jump: null}}; }}
+    return null;
+  }}
+  // Gather related items for an item of the given kind ("paper" | "trial" | "preprint").
+  function relatedFor(kind, item) {{
+    var ix = connIndex(), out = [], seen = {{}};
+    function add(it) {{ if (it && !seen[it.key]) {{ seen[it.key] = 1; out.push(it); }} }}
+    if (kind === "paper") {{
+      var pmid = String(item.pmid || "").trim(), doi = String(item.doi || "").trim().toLowerCase();
+      (ix.trialsByPmid[pmid] || []).forEach(function(x) {{ add(_resolveTrial(x.trial, x.rel === "result" ? "reports results here" : "cites this paper")); }});
+      (ix.ppByPubPmid[pmid] || []).forEach(function(p) {{ add(_resolvePreprint(p, "preprint of this paper")); }});
+      if (doi) (ix.ppByPubDoi[doi] || []).forEach(function(p) {{ add(_resolvePreprint(p, "preprint of this paper")); }});
+      _manualFor("paper", pmid).forEach(function(o) {{ add(_resolveKey(o.t, o.i, o.rel)); }});
+    }} else if (kind === "trial") {{
+      var pm = [];
+      String(item.result_pmids || "").split(";").forEach(function(s) {{ s = s.trim(); if (/^\\d+$/.test(s)) {{ add(_resolvePaper(s, "", "trial results paper")); pm.push(s); }} }});
+      String(item.reference_pmids || "").split(";").forEach(function(s) {{ s = s.trim(); if (/^\\d+$/.test(s) && pm.indexOf(s) === -1) add(_resolvePaper(s, "", "referenced paper")); }});
+      pm.forEach(function(s) {{ (ix.ppByPubPmid[s] || []).forEach(function(p) {{ add(_resolvePreprint(p, "preprint of a linked paper")); }}); }});
+      _manualFor("trial", item.nct_id).forEach(function(o) {{ add(_resolveKey(o.t, o.i, o.rel)); }});
+    }} else if (kind === "preprint") {{
+      var pubp = String(item.published_pmid || "").trim(), pubd = String(item.published_doi || "").trim().toLowerCase();
+      if (pubp || pubd) add(_resolvePaper(pubp, pubd, "published as"));
+      if (pubp) (ix.trialsByPmid[pubp] || []).forEach(function(x) {{ add(_resolveTrial(x.trial, "trial for the published paper")); }});
+      _manualFor("preprint", item.doi || item.id).forEach(function(o) {{ add(_resolveKey(o.t, o.i, o.rel)); }});
+    }}
+    return out;
+  }}
+  var _TYPE_LABEL = {{paper: "Paper", trial: "Trial", preprint: "Preprint"}};
+  var _TYPE_PLURAL = {{paper: ["paper", "papers"], preprint: ["preprint", "preprints"], trial: ["trial", "trials"]}};
+  // Collapsed by default: a one-line summary ("2 papers - 1 preprint") that expands to
+  // the full list, so cards stay compact while browsing many records.
+  function relatedSection(kind, item) {{
+    var items = relatedFor(kind, item);
+    if (!items.length) return null;
+    var counts = {{paper: 0, preprint: 0, trial: 0}};
+    items.forEach(function(it) {{ counts[it.type] = (counts[it.type] || 0) + 1; }});
+    var parts = [];
+    ["paper", "preprint", "trial"].forEach(function(t) {{
+      if (counts[t]) parts.push(counts[t] + " " + _TYPE_PLURAL[t][counts[t] === 1 ? 0 : 1]);
+    }});
+    var det = document.createElement("details"); det.className = "related";
+    var sum = document.createElement("summary"); sum.className = "related-h";
+    sum.appendChild(el("span", "related-h-lbl", "Related evidence"));
+    sum.appendChild(el("span", "related-h-count", parts.join(" \\u00b7 ")));
+    det.appendChild(sum);
+    var body = el("div", "related-body");
+    items.forEach(function(it) {{
+      var row = el("div", "related-row");
+      row.appendChild(el("span", "related-type rt-" + it.type, _TYPE_LABEL[it.type] || it.type));
+      var titleWrap = el("div", "related-main");
+      if (it.jump) {{
+        var bt = el("button", "related-title link", it.title); bt.type = "button";
+        bt.addEventListener("click", it.jump); titleWrap.appendChild(bt);
+      }} else {{
+        titleWrap.appendChild(el("span", "related-title", it.title));
+      }}
+      if (it.relation) titleWrap.appendChild(el("span", "related-rel", it.relation));
+      row.appendChild(titleWrap);
+      var ext = safeLink(it.extLabel || "Link", it.extUrl);
+      if (ext) {{ ext.className = "related-ext"; row.appendChild(ext); }}
+      body.appendChild(row);
+    }});
+    det.appendChild(body);
+    return det;
+  }}
   function renderTrials() {{
     if (!TRIALS.length) return;
     var q = (document.getElementById("trials-q").value || "").trim().toLowerCase();
@@ -4504,6 +4733,7 @@ _TEMPLATE = """<!DOCTYPE html>
   window.renderTrials = renderTrials;
   function renderTrialCard(t) {{
     var card = el("div", "trial-card" + (t.ongoing ? " ongoing" : ""));
+    if (t.nct_id) card.id = "trial-" + _cssId(String(t.nct_id).toUpperCase());
     card.appendChild(el("h3", null, t.brief_title || t.nct_id || "(untitled study)"));
     var meta = el("div", "meta");
     if (t.molecule_name) meta.appendChild(el("span", "pill", t.molecule_name));
@@ -4526,24 +4756,14 @@ _TEMPLATE = """<!DOCTYPE html>
     if (t.nct_id) grid.appendChild(el("div", "k", "Registry ID"));
     if (t.nct_id) grid.appendChild(el("div", "v", t.nct_id));
     card.appendChild(grid);
-    // Published results: PMIDs CT.gov links as RESULT/DERIVED publications for
-    // this trial. Each renders as a PubMed link via the vetted safeLink helper.
-    var resultPmids = String(t.result_pmids || "").split(";").map(function(s) {{
-      return s.trim();
-    }}).filter(function(s) {{ return /^\\d+$/.test(s); }});
-    if (resultPmids.length) {{
-      var pubs = el("div", "trial-pubs");
-      pubs.appendChild(el("span", "k", "Published results:"));
-      resultPmids.forEach(function(pmid) {{
-        var pa = safeLink("PMID " + pmid, PUBMED + encodeURIComponent(pmid) + "/");
-        if (pa) pubs.appendChild(pa);
-      }});
-      card.appendChild(pubs);
-    }}
     var links = el("div", "links");
     var link = safeLink("View on ClinicalTrials.gov", t.url);
     if (link) links.appendChild(link);
     if (links.childNodes.length) card.appendChild(links);
+    // Connected papers/preprints (from CT.gov PMIDs + manual links), each with a
+    // jump-to-card action when it lives in RetaBase.
+    var rel = relatedSection("trial", t);
+    if (rel) card.appendChild(rel);
     return card;
   }}
 
@@ -4600,23 +4820,34 @@ _TEMPLATE = """<!DOCTYPE html>
   window.renderPreprints = renderPreprints;
   function renderPreprintCard(p) {{
     var card = el("div", "pp-card");
+    var pid = p.doi || p.id;
+    if (pid) card.id = "pp-" + _cssId(String(pid).toLowerCase());
     card.appendChild(el("h3", null, p.title || "(untitled preprint)"));
     var meta = el("div", "meta");
+    // Always-visible status so a preprint is never mistaken for peer-reviewed evidence.
+    meta.appendChild(el("span", "pp-badge", "Preprint \\u00b7 not peer-reviewed"));
     if (p.molecule_name) meta.appendChild(el("span", "pill", p.molecule_name));
     if (p.server) meta.appendChild(el("span", "server-badge", p.server));
     if (p.date) meta.appendChild(el("span", "pill", p.date));
+    // If it's since been published, flag that inline (details are in Related, below).
+    if (p.published_pmid || p.published_doi) meta.appendChild(el("span", "pp-published", "\\u2713 published"));
     card.appendChild(meta);
     if (p.authors_short) card.appendChild(el("div", "authors", p.authors_short));
+    if (p.abstract) card.appendChild(el("div", "summary", p.abstract));
+    // Same facet tags papers carry (no rank/rigor -- preprints aren't peer-reviewed).
+    var tags = aspectTags(p, function(f, v) {{ showTab("evidence"); applyTagFilter(f, v); }});
+    if (tags.childNodes.length) card.appendChild(tags);
     var links = el("div", "links");
     var link = safeLink("Read preprint", p.url) ||
       (p.doi ? safeLink("DOI", "https://doi.org/" + encodeURIComponent(p.doi)) : null);
     if (link) links.appendChild(link);
-    // If url gave a link but a DOI also exists, surface DOI too.
     if (p.url && p.doi) {{
       var d = safeLink("DOI", "https://doi.org/" + encodeURIComponent(p.doi));
       if (d) links.appendChild(d);
     }}
     if (links.childNodes.length) card.appendChild(links);
+    var rel = relatedSection("preprint", p);
+    if (rel) card.appendChild(rel);
     return card;
   }}
 

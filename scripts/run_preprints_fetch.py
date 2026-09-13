@@ -86,7 +86,9 @@ def run(
             mol_id = m.get("molecule_id", "")
             mol_name = m.get("display_name", "")
             query = preprints_query(m)
-            payload, source = client.europepmc_search(query, page_size=page_size)
+            # "core" so results carry abstractText + commentCorrectionList (the
+            # published-version link), which normalize_preprint captures.
+            payload, source = client.europepmc_search(query, page_size=page_size, result_type="core")
             batch: List[dict] = []
             for result in europepmc_results(payload):
                 row = normalize_preprint(result, molecule_id=mol_id, molecule_name=mol_name)

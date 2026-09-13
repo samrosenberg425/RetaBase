@@ -166,6 +166,7 @@ def normalize_preprint(
     date = clean_text(result.get("firstPublicationDate", "")) or clean_text(
         result.get("firstIndexDate", "")
     )
+    published_pmid, published_doi = _published_version(result)
     return {
         "id": preprint_id(result),
         "molecule_id": clean_text(molecule_id),
@@ -176,7 +177,36 @@ def normalize_preprint(
         "date": date,
         "doi": doi,
         "url": preprint_url(doi, source, ext_id),
+        # From resultType=core (blank on a "lite" fetch): the abstract and, once the
+        # preprint has been published in a journal, the published article's PMID/DOI.
+        "abstract": clean_text(result.get("abstractText", "")),
+        "published_pmid": published_pmid,
+        "published_doi": published_doi,
     }
+
+
+def _published_version(result: Mapping[str, Any]) -> tuple[str, str]:
+    """Extract the published journal article's PMID/DOI for a preprint, if EuropePMC
+    records one. EuropePMC links a preprint to its published version via
+    ``commentCorrectionList`` (a comment/correction whose type names a published
+    version). Tolerant of shape: returns ("","") when no link is present."""
+    ccl = result.get("commentCorrectionList")
+    entries: list = []
+    if isinstance(ccl, Mapping):
+        cc = ccl.get("commentCorrection")
+        if isinstance(cc, list):
+            entries = [e for e in cc if isinstance(e, Mapping)]
+        elif isinstance(cc, Mapping):
+            entries = [cc]
+    for e in entries:
+        etype = clean_text(e.get("type", "")).lower()
+        # The preprint's record points at its published version with a type such as
+        # "Preprint of Publication" / "...published version...".
+        if "publi" in etype or "preprint of" in etype:
+            pmid = clean_text(e.get("id", "")) if clean_text(e.get("source", "")).upper() in {"MED", "PMC", ""} else ""
+            pmid = pmid if pmid.isdigit() else ""
+            return pmid, clean_text(e.get("doi", ""))
+    return "", ""
 
 
 def europepmc_results(payload: Optional[Mapping[str, Any]]) -> List[dict]:

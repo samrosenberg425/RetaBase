@@ -37,6 +37,7 @@ fi
 
 # 5) Offline sanity checks (no network needed): tests + a coverage report.
 echo "==> Running offline tests"
+python tests/test_ontology.py
 python tests/test_curation.py | tail -1
 python tests/test_extractors.py | tail -1
 python tests/test_site.py | tail -1

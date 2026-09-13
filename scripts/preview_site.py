@@ -342,20 +342,24 @@ VARIANTS = [
 
 def sample_trials():
     """A handful of registry trials so the Trials tab + filter sidebar can be tested."""
-    def t(nct, mol, mname, title, status, phase, stype, cond, interv, n, start, comp, sponsor, results, ongoing):
+    def t(nct, mol, mname, title, status, phase, stype, cond, interv, n, start, comp, sponsor, results, ongoing,
+          result_pmids="", reference_pmids=""):
         return {"nct_id": nct, "molecule_id": mol, "molecule_name": mname, "brief_title": title,
                 "overall_status": status, "phases": phase, "study_type": stype, "conditions": cond,
                 "interventions": interv, "enrollment_count": n, "start_date": start,
                 "primary_completion_date": comp, "completion_date": comp, "lead_sponsor": sponsor,
-                "has_results": results, "result_pmids": "", "reference_pmids": "",
+                "has_results": results, "result_pmids": result_pmids, "reference_pmids": reference_pmids,
                 "url": "https://clinicaltrials.gov/study/" + nct, "ongoing": ongoing}
+    # PMIDs below match the sample papers in sample_feed (retatrutide RCT = 40000002,
+    # systematic review = 40000004) so the cross-link "Related" sections are populated.
     return [
         t("NCT05000001", "retatrutide", "Retatrutide", "Retatrutide for Obesity (Phase 3, TRIUMPH-style)",
           "Recruiting", "Phase 3", "Interventional", "Obesity; Overweight", "Retatrutide; Placebo",
-          "600", "2024-02-01", "2026-12-01", "Demo Pharma", "", True),
+          "600", "2024-02-01", "2026-12-01", "Demo Pharma", "", True, reference_pmids="40000002"),
         t("NCT04000002", "retatrutide", "Retatrutide", "Retatrutide in Type 2 Diabetes",
           "Completed", "Phase 2", "Interventional", "Type 2 Diabetes", "Retatrutide; Placebo",
-          "281", "2021-05-01", "2023-04-01", "Demo Pharma", "True", False),
+          "281", "2021-05-01", "2023-04-01", "Demo Pharma", "True", False,
+          result_pmids="40000002", reference_pmids="40000004"),
         t("NCT05000003", "tirzepatide", "Tirzepatide", "Tirzepatide Cardiovascular Outcomes",
           "Active, not recruiting", "Phase 3", "Interventional", "Cardiovascular Disease; Obesity",
           "Tirzepatide; Placebo", "12000", "2022-09-01", "2027-06-01", "Demo Pharma", "", True),
@@ -368,6 +372,33 @@ def sample_trials():
         t("NCT05000006", "glutathione", "Glutathione", "Observational Glutathione Levels Study",
           "Enrolling by invitation", "N/A", "Observational", "Oxidative Stress", "None (observational)",
           "200", "2024-06-01", "2025-12-01", "Demo Labs", "", True),
+    ]
+
+
+def sample_preprints():
+    """Sample preprints so the Preprints tab shows the richer layout + cross-links.
+    The first is 'published as' the retatrutide RCT (pmid 40000002) to demo the link."""
+    return [
+        {"id": "10.1101/2026.01.15.987654", "molecule_id": "retatrutide", "molecule_name": "Retatrutide",
+         "title": "Retatrutide in type 2 diabetes: a randomized controlled trial (preprint)",
+         "authors_short": "Doe J; Smith A; Lee K et al.", "server": "medRxiv", "date": "2026-01-15",
+         "doi": "10.1101/2026.01.15.987654", "url": "https://doi.org/10.1101/2026.01.15.987654",
+         "abstract": "In this randomized controlled trial, retatrutide improved glycemic control and body "
+                     "weight versus placebo over 24 weeks in adults with type 2 diabetes. Findings are "
+                     "consistent with the incretin mechanism and support further phase 3 evaluation.",
+         "published_pmid": "40000002", "published_doi": "",
+         "facet_indication": "diabetes_glycemic; obesity_weight", "facet_endpoint": "glycemic_control; body_weight",
+         "facet_species": "human", "facet_study_type": "rct", "facet_model_system": "human",
+         "facet_route": "subcutaneous", "facet_drug_class": "glp1_agonist; gip_agonist; glucagon_agonist"},
+        {"id": "10.1101/2026.05.02.111222", "molecule_id": "retatrutide", "molecule_name": "Retatrutide",
+         "title": "Mechanisms of triple-incretin agonism in diet-induced obesity (preprint)",
+         "authors_short": "Ng P; Osei R", "server": "bioRxiv", "date": "2026-05-02",
+         "doi": "10.1101/2026.05.02.111222", "url": "https://doi.org/10.1101/2026.05.02.111222",
+         "abstract": "Using a mouse model, we characterize the mechanistic basis of combined GLP-1/GIP/glucagon "
+                     "receptor agonism on energy expenditure and hepatic lipid handling.",
+         "published_pmid": "", "published_doi": "",
+         "facet_indication": "obesity_weight", "facet_endpoint": "body_weight; mitochondrial_function",
+         "facet_species": "mouse", "facet_study_type": "in_vivo", "facet_model_system": "mouse"},
     ]
 
 
@@ -406,6 +437,8 @@ def _build_one(out_path: str, variant: str, tag_hovers: bool = True, feedback_ov
                 json.dump(sample_feed(), fh)
             with open(os.path.join(src, "trials_data.json"), "w", encoding="utf-8") as fh:
                 json.dump({"generated_utc": "2026-08-15T00:00:00Z", "trials": sample_trials()}, fh)
+            with open(os.path.join(src, "preprints_data.json"), "w", encoding="utf-8") as fh:
+                json.dump({"generated_utc": "2026-08-15T00:00:00Z", "preprints": sample_preprints()}, fh)
             _bps.build_site(src, outdir, mode="inline", variant=variant, tag_hovers=tag_hovers)
             shutil.copy(os.path.join(outdir, "index.html"), out_path)
     finally:

@@ -1426,10 +1426,12 @@ def run():
             pmid_html = fh.read()
         # PubMed base + safe href construction + guarded "Published results:" line.
         check("trials pubmed base present", "https://pubmed.ncbi.nlm.nih.gov/" in pmid_html)
-        check("trial pmid href uses encodeURIComponent(pmid)",
-              "PUBMED + encodeURIComponent(pmid)" in pmid_html)
-        check("Published results label present", "Published results:" in pmid_html)
-        check("trial pubs guarded on non-empty result_pmids", "if (resultPmids.length) {" in pmid_html)
+        check("pubmed href is encodeURIComponent-escaped",
+              "PUBMED + encodeURIComponent(rpmid)" in pmid_html)
+        check("related-evidence cross-link engine present",
+              "function relatedSection" in pmid_html and "Related evidence" in pmid_html)
+        check("trial result/reference pmids feed the cross-link engine",
+              "trialsByPmid" in pmid_html and "result_pmids" in pmid_html and "reference_pmids" in pmid_html)
         # result pmid inlined for the trial that has one; empty for the one without.
         check("result pmid inlined in data block", '"result_pmids":"37345678"' in pmid_html)
         check("no-result trial inlined as empty string", '"result_pmids":""' in pmid_html)
@@ -1437,6 +1439,18 @@ def run():
               'href="javascript:' not in pmid_html.lower())
         # _TEMPLATE.format() still renders (page built without KeyError/IndexError).
         check("trials page rendered via _TEMPLATE.format()", "<!DOCTYPE html>" in pmid_html)
+
+    # 21) Cross-links (papers <-> preprints <-> trials) + richer preprints.
+    check("connections config loader returns a list", isinstance(site._load_connections(), list))
+    check("connections passed to the client", "connections" in html_text and "var CONNECTIONS" in html_text)
+    check("cross-link engine + jump helpers present",
+          "function relatedFor" in html_text and "function connIndex" in html_text
+          and "function jumpToTrial" in html_text and "function jumpToPreprint" in html_text)
+    check("preprint fields carry published link + facets",
+          all(f in site.PREPRINT_FIELDS for f in ("published_pmid", "published_doi", "abstract", "facet_indication")))
+    check("preprint card shows not-peer-reviewed badge + connects", "pp-badge" in html_text and 'relatedSection("preprint"' in html_text)
+    check("manual connection edge is symmetric + type-guarded",
+          "_manualFor" in html_text and "paper" in html_text)
 
     print(f"\n{PASS} passed, {FAIL} failed")
     return 0 if FAIL == 0 else 1

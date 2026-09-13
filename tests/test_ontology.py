@@ -5,7 +5,7 @@ import sqlite3
 import sys
 import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from retarats_pipeline.curation.ontology import annotate, evidence_scope, synthesis_methods, validate
+from retarats_pipeline.curation.ontology import annotate, evidence_scope, synthesis_methods, validate, validate_records
 from retarats_pipeline.curation.facets import derive_facets
 from retarats_pipeline.curation.reliability import assess_reliability
 
@@ -112,6 +112,20 @@ class OntologyTests(unittest.TestCase):
         self.assertEqual(len({a['annotation_id'] for a in annotations}), len(annotations))
         self.assertTrue(all(a['source_text'] == r['title'] and a['review_status'] == 'machine_unreviewed' for a in annotations))
         self.assertEqual(json.loads(o['ontology_annotations']), annotations)
+
+    def test_export_rejects_unbacked_category(self):
+        r = self.row('Treatment in adults with obesity')
+        r.update(annotate(r)[0])
+        self.assertEqual(validate_records([r]), [])
+        r['facet_condition_studied'] += '; type_2_diabetes'
+        self.assertTrue(validate_records([r]))
+
+    def test_export_rejects_wrong_annotation_subject(self):
+        r = self.row('Treatment in adults with obesity')
+        o, a = annotate(r)
+        a[0]['evidence_id'] = 'another-paper'
+        r.update(o, ontology_annotations=json.dumps(a))
+        self.assertTrue(validate_records([r]))
 
 
 if __name__ == '__main__':

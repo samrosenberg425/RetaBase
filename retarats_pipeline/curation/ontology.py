@@ -80,6 +80,46 @@ def validate():
     return errors
 
 
+def validate_records(rows):
+    """Check the exported ontology contract without treating annotations as verified."""
+    by_id = {r["term_id"]: r for r in terms()}
+    errors = []
+    for row in rows:
+        if not row.get("ontology_version"):
+            continue  # Older exports remain readable.
+        eid = row.get("evidence_id", "")
+        if row["ontology_version"] != VERSION or row.get("evidence_scope") not in {"human", "nonclinical", "mixed", "unknown"}:
+            errors.append(eid + ": invalid ontology version/scope")
+        try:
+            annotations = json.loads(row.get("ontology_annotations") or "[]")
+        except (ValueError, TypeError):
+            errors.append(eid + ": invalid annotation JSON")
+            continue
+        if not isinstance(annotations, list):
+            errors.append(eid + ": annotations must be a list")
+            continue
+        expected = {axis: set() for axis in FACET_AXES}
+        seen = set()
+        for a in annotations:
+            if not isinstance(a, dict) or any(not a.get(k) for k in ANNOTATION_FIELDS):
+                errors.append(eid + ": incomplete annotation provenance")
+                continue
+            term = by_id.get(a["term_id"])
+            if term is None or a["evidence_id"] != eid or a["ontology_version"] != VERSION or a["annotation_id"] in seen:
+                errors.append(eid + ": invalid annotation identity")
+                continue
+            seen.add(a["annotation_id"])
+            if a["review_status"] != "machine_unreviewed":
+                errors.append(eid + ": unexpected automated review status")
+            if term["axis"] in expected:
+                expected[term["axis"]].add(term["value"])
+        for axis, values in expected.items():
+            actual = {v.strip() for v in str(row.get("facet_" + axis, "")).split(";") if v.strip()}
+            if actual != values:
+                errors.append(eid + ": unsupported facet_" + axis)
+    return errors
+
+
 def _pubtypes(evidence, paper):
     raw = paper.get("pubtypes") or evidence.get("pubtypes") or []
     return " ".join(raw) if isinstance(raw, list) else str(raw)

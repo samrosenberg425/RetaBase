@@ -26,6 +26,7 @@ import json
 import os
 import re
 import sqlite3
+import shutil
 import sys
 from collections import Counter, defaultdict
 from typing import Dict, Iterable, List
@@ -45,7 +46,7 @@ from retarats_pipeline.curation.publication_status import (
 )
 from retarats_pipeline.curation.ranking import RANK_FIELDS, compute_rank
 from retarats_pipeline.curation.reliability import RELIABILITY_FIELDS as _RELIABILITY_FIELDS, assess_reliability
-from retarats_pipeline.curation.ontology import FIELDS as ONTOLOGY_FIELDS, ANNOTATION_FIELDS, VERSION as ONTOLOGY_VERSION, annotate
+from retarats_pipeline.curation.ontology import FIELDS as ONTOLOGY_FIELDS, ANNOTATION_FIELDS, VERSION as ONTOLOGY_VERSION, CONFIG as ONTOLOGY_CONFIG, annotate
 
 # Paper fields we merge onto each evidence row (identity + links + text for facets).
 PAPER_MERGE_FIELDS = [
@@ -249,6 +250,11 @@ def build(db_path: str, out_dir: str, limit: int = 0) -> dict:
     curated_rows.sort(key=lambda r: ((_int(r.get("evidence_level_rank")) or 99), -_int(r.get("rank_score"))))
     _write_csv(os.path.join(out_dir, "curated_evidence.csv"), curated_rows, curated_cols)
     _write_csv(os.path.join(out_dir, "ontology_annotations.csv"), annotation_rows, ANNOTATION_FIELDS)
+    _write_csv(os.path.join(out_dir, "ontology_review_queue.csv"),
+               [r for r in curated_rows if r.get("ontology_review_reason")],
+               ["evidence_id", "pmid", "molecule_id", "title", "evidence_scope", "ontology_review_reason"])
+    for source, target in [("ONTOLOGY_TERMS.csv", "ontology_terms.csv"), ("ONTOLOGY_CROSSWALK.csv", "ontology_crosswalk.csv")]:
+        shutil.copyfile(ONTOLOGY_CONFIG / source, os.path.join(out_dir, target))
 
     # --- facets_long.csv ---
     _write_csv(
@@ -1014,7 +1020,7 @@ def _molecule_index(rows: List[dict], pubchem_by_mol: Dict[str, str] | None = No
             for c in str(r.get("facet_indication", "")).split("; "):
                 if c:
                     conditions[c] += 1
-        human = sum(1 for r in recs if _mtype(r) == "human")
+        human = sum(1 for r in recs if (r.get("evidence_scope") == "human" if r.get("ontology_version") else _mtype(r) == "human"))
         preclin = sum(1 for r in recs if _mtype(r) in {"animal", "in vitro"})
         reviews = sum(1 for r in recs if _mtype(r) == "review")
         max_rel = max((_int(r.get("reliability_score")) for r in recs), default=0)
@@ -1083,6 +1089,7 @@ def _write_schema(out_dir: str, curated_cols: List[str], required) -> None:
                 "primary_key": "annotation_id", "columns": ANNOTATION_FIELDS,
                 "purpose": "Source-supported machine annotations; review status is explicit. No outcome effect is inferred.",
             },
+            "ontology_review_queue": {"purpose": "Unresolved scope and contradictory legacy classifications; retained in the broad evidence map."},
             "curated_evidence": {
                 "primary_key": "evidence_id",
                 "columns": curated_cols,
