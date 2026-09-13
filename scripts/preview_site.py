@@ -34,6 +34,7 @@ _spec = importlib.util.spec_from_file_location(
 _bps = importlib.util.module_from_spec(_spec)
 sys.modules["build_public_site"] = _bps
 _spec.loader.exec_module(_bps)
+from retarats_pipeline.curation.ontology import annotate
 
 
 _HIER = {h["key"]: h for h in _bps._load_hierarchy()}
@@ -91,6 +92,10 @@ def _record(mol_id, mol_name, i, cls, section, human, animal, molec, **extra):
         "facet_all": f"{mol_name} {section}".lower(),
     }
     r.update(extra)
+    # Preview titles are synthetic; exercise the same ontology path as the corpus.
+    o, _ = annotate(dict(r, model_type="human" if human == 1 else "animal" if animal == 1 else "in vitro",
+                         primary_study_type=r["facet_study_type"].replace("_", " ")))
+    r.update(o)
     # Evidence-hierarchy level (so the L# badge + hierarchy-first sort work in preview).
     _lk = _level_key(cls, r.get("facet_study_type", ""))
     _h = _HIER.get(_lk, {"rank": 99, "label": "Other / unclear", "short": "Other"})

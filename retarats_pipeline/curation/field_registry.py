@@ -89,6 +89,10 @@ FIELDS: List[Field] = [
     # rate", "iCite citations"), so this populates those two rows.
     _F("icite_field_citation_rate"),
     _F("icite_citation_count"),
+    _F("ontology_version"), _F("evidence_scope"), _F("ontology_review_reason"),
+    _F("facet_condition_studied"), _F("facet_outcome_measured"),
+    _F("facet_research_area"), _F("facet_experimental_system"), _F("facet_synthesis_method"),
+    _F("ontology_annotations", detail=True),
 ]
 
 

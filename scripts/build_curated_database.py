@@ -45,6 +45,7 @@ from retarats_pipeline.curation.publication_status import (
 )
 from retarats_pipeline.curation.ranking import RANK_FIELDS, compute_rank
 from retarats_pipeline.curation.reliability import RELIABILITY_FIELDS as _RELIABILITY_FIELDS, assess_reliability
+from retarats_pipeline.curation.ontology import FIELDS as ONTOLOGY_FIELDS, ANNOTATION_FIELDS, VERSION as ONTOLOGY_VERSION, annotate
 
 # Paper fields we merge onto each evidence row (identity + links + text for facets).
 PAPER_MERGE_FIELDS = [
@@ -123,6 +124,7 @@ def build(db_path: str, out_dir: str, limit: int = 0) -> dict:
 
     curated_rows: List[dict] = []
     facets_long_rows: List[dict] = []
+    annotation_rows: List[dict] = []
     stats = {
         "processed": 0,
         "publication_status": Counter(),
@@ -184,6 +186,10 @@ def build(db_path: str, out_dir: str, limit: int = 0) -> dict:
         if refined["model_primary"] and refined["model_primary"] != model_type_norm:
             stats["model_disambiguation_changed"] += 1
 
+        ontology_fields, annotations = annotate(row, paper)
+        row.update(ontology_fields)
+        annotation_rows.extend(annotations)
+
         # 3) reliability: two-axis, section-appropriate (uses paper text + refined fields).
         rel = assess_reliability(row, paper)
         row.update(rel.to_dict())
@@ -235,12 +241,14 @@ def build(db_path: str, out_dir: str, limit: int = 0) -> dict:
         + RANK_FIELDS
         + APPRAISAL_FIELDS
         + REFINED_FIELDS
+        + ONTOLOGY_FIELDS
     )
     # Order everything by the EVIDENCE HIERARCHY first (rank 1 = top of the pyramid),
     # then best-first by the combined rank score WITHIN each level. This makes the
     # hierarchy the primary ordering while quality/impact only compare within a level.
     curated_rows.sort(key=lambda r: ((_int(r.get("evidence_level_rank")) or 99), -_int(r.get("rank_score"))))
     _write_csv(os.path.join(out_dir, "curated_evidence.csv"), curated_rows, curated_cols)
+    _write_csv(os.path.join(out_dir, "ontology_annotations.csv"), annotation_rows, ANNOTATION_FIELDS)
 
     # --- facets_long.csv ---
     _write_csv(
@@ -1065,11 +1073,16 @@ def _write_schema(out_dir: str, curated_cols: List[str], required) -> None:
 
     schema = {
         "version": 1,
+        "ontology_version": ONTOLOGY_VERSION,
         "generated_by": "build_curated_database.py",
         "backend_notes": "Flat tables; load curated_evidence + facets_long into Google Sheets now; "
                          "the same shape maps to Airtable (curated_evidence = main table, facets_long = "
                          "linked 'Facets' table keyed by evidence_id).",
         "tables": {
+            "ontology_annotations": {
+                "primary_key": "annotation_id", "columns": ANNOTATION_FIELDS,
+                "purpose": "Source-supported machine annotations; review status is explicit. No outcome effect is inferred.",
+            },
             "curated_evidence": {
                 "primary_key": "evidence_id",
                 "columns": curated_cols,
@@ -1080,8 +1093,8 @@ def _write_schema(out_dir: str, curated_cols: List[str], required) -> None:
                 "columns": ["evidence_id", "molecule_id", "facet_group", "facet_value", "facet_label", "facet_source"],
                 "purpose": "Long/tidy facet table for filtering (e.g. facet_group=species, facet_value=nonhuman_primate).",
             },
-            "public_records": {"purpose": "auto_publish_eligible subset for the public site."},
-            "review_queue": {"purpose": "Records awaiting human review before publishing."},
+            "public_records": {"purpose": "Featured and listed records for the public site."},
+            "review_queue": {"purpose": "Records requiring metadata review."},
             "molecule_index": {"primary_key": "molecule_id", "purpose": "Per-molecule rollup for profile pages."},
         },
         "facet_groups": list(FACET_GROUPS),

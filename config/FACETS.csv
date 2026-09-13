@@ -26,7 +26,7 @@ indication,aging_longevity,Aging / longevity,aging||ageing||longevity||lifespan|
 endpoint,body_weight,Body weight,body weight||weight loss||BMI||adiposity||fat mass,
 endpoint,glycemic_control,Glycemic control,HbA1c||fasting glucose||glycemic||glycaemic||insulin sensitivity||HOMA,
 endpoint,lipids,Lipids / metabolic,cholesterol||triglyceride||LDL||HDL||lipid profile,
-endpoint,liver_histology,Liver histology,fibrosis||steatosis||ALT||AST||liver enzyme,
+endpoint,liver_histology,Liver histology,liver histology||hepatic histology||histological fibrosis||histologic fibrosis||histological steatosis||histologic steatosis,"Tissue histology only; ALT/AST are liver enzyme measurements, not histology."
 endpoint,blood_pressure,Blood pressure,blood pressure||systolic||diastolic||hypertension,
 endpoint,inflammation_markers,Inflammation markers,CRP||TNF||IL-6||IL-1||cytokine||NF-?kB,
 endpoint,oxidative_stress,Oxidative stress,oxidative stress||ROS||glutathione||MDA||antioxidant||Nrf2,
@@ -76,4 +76,4 @@ formulation,nanoparticle,Nanoparticle / delivery,nanoparticle||liposome||lipid n
 evidence_direction,positive,Positive / beneficial,significantly improved||beneficial effect||reduced body weight||improved outcomes||efficacious||positive effect,
 evidence_direction,null,Null / no effect,no significant difference||no significant effect||did not improve||failed to||no effect observed||neutral effect,
 evidence_direction,mixed,Mixed,mixed results||mixed findings||inconsistent||heterogeneous effect||partial improvement,
-evidence_direction,adverse,Adverse / harmful,harmful||worsened||increased mortality||increased risk of||led to discontinuation||dose-limiting toxicity||toxic effect||deleterious||worse than,reflects stated finding direction; excludes routine "adverse events" safety-section mentions
+evidence_direction,adverse,Adverse / harmful,harmful||worsened||increased mortality||increased risk of||led to discontinuation||dose-limiting toxicity||toxic effect||deleterious||worse than,"reflects stated finding direction; excludes routine ""adverse events"" safety-section mentions"

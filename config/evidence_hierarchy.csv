@@ -13,3 +13,8 @@ level,key,label,short,definition
 12,preclinical_invivo,Preclinical — animal (in vivo),Animal,Done in living animals — an early step before human evidence.
 13,in_vitro,In vitro / mechanistic,Lab / cell,Done in cells or a test tube outside a living body — the earliest kind of evidence.
 14,other,Other / unclear,Other,Design not determined from the available information.
+12,synthesis_nonclinical,Nonclinical evidence synthesis,Nonclinical synthesis,A synthesis of nonhuman evidence; retains its preclinical scope regardless of pooling method.
+14,synthesis_mixed,Mixed human/nonclinical synthesis,Mixed synthesis,A synthesis spanning human and nonclinical evidence; inspect the relevant subset before clinical interpretation.
+14,synthesis_unknown,Evidence synthesis — scope unresolved,Synthesis scope unclear,A synthesis whose included population or experimental systems have not been established from available sources.
+14,mixed_evidence,Mixed human/nonclinical investigation,Mixed investigation,A report containing human and nonclinical work; separate the experiments before judging clinical applicability.
+14,nonclinical_design_conflict,Nonclinical scope — design needs review,Design conflict,A legacy human design label conflicts with the experimental scope; inspect the source before clinical interpretation.

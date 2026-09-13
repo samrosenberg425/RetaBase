@@ -50,6 +50,7 @@ from typing import Dict, List
 # add it to field_registry.FIELDS. `sys.path` is nudged so this works whether the
 # script is run from the repo root or imported by the test harness.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from retarats_pipeline.curation.ontology import terms as ontology_terms
 from retarats_pipeline.curation.field_registry import record_fields as _record_fields  # noqa: E402
 RECORD_FIELDS = _record_fields()
 
@@ -58,9 +59,15 @@ RECORD_FIELDS = _record_fields()
 FILTER_FACETS = [
     ("molecule_name", "Bioactive"),
     ("evidence_level_short", "Evidence level"),
+    ("evidence_scope", "Evidence scope"),
+    ("facet_research_area", "Research area"),
+    ("facet_condition_studied", "Studied condition · text-supported"),
+    ("facet_outcome_measured", "Measured outcome · text-supported"),
+    ("facet_experimental_system", "Experimental system"),
+    ("facet_synthesis_method", "Synthesis method"),
     ("facet_species", "Species"),
-    ("facet_indication", "Indication"),
-    ("facet_endpoint", "Endpoint"),
+    ("facet_indication", "Condition / use topics"),
+    ("facet_endpoint", "Outcome topics"),
     ("facet_study_type", "Study type"),
     ("facet_model_system", "Model system"),
     ("facet_route", "Route"),
@@ -81,6 +88,8 @@ FILTER_FACETS = [
 
 # Which facet fields are multi-valued (semicolon-joined) vs single-valued.
 MULTI_VALUE_FIELDS = {
+    "facet_research_area", "facet_condition_studied", "facet_outcome_measured",
+    "facet_experimental_system", "facet_synthesis_method",
     "facet_species", "facet_indication", "facet_endpoint", "facet_study_type",
     "facet_model_system", "facet_route",
     "facet_drug_class", "facet_population", "facet_sex", "facet_formulation",
@@ -645,6 +654,8 @@ def _load_glossary() -> dict:
                 val = (row.get("value") or "").strip()
                 if not ck or not val:
                     continue
+                if ck == "species" and val == "cell_line":
+                    continue
                 if ck not in index:
                     index[ck] = {"key": ck, "label": (row.get("category_label") or ck).strip(), "items": []}
                     cats.append(index[ck])
@@ -665,6 +676,8 @@ def _load_glossary() -> dict:
             for row in csv.DictReader(fh):
                 ck = (row.get("facet_group") or "").strip()
                 val = (row.get("facet_value") or "").strip()
+                if ck == "species" and val == "cell_line":
+                    continue
                 if ck not in _tag_groups or not val or (ck + "|" + val) in by_key:
                     continue
                 if ck not in index:
@@ -675,6 +688,16 @@ def _load_glossary() -> dict:
                 by_key[ck + "|" + val] = {"display": disp, "def": ""}
     except OSError:
         pass
+    for term in ontology_terms():
+        ck, val = term["axis"], term["value"]
+        if ck.startswith("legacy_"):
+            continue
+        if ck not in index:
+            index[ck] = {"key": ck, "label": ck.replace("_", " ").title(), "items": []}
+            cats.append(index[ck])
+        item = {"value": val, "display": term["label"], "def": term["definition"] + " " + term["exclusion_rule"]}
+        index[ck]["items"].append(item)
+        by_key[ck + "|" + val] = {"display": item["display"], "def": item["def"]}
     return {"categories": cats, "byKey": by_key}
 
 
@@ -1595,12 +1618,15 @@ _TEMPLATE = """<!DOCTYPE html>
   .sk-leg {{ display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text); }}
   .sk-chip {{ width: 11px; height: 11px; border-radius: 3px; flex: 0 0 auto; }}
   /* timeline: HTML columns + axis + partial-year note */
-  .tl-bars {{ display: flex; align-items: flex-end; gap: 4px; height: 150px; }}
-  .tl-cell {{ flex: 1 1 0; display: flex; align-items: flex-end; justify-content: center; height: 100%; }}
-  .tl-bar {{ width: 68%; min-width: 4px; border-radius: 3px 3px 0 0; }}
+  .tl-scroll {{ overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }}
+  .tl-scroll::-webkit-scrollbar {{ height: 6px; }}
+  .tl-scroll::-webkit-scrollbar-thumb {{ background: var(--border); border-radius: 3px; }}
+  .tl-bars {{ display: flex; align-items: flex-end; gap: 3px; height: 150px; }}
+  .tl-cell {{ flex: 1 0 16px; display: flex; align-items: flex-end; justify-content: center; height: 100%; }}
+  .tl-bar {{ width: 70%; min-width: 3px; border-radius: 3px 3px 0 0; }}
   .tl-bar.partial {{ background: transparent; border: 1.5px dashed var(--accent); }}
-  .tl-axis {{ display: flex; gap: 4px; margin-top: 6px; }}
-  .tl-axis-cell {{ flex: 1 1 0; text-align: center; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }}
+  .tl-axis {{ display: flex; gap: 3px; margin-top: 6px; }}
+  .tl-axis-cell {{ flex: 1 0 16px; text-align: center; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }}
   .tl-note {{ font-size: 12px; color: var(--muted); margin-top: 8px; }}
   @media (max-width: 820px) {{
     .estory {{ padding: 18px 16px; }}
@@ -2162,8 +2188,10 @@ _TEMPLATE = """<!DOCTYPE html>
   ]);
   var HUMAN_SECTIONS = new Set(["Human evidence", "Reviews and overviews"]);
   function isHuman(rec) {{
+    if (rec.evidence_class === "evidence_synthesis") return rec.evidence_scope === "human";
+    if (rec.evidence_scope && rec.evidence_scope !== "human") return false;
     return HUMAN_CLASSES.has(rec.evidence_class || "") ||
-           HUMAN_SECTIONS.has(rec.website_section || "");
+           rec.website_section === "Human evidence";
   }}
   // The base set the browser filters over, driven by the active tab.
   function baseRecords() {{
@@ -2330,6 +2358,8 @@ _TEMPLATE = """<!DOCTYPE html>
   // Underscores in facet tokens (obesity_weight) become spaces so natural queries
   // ("glycemic control") match. Cached on the record so filtering stays O(1)/record.
   var _HAY_FIELDS = ["title", "molecule_name", "appraisal_summary", "journal",
+    "facet_condition_studied", "facet_outcome_measured", "facet_research_area",
+    "facet_experimental_system", "facet_synthesis_method", "evidence_scope",
     "evidence_class_label", "facet_indication", "facet_endpoint", "facet_species",
     "facet_study_type", "facet_model_system", "facet_drug_class", "facet_population",
     "facet_sex", "facet_route", "facet_formulation", "facet_evidence_direction"];
@@ -3008,6 +3038,22 @@ _TEMPLATE = """<!DOCTYPE html>
     if (mci > 0) kv(grid, "Clinical influence", mci + " clinical article" + (mci === 1 ? "" : "s") + " citing");
     kv(grid, "Year", r.pub_year);
     kv(grid, "Evidence class", r.evidence_class_label);
+    kv(grid, "Evidence scope", pretty(r.evidence_scope || "unknown"));
+    kv(grid, "Classification review flags", pretty(r.ontology_review_reason || ""));
+    kv(grid, "Studied condition (text-supported)", pretty(r.facet_condition_studied || ""));
+    kv(grid, "Measured outcome (text-supported)", pretty(r.facet_outcome_measured || ""));
+    kv(grid, "Experimental system", pretty(r.facet_experimental_system || ""));
+    kv(grid, "Synthesis methods", pretty(r.facet_synthesis_method || ""));
+    var oa = [];
+    try {{ oa = JSON.parse(dval(r, "ontology_annotations") || "[]"); }} catch (e) {{ oa = []; }}
+    if (Array.isArray(oa) && oa.length) {{
+      var provenance = el("details");
+      provenance.appendChild(el("summary", null, "Category evidence · automated, not curator reviewed"));
+      oa.forEach(function(a) {{
+        provenance.appendChild(el("p", null, a.term_id + " (" + a.source_field + "): " + a.source_text));
+      }});
+      kvNode(grid, "Category evidence", provenance);
+    }}
     kv(grid, "Website section", r.website_section);
     kv(grid, "Publication", r.publication_status);
     kv(grid, "Dose", r.refined_dose);
@@ -3293,7 +3339,7 @@ _TEMPLATE = """<!DOCTYPE html>
   // The "Human-evidence first" preset front-loads human evidence: any human
   // evidence_class OR a record whose directness_tier is already "high".
   function isClinicalAnswer(r) {{
-    return HUMAN_CLASSES.has(r.evidence_class || "") || r.directness_tier === "high";
+    return isHuman(r);
   }}
   function presetSort(list, preset) {{
     function byRel(a, b) {{ return pnum(b.reliability_score) - pnum(a.reliability_score); }}
@@ -3513,6 +3559,7 @@ _TEMPLATE = """<!DOCTYPE html>
     "human_clinical_controlled", "human_clinical", "human_observational"
   ]);
   function safetyIsHuman(r) {{
+    if (r.evidence_scope && r.evidence_scope !== "human") return false;
     return (r.website_section || "") === "Human evidence" ||
            SAFETY_HUMAN_CLASSES.has(r.evidence_class || "");
   }}
@@ -4832,14 +4879,18 @@ _TEMPLATE = """<!DOCTYPE html>
     }});
     return wrap;
   }}
-  // Year histogram (HTML columns). Baseline only; the current calendar year is drawn
-  // dashed with a small note, so an incomplete year never reads as a decline.
+  // Year histogram (HTML columns) in a horizontal scroll strip: ALL years are shown at
+  // a readable column width; when they exceed the width the strip scrolls (and opens
+  // scrolled to the most recent, via renderCharts). Few years just stretch to fill.
+  // The current calendar year is dashed so an incomplete year never reads as a decline.
   function chartYear(rows, opts) {{
     opts = opts || {{}}; var C = chartColors();
-    var max = 1; rows.forEach(function(r) {{ if (r.value > max) max = r.value; }});
     var nowY = opts.nowYear || new Date().getFullYear();
-    var n = rows.length || 1, step = n > 12 ? Math.ceil(n / 10) : 1;
+    rows = rows.slice().sort(function(a, b) {{ return a.year - b.year; }});
+    var max = 1; rows.forEach(function(r) {{ if (r.value > max) max = r.value; }});
+    var n = rows.length, step = n > 28 ? 5 : Math.max(1, Math.ceil(n / 8));
     var wrap = el("div", "tl");
+    var scroll = el("div", "tl-scroll");
     var bars = el("div", "tl-bars"), axis = el("div", "tl-axis");
     rows.forEach(function(r, i) {{
       var partial = r.year >= nowY;
@@ -4849,12 +4900,14 @@ _TEMPLATE = """<!DOCTYPE html>
       if (!partial) bar.style.background = opts.color || C.accent;
       bar.title = r.year + ": " + fmtInt(r.value) + (partial ? " (partial \\u2014 still indexing)" : "");
       cell.appendChild(bar); bars.appendChild(cell);
-      var ac = el("div", "tl-axis-cell", (i === 0 || i === n - 1 || i % step === 0) ? String(r.year) : "");
-      axis.appendChild(ac);
+      // Always label the first, last, and the current year; otherwise every `step`th.
+      var showLbl = (i === 0 || i === n - 1 || partial || i % step === 0);
+      axis.appendChild(el("div", "tl-axis-cell", showLbl ? String(r.year) : ""));
     }});
-    wrap.appendChild(bars); wrap.appendChild(axis);
+    scroll.appendChild(bars); scroll.appendChild(axis);
+    wrap.appendChild(scroll);
     if (rows.some(function(r) {{ return r.year >= nowY; }}))
-      wrap.appendChild(el("div", "tl-note", nowY + " is partial \\u2014 still being indexed"));
+      wrap.appendChild(el("div", "tl-note", nowY + " is partial \\u2014 still being indexed \\u00b7 scroll for earlier years"));
     return wrap;
   }}
   // Build the editorial data stories. Every number + takeaway comes from corpusSummary.
@@ -4988,6 +5041,9 @@ _TEMPLATE = """<!DOCTYPE html>
       story.appendChild(foot);
       viz.appendChild(st.body);
       if (st.caption) viz.appendChild(el("div", "estory-caption", st.caption));
+      // A scrolling chart (the timeline) opens showing the most recent years.
+      var scroller = viz.querySelector(".tl-scroll");
+      if (scroller) requestAnimationFrame(function() {{ scroller.scrollLeft = scroller.scrollWidth; }});
       panel.setAttribute("aria-labelledby", "estab-" + idx);
       tabs.forEach(function(t, i) {{ var on = i === idx; t.className = "estory-tab" + (on ? " active" : "");
         t.setAttribute("aria-selected", on ? "true" : "false"); t.setAttribute("tabindex", on ? "0" : "-1"); }});

@@ -570,9 +570,9 @@ def run():
           EVIDENCE_HIERARCHY["systematic_review"]["rank"] < EVIDENCE_HIERARCHY["meta_analysis"]["rank"])
     check("meta-analysis outranks RCT", EVIDENCE_HIERARCHY["meta_analysis"]["rank"] < EVIDENCE_HIERARCHY["rct"]["rank"])
     check("RCT outranks case report", EVIDENCE_HIERARCHY["rct"]["rank"] < EVIDENCE_HIERARCHY["case_report"]["rank"])
-    check("meta-analysis pubtype detected", evidence_level({}, {"pubtypes": ["Meta-Analysis"]}) == "meta_analysis")
+    check("meta-analysis without population has unresolved scope", evidence_level({}, {"pubtypes": ["Meta-Analysis"]}) == "synthesis_unknown")
     check("systematic review beats co-tagged meta-analysis",
-          evidence_level({}, {"pubtypes": ["Systematic Review", "Meta-Analysis"]}) == "systematic_review")
+          evidence_level({}, {"pubtypes": ["Systematic Review", "Meta-Analysis"], "title": "Systematic review and meta-analysis of clinical trials in patients"}) == "systematic_review")
     check("RCT pubtype detected", evidence_level({}, {"pubtypes": ["Randomized Controlled Trial"]}) == "rct")
     check("case report pubtype detected", evidence_level({}, {"pubtypes": ["Case Reports"], "title": "a case report"}) == "case_report")
     check("guideline record carries its evidence level", g_rel.evidence_level_key == "clinical_practice_guideline")
