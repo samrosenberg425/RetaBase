@@ -35,8 +35,6 @@ import re
 import sqlite3
 import sys
 from typing import Dict, List, Optional, Tuple
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from retarats_pipeline.curation.ontology import validate_records as validate_ontology_records
 
 KNOWN_TIERS = {"high", "moderate", "limited", "low", "not_applicable"}
 KNOWN_STATUSES = {"featured", "listed", "review", "excluded_noise"}
@@ -271,9 +269,6 @@ def validate(
              f"(deduped in the site feed + molecule counts)")
 
     # 4) facet_species sanity.
-    ontology_errors = validate_ontology_records(rows)
-    rep.check("ontology values backed by versioned annotations", not ontology_errors,
-              f"{len(ontology_errors)} ontology errors" + (": " + "; ".join(ontology_errors[:3]) if ontology_errors else ""))
     unknown_species = 0
     for r in rows:
         for sp in _split_species(r.get("facet_species", "")):

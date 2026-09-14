@@ -1,6 +1,6 @@
 ## The short version
 
-RetaBase reads the published literature on each bioactive (the retatrutide-family molecules this database tracks) and puts the strongest, most human-relevant evidence first. It does this with a fixed, written rubric — no black-box model decides what ranks. Every **record** — a paper linked to a bioactive — carries three numbers you can inspect: where it sits on the **evidence pyramid** (its study design), how well it was **run** for its type (rigor), and how directly it applies to **people** (directness). A combined **rank** blends those three with how on-topic the paper is (relevance), how recent it is, how often it is cited, and how well-regarded its journal is, to order the feed.
+RetaBase reads the published literature on each bioactive (the retatrutide-family molecules this database tracks) and puts the strongest, most human-relevant evidence first. It does this with a fixed, written rubric — no black-box model decides what ranks. Every **record** — a single paper — carries three numbers you can inspect: where it sits on the **evidence pyramid** (its study design), how well it was **run** for its type (rigor), and how directly it applies to **people** (directness). A combined **rank** blends those three with how on-topic the paper is (relevance), how recent it is, how often it is cited, and how well-regarded its journal is, to order the feed.
 
 Read the numbers together. The evidence level tells you *what kind* of study it is; rigor tells you *how well* it was done; directness tells you *how relevant* it is to humans. A tidy lab study and a large clinical trial are never scored on the same curve.
 
@@ -10,7 +10,7 @@ Read the numbers together. The evidence level tells you *what kind* of study it 
 
 Not all study designs carry equal weight. RetaBase places every record on an evidence pyramid and orders the feed by that **level first**, then by the rank score **within** a level. So a case report never outranks a randomized trial in the default view, and rigor and impact only ever compare like with like.
 
-The clinical ordering runs from human evidence syntheses through practice guidelines, randomized trials, and observational designs. Nonclinical syntheses remain with nonclinical evidence; mixed investigations, mixed syntheses, and unresolved review scopes have separate groups. The Guide shows the full ordering. Systematic review and meta-analysis are compatible method tags even when one primary display level is selected.
+The pyramid runs, top to bottom, from systematic review down through meta-analysis, practice guideline, randomized trial, cohort, case-control, case series, case report, narrative review, and finally animal and in-vitro work. (That is the abbreviated walk; the full 14-level ladder — which adds non-randomized trials and cross-sectional studies — is drawn in the Guide.)
 
 The level is detected from the paper's PubMed publication type and shown as a level badge (for example "L4") on each card. You can switch the feed between *level-first* and *mixed* ordering, and filter to a single level, in the sidebar.
 
@@ -18,7 +18,7 @@ The level is detected from the paper's PubMed publication type and shown as a le
 
 The ladder follows established evidence hierarchies. For human studies it aligns with the Oxford Centre for Evidence-Based Medicine [2011 Levels of Evidence](https://www.cebm.net/wp-content/uploads/2014/06/CEBM-Levels-of-Evidence-2.1.pdf), where systematic reviews and randomized trials sit at the top for treatment questions. It extends the widely-taught [evidence pyramid](https://guides.library.ucdavis.edu/systematic-reviews/levels-of-evidence) downward to the animal and in-vitro tiers that clinical hierarchies leave out but which this database contains.
 
-This is a "where does the strongest evidence sit" shortcut based on study **design**. It is deliberately *not* a formal certainty rating like [GRADE](https://www.gradeworkinggroup.org/), which judges confidence in a specific effect after the relevant studies have been gathered and appraised. The display ordering lives in an editable config file (`config/evidence_hierarchy.csv`), so the ordering can be audited and adjusted.
+This is a "where does the strongest evidence sit" shortcut based on study **design**. It is deliberately *not* a formal certainty rating like [GRADE](https://www.gradeworkinggroup.org/), which judges confidence in a specific effect after the relevant studies have been gathered and appraised. The full 14-level ladder lives in an editable config file (`config/evidence_hierarchy.csv`), so the ordering can be audited and adjusted.
 
 :::
 
@@ -60,7 +60,7 @@ Base 40. Controls +12. **Orthogonal methods**: ≥3 techniques +14, 2 +8. Dose-r
 
 ## Directness — how relevant it is to people
 
-Directness (0–100) measures how directly a finding applies to humans, independent of how well the study was run. It is a heuristic based on evidence class and extracted population/system scope. It does not measure applicability to a specific clinical question. The values in the table below are the base for each class. For the preclinical, in-vitro, "methods/tool", and "other" classes only, a small bounded nudge from NIH iCite's translation-potential score (APT) can move the value up to +8 or down to −4 — enough to re-order records *within* a class, never enough to leapfrog human or synthesis evidence.
+Directness (0–100) measures how directly a finding applies to humans, independent of how well the study was run. It is set by evidence class, so it is predictable rather than a judgement call. The values in the table below are the base for each class. For the preclinical, in-vitro, "methods/tool", and "other" classes only, a small bounded nudge from NIH iCite's translation-potential score (APT) can move the value up to +8 or down to −4 — enough to re-order records *within* a class, never enough to leapfrog human or synthesis evidence.
 
 :::detail Show the directness score for every study type
 
@@ -68,10 +68,7 @@ Directness (0–100) measures how directly a finding applies to humans, independ
 | --- | --- |
 | Human — controlled trial (RCT) | 95 |
 | Clinical practice guideline | 92 |
-| Evidence synthesis with explicit human scope | 90 |
-| Nonclinical evidence synthesis | 45 |
-| Mixed evidence synthesis or unresolved human/nonclinical design conflict | 25 |
-| Evidence synthesis with unresolved scope | 22 |
+| Evidence synthesis (systematic review / meta-analysis) | 90 |
 | Human — interventional (non-RCT) | 80 |
 | Human — observational | 66 |
 | Preclinical (in vivo / animal) | 45 |
@@ -144,7 +141,7 @@ Every field is traceable to a public source, and each is refreshed by a schedule
 - **Papers, abstracts & publication types** — PubMed via the NCBI E-utilities. The publication type is what determines the evidence level.
 - **Citation impact** — the NIH [iCite](https://icite.od.nih.gov/) API (percentile, Relative Citation Ratio, and the clinical-article flag), with [OpenAlex](https://openalex.org/) as a fallback raw citation count.
 - **Trials** — [ClinicalTrials.gov](https://clinicaltrials.gov/).
-- **Preprints** — bioRxiv / medRxiv via [Europe PMC](https://europepmc.org/).
+- **Preprints** — bioRxiv / medRxiv via [Europe PMC](https://europepmc.org/) (which, unlike PubMed, indexes preprints and records the link to the published version). Once a preprint is published, that link is cross-checked against [Crossref](https://www.crossref.org/)'s `is-preprint-of` relation, with [OpenAlex](https://openalex.org/) as a fallback. Preprints carry no citation count of their own — they are not peer-reviewed; citation metrics appear on the published paper they link to.
 - **Regulatory status** — a curated table where every row carries its source and retrieval date, plus direct per-drug links into [DailyMed](https://dailymed.nlm.nih.gov/) (the FDA label) and [Drugs@FDA](https://www.accessdata.fda.gov/scripts/cder/daf/) (approvals).
 - **Chemical identity** — [PubChem](https://pubchem.ncbi.nlm.nih.gov/).
 - **Journal reputation (venue)** — a small curated allowlist of high-reputation biomedical journals, **not** a purchased impact factor; unknown journals get a neutral score and are never penalised.
@@ -160,14 +157,3 @@ Regulatory status varies by country and changes over time; every status shown ca
 ## Reproducibility & how to cite
 
 Every metric is rule-based, and the underlying feed and scoring code can be inspected and reproduced. The corpus fingerprint is a deterministic hash of the exact corpus composition, so a citation can name the version it saw; the full SQLite corpus is snapshotted weekly (compressed + SHA-256) as a release asset.
-
-
-## Categories and source evidence
-
-Research areas, studied conditions, measured outcomes, experimental systems, and synthesis methods are independent filters. Condition/use topics and outcome topics retain the older broad keyword tags. A topic mention does not establish that a condition was studied or an outcome measured.
-
-The text-supported condition and outcome fields use a limited, versioned vocabulary and conservative rules. Background mentions, exclusions, and possible future uses do not by themselves establish a studied condition. A blank field means no supported annotation was extracted; it does not mean the study omitted that topic or measurement. Numerical effects and benefit/harm conclusions are not inferred by this layer.
-
-Open a paper's Category evidence section to inspect the source passage for each new annotation. These annotations are automated and have not been verified by a human curator. The vocabulary supplies definitions, assignment criteria, and counterexamples. Mixed and unresolved scopes are retained in the overall evidence map, with review flags. The Human data view admits syntheses only when their included evidence has explicit human scope.
-
-The ontology development pilot contains 48 reports screened by Codex against their local titles and abstracts. It is a development sample, not independent validation, a formal risk-of-bias assessment, or a measurement of corpus-wide accuracy.

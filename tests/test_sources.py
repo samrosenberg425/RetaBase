@@ -17,11 +17,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from retarats_pipeline.enrichment.clients import ClinicalTrialsClient
 from retarats_pipeline.enrichment.registry import (
+    crossref_published_doi,
     europepmc_results,
     is_ongoing,
     molecule_query_terms,
     normalize_preprint,
     normalize_trial,
+    openalex_pmid_for,
     preprint_id,
     preprints_query,
     trial_url,
@@ -188,6 +190,25 @@ def run():
 
     check("preprint_id prefers doi", preprint_id({"doi": "10.1/X", "id": "PPR1"}) == "10.1/x")
     check("europepmc_results empty on junk", europepmc_results(None) == [] and europepmc_results({}) == [])
+
+    # --- preprint -> published-version cross-check (Crossref + OpenAlex) ---
+    cx = {"message": {"relation": {"is-preprint-of": [
+        {"id-type": "doi", "id": "10.1056/NEJMoa2026"}]}}}
+    check("crossref is-preprint-of -> published doi (lowercased)",
+          crossref_published_doi(cx) == "10.1056/nejmoa2026")
+    check("crossref no relation -> empty", crossref_published_doi({"message": {}}) == "")
+    check("crossref junk -> empty", crossref_published_doi(None) == "")
+    oa = {"ids": {"pmid": "https://pubmed.ncbi.nlm.nih.gov/40000002/", "doi": "https://doi.org/10.1056/x"}}
+    check("openalex ids -> pmid", openalex_pmid_for(oa) == "40000002")
+    check("openalex no ids -> empty", openalex_pmid_for({}) == "")
+    # EuropePMC core: abstract + published-version link captured by normalize_preprint.
+    core = {"id": "PPR55", "doi": "10.1101/2026.01.01.1", "title": "T", "source": "PPR",
+            "firstPublicationDate": "2026-01-01", "abstractText": "An abstract.",
+            "commentCorrectionList": {"commentCorrection": [
+                {"id": "40000002", "source": "MED", "type": "Preprint of Publication"}]}}
+    ppc = normalize_preprint(core, molecule_id="retatrutide", molecule_name="Retatrutide")
+    check("preprint captures abstract (core)", ppc["abstract"] == "An abstract.")
+    check("preprint captures published_pmid (core)", ppc["published_pmid"] == "40000002")
 
     # --- query builders ---
     mol = {"display_name": "Retatrutide", "synonyms_csv": "Retatrutide, LY-3437943, LY3437943"}

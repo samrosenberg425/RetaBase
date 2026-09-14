@@ -246,6 +246,16 @@ class IdentifierMetadataClient:
                 return n, f"openalex_pmid:{source}"
         return None, "openalex_not_found"
 
+    def openalex_by_doi(self, doi: str) -> Tuple[Optional[dict], str]:
+        """Fetch the full OpenAlex work for a DOI (for its ``ids`` block, e.g. the PMID).
+        Used to resolve a preprint's published DOI -> PMID and as a fallback
+        published-link signal. Returns (work_json, source)."""
+        doi = clean_text(doi)
+        if not doi:
+            return None, "empty_doi"
+        url = f"{OPENALEX_WORKS}/https://doi.org/{quote(doi, safe='')}"
+        return self.http.get_json("openalex_doi_work", doi, url, params={"mailto": self.config.contact_email})
+
     # Fields we ask the (keyless) Semantic Scholar Graph API to return.
     _S2_FIELDS = "citationCount,influentialCitationCount,venue,year,externalIds,authors.name,authors.authorId,authors.url"
 
