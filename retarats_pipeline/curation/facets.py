@@ -231,7 +231,6 @@ _MODEL_SYSTEM_MAP = {
     "human": ("human", "Human"),
     "animal": ("animal", "Animal / preclinical"),
     "in vitro": ("in_vitro", "In vitro / cell"),
-    "review": ("review", "Review / synthesis"),
     "unclear": ("unclear", "Unclear model"),
 }
 
@@ -262,6 +261,8 @@ def derive_facets(evidence: dict, paper: dict, facet_defs: Sequence[FacetDef] | 
     def add(group: str, value: str, label: str, source: str) -> None:
         if not value:
             return
+        if group == "species" and value == "cell_line":
+            return  # Ontology v1: a cell system is not a taxon.
         bucket = by_group.setdefault(group, {})
         if value not in bucket:  # first source wins for the label, but keep de-duped
             bucket[value] = label

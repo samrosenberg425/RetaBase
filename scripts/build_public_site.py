@@ -50,6 +50,7 @@ from typing import Dict, List
 # add it to field_registry.FIELDS. `sys.path` is nudged so this works whether the
 # script is run from the repo root or imported by the test harness.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from retarats_pipeline.curation.ontology import terms as ontology_terms
 from retarats_pipeline.curation.field_registry import record_fields as _record_fields  # noqa: E402
 RECORD_FIELDS = _record_fields()
 
@@ -58,9 +59,15 @@ RECORD_FIELDS = _record_fields()
 FILTER_FACETS = [
     ("molecule_name", "Bioactive"),
     ("evidence_level_short", "Evidence level"),
+    ("evidence_scope", "Evidence scope"),
+    ("facet_research_area", "Research area"),
+    ("facet_condition_studied", "Studied condition · text-supported"),
+    ("facet_outcome_measured", "Measured outcome · text-supported"),
+    ("facet_experimental_system", "Experimental system"),
+    ("facet_synthesis_method", "Synthesis method"),
     ("facet_species", "Species"),
-    ("facet_indication", "Indication"),
-    ("facet_endpoint", "Endpoint"),
+    ("facet_indication", "Condition / use topics"),
+    ("facet_endpoint", "Outcome topics"),
     ("facet_study_type", "Study type"),
     ("facet_model_system", "Model system"),
     ("facet_route", "Route"),
@@ -81,6 +88,8 @@ FILTER_FACETS = [
 
 # Which facet fields are multi-valued (semicolon-joined) vs single-valued.
 MULTI_VALUE_FIELDS = {
+    "facet_research_area", "facet_condition_studied", "facet_outcome_measured",
+    "facet_experimental_system", "facet_synthesis_method",
     "facet_species", "facet_indication", "facet_endpoint", "facet_study_type",
     "facet_model_system", "facet_route",
     "facet_drug_class", "facet_population", "facet_sex", "facet_formulation",
@@ -652,6 +661,8 @@ def _load_glossary() -> dict:
                 val = (row.get("value") or "").strip()
                 if not ck or not val:
                     continue
+                if ck == "species" and val == "cell_line":
+                    continue
                 if ck not in index:
                     index[ck] = {"key": ck, "label": (row.get("category_label") or ck).strip(), "items": []}
                     cats.append(index[ck])
@@ -672,6 +683,8 @@ def _load_glossary() -> dict:
             for row in csv.DictReader(fh):
                 ck = (row.get("facet_group") or "").strip()
                 val = (row.get("facet_value") or "").strip()
+                if ck == "species" and val == "cell_line":
+                    continue
                 if ck not in _tag_groups or not val or (ck + "|" + val) in by_key:
                     continue
                 if ck not in index:
@@ -682,6 +695,16 @@ def _load_glossary() -> dict:
                 by_key[ck + "|" + val] = {"display": disp, "def": ""}
     except OSError:
         pass
+    for term in ontology_terms():
+        ck, val = term["axis"], term["value"]
+        if ck.startswith("legacy_"):
+            continue
+        if ck not in index:
+            index[ck] = {"key": ck, "label": ck.replace("_", " ").title(), "items": []}
+            cats.append(index[ck])
+        item = {"value": val, "display": term["label"], "def": term["definition"] + " " + term["exclusion_rule"]}
+        index[ck]["items"].append(item)
+        by_key[ck + "|" + val] = {"display": item["display"], "def": item["def"]}
     return {"categories": cats, "byKey": by_key}
 
 
@@ -2229,8 +2252,10 @@ _TEMPLATE = """<!DOCTYPE html>
   ]);
   var HUMAN_SECTIONS = new Set(["Human evidence", "Reviews and overviews"]);
   function isHuman(rec) {{
+    if (rec.evidence_class === "evidence_synthesis") return rec.evidence_scope === "human";
+    if (rec.evidence_scope && rec.evidence_scope !== "human") return false;
     return HUMAN_CLASSES.has(rec.evidence_class || "") ||
-           HUMAN_SECTIONS.has(rec.website_section || "");
+           rec.website_section === "Human evidence";
   }}
   // The base set the browser filters over, driven by the active tab.
   function baseRecords() {{
@@ -2397,6 +2422,8 @@ _TEMPLATE = """<!DOCTYPE html>
   // Underscores in facet tokens (obesity_weight) become spaces so natural queries
   // ("glycemic control") match. Cached on the record so filtering stays O(1)/record.
   var _HAY_FIELDS = ["title", "molecule_name", "appraisal_summary", "journal",
+    "facet_condition_studied", "facet_outcome_measured", "facet_research_area",
+    "facet_experimental_system", "facet_synthesis_method", "evidence_scope",
     "evidence_class_label", "facet_indication", "facet_endpoint", "facet_species",
     "facet_study_type", "facet_model_system", "facet_drug_class", "facet_population",
     "facet_sex", "facet_route", "facet_formulation", "facet_evidence_direction"];
@@ -3075,6 +3102,22 @@ _TEMPLATE = """<!DOCTYPE html>
     if (mci > 0) kv(grid, "Clinical influence", mci + " clinical article" + (mci === 1 ? "" : "s") + " citing");
     kv(grid, "Year", r.pub_year);
     kv(grid, "Evidence class", r.evidence_class_label);
+    kv(grid, "Evidence scope", pretty(r.evidence_scope || "unknown"));
+    kv(grid, "Classification review flags", pretty(r.ontology_review_reason || ""));
+    kv(grid, "Studied condition (text-supported)", pretty(r.facet_condition_studied || ""));
+    kv(grid, "Measured outcome (text-supported)", pretty(r.facet_outcome_measured || ""));
+    kv(grid, "Experimental system", pretty(r.facet_experimental_system || ""));
+    kv(grid, "Synthesis methods", pretty(r.facet_synthesis_method || ""));
+    var oa = [];
+    try {{ oa = JSON.parse(dval(r, "ontology_annotations") || "[]"); }} catch (e) {{ oa = []; }}
+    if (Array.isArray(oa) && oa.length) {{
+      var provenance = el("details");
+      provenance.appendChild(el("summary", null, "Category evidence · automated, not curator reviewed"));
+      oa.forEach(function(a) {{
+        provenance.appendChild(el("p", null, a.term_id + " (" + a.source_field + "): " + a.source_text));
+      }});
+      kvNode(grid, "Category evidence", provenance);
+    }}
     kv(grid, "Website section", r.website_section);
     kv(grid, "Publication", r.publication_status);
     kv(grid, "Dose", r.refined_dose);
@@ -3362,7 +3405,7 @@ _TEMPLATE = """<!DOCTYPE html>
   // The "Human-evidence first" preset front-loads human evidence: any human
   // evidence_class OR a record whose directness_tier is already "high".
   function isClinicalAnswer(r) {{
-    return HUMAN_CLASSES.has(r.evidence_class || "") || r.directness_tier === "high";
+    return isHuman(r);
   }}
   function presetSort(list, preset) {{
     function byRel(a, b) {{ return pnum(b.reliability_score) - pnum(a.reliability_score); }}
@@ -3582,6 +3625,7 @@ _TEMPLATE = """<!DOCTYPE html>
     "human_clinical_controlled", "human_clinical", "human_observational"
   ]);
   function safetyIsHuman(r) {{
+    if (r.evidence_scope && r.evidence_scope !== "human") return false;
     return (r.website_section || "") === "Human evidence" ||
            SAFETY_HUMAN_CLASSES.has(r.evidence_class || "");
   }}

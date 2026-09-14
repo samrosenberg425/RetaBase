@@ -8,6 +8,9 @@ Exit code 0 = all good, 1 = a file failed to parse or has the wrong columns.
 """
 
 import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from retarats_pipeline.curation.ontology import validate as validate_ontology
 
 import pandas as pd
 
@@ -21,6 +24,16 @@ CHECKS = [
 
 def main() -> None:
     ok = True
+    try:
+        errors = validate_ontology()
+        for error in errors:
+            print("FAIL  ontology: " + error)
+        ok = not errors
+        if ok:
+            print("OK    ontology vocabulary, rules and crosswalk")
+    except Exception as exc:
+        print("FAIL  ontology: " + str(exc))
+        ok = False
     for path, expected_cols in CHECKS:
         try:
             df = pd.read_csv(path)

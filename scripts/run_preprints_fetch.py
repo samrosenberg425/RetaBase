@@ -32,11 +32,9 @@ from retarats_pipeline.enrichment.common import (
     utc_now_iso,
 )
 from retarats_pipeline.enrichment.registry import (
-    crossref_published_doi,
     europepmc_results,
     load_active_molecules,
     normalize_preprint,
-    openalex_pmid_for,
     preprints_query,
 )
 
@@ -53,40 +51,6 @@ def _existing_ids(db_path: str) -> Set[str]:
     finally:
         conn.close()
     return {str(r.get("id", "")) for r in rows if r.get("id")}
-
-
-def _enrich_published_link(row: dict, client) -> None:
-    """Fill a preprint's published-version link from Crossref (primary cross-check) +
-    OpenAlex (fallback), on top of whatever EuropePMC already provided. Order:
-      1. EuropePMC (already on the row from normalize_preprint) wins if present.
-      2. Crossref `is-preprint-of` -> published DOI (registry-level source of truth).
-      3. OpenAlex on the preprint DOI -> a PMID (OpenAlex merges preprint+published,
-         so a PMID usually signals it's been published) as a last resort.
-      4. If we have a published DOI but no PMID, resolve DOI -> PMID via OpenAlex.
-    All network calls are best-effort and swallow errors, so a source being down never
-    breaks the fetch."""
-    doi = str(row.get("doi", "") or "").strip()
-    if not doi:
-        return
-    try:
-        if not row.get("published_doi"):
-            cx, _ = client.crossref_by_doi(doi)
-            pub = crossref_published_doi(cx)
-            if pub:
-                row["published_doi"] = pub
-        if not row.get("published_pmid"):
-            if row.get("published_doi"):
-                oa, _ = client.openalex_by_doi(row["published_doi"])
-                pm = openalex_pmid_for(oa)
-                if pm:
-                    row["published_pmid"] = pm
-            else:
-                oa, _ = client.openalex_by_doi(doi)  # merged preprint+published -> PMID
-                pm = openalex_pmid_for(oa)
-                if pm:
-                    row["published_pmid"] = pm
-    except Exception:  # noqa: BLE001 -- enrichment is additive; never fail the fetch
-        pass
 
 
 def run(
@@ -135,7 +99,6 @@ def run(
                     skipped += 1
                     continue
                 seen_this_run.add(pid)
-                _enrich_published_link(row, client)
                 row["enriched_at_utc"] = utc_now_iso()
                 batch.append(row)
             if batch:

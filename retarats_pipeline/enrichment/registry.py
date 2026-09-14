@@ -12,7 +12,6 @@ call these normalizers on the parsed payloads.
 from __future__ import annotations
 
 import csv
-import re
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
@@ -184,38 +183,6 @@ def normalize_preprint(
         "published_pmid": published_pmid,
         "published_doi": published_doi,
     }
-
-
-def crossref_published_doi(work: Optional[Mapping[str, Any]]) -> str:
-    """Published article's DOI for a preprint, from a Crossref work fetched by the
-    preprint's DOI. Crossref records the canonical link as a ``relation`` of type
-    ``is-preprint-of``. Returns "" when absent. Pure -> unit-testable offline."""
-    if not isinstance(work, Mapping):
-        return ""
-    msg = work.get("message")
-    rel = msg.get("relation") if isinstance(msg, Mapping) else None
-    if isinstance(rel, Mapping):
-        items = rel.get("is-preprint-of")
-        if isinstance(items, list):
-            for it in items:
-                if isinstance(it, Mapping) and clean_text(it.get("id-type", "")).lower() == "doi":
-                    d = clean_text(it.get("id", ""))
-                    if d:
-                        return d.lower()
-    return ""
-
-
-def openalex_pmid_for(work: Optional[Mapping[str, Any]]) -> str:
-    """PMID from an OpenAlex work's ``ids`` block (OpenAlex stores it as a PubMed URL).
-    Used to resolve a published DOI -> PMID, and as a fallback published-link signal
-    (OpenAlex merges a preprint with its journal version, so a PMID on the preprint's
-    work usually means it has been published). Returns "" when absent."""
-    if not isinstance(work, Mapping):
-        return ""
-    ids = work.get("ids")
-    pm = clean_text(ids.get("pmid", "")) if isinstance(ids, Mapping) else ""
-    m = re.search(r"(\d+)", pm)
-    return m.group(1) if m else ""
 
 
 def _published_version(result: Mapping[str, Any]) -> tuple[str, str]:

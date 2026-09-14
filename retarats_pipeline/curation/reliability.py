@@ -38,6 +38,7 @@ import os
 import re
 from dataclasses import asdict, dataclass, field
 from typing import Dict, List, Optional, Tuple
+from .ontology import evidence_scope, synthesis_methods, is_narrative_review
 
 _MISSING = {"", "na", "n/a", "none", "null", "nan", "not reported", "not clearly reported", "unclear", "unknown", "nr"}
 
@@ -346,6 +347,19 @@ def evidence_level(evidence: dict, paper: Optional[dict] = None, cls: Optional[s
         cls = classify_evidence(evidence)
     if is_guideline(evidence, paper):
         return "clinical_practice_guideline"
+    if cls == "human_clinical" and re.search(r"\bnon[- ]randomi[sz]ed\b", title):
+        return "nonrandomized_trial"
+    if cls == "in_vitro" and evidence_scope(evidence, paper) == "nonclinical":
+        return "in_vitro"
+    methods = synthesis_methods(evidence, paper)
+    if methods or cls == "evidence_synthesis":
+        scope = evidence_scope(evidence, paper)
+        if scope != "human":
+            return {"nonclinical": "synthesis_nonclinical", "mixed": "synthesis_mixed"}.get(scope, "synthesis_unknown")
+    elif evidence_scope(evidence, paper) == "nonclinical" and cls in {"human_clinical_controlled", "human_clinical", "human_observational"}:
+        return "nonclinical_design_conflict"
+    elif evidence_scope(evidence, paper) == "mixed":
+        return "mixed_evidence"
     # Synthesis: systematic review outranks meta-analysis (per house ordering); a paper
     # tagged both counts as a systematic review.
     if "systematic review" in pt or "systematic review" in title:
@@ -575,6 +589,19 @@ def _directness_tier(score: int) -> str:
 
 def assess_reliability(evidence: dict, paper: Optional[dict] = None) -> Reliability:
     cls = classify_evidence(evidence)
+    if cls != "off_topic" and synthesis_methods(evidence, paper):
+        cls = "evidence_synthesis"
+    elif cls != "off_topic" and is_narrative_review(evidence, paper):
+        cls = "narrative_review"
+    scope = evidence_scope(evidence, paper)
+    title = str((paper or {}).get("title") or evidence.get("title") or "")
+    if cls == "human_clinical_controlled" and re.search(r"\bnon[- ]randomi[sz]ed\b", title, re.I):
+        cls = "human_clinical"
+    # An explicit cell-system title overrides an inherited coarse human label.
+    if cls in {"human_clinical_controlled", "human_clinical", "human_observational"} and scope == "nonclinical":
+        title = str((paper or {}).get("title") or evidence.get("title") or "")
+        if re.search(r"\b(?:in vitro|cell[- ]free|cell lines?|cell culture|organoids?|primary cells|in silico)\b", title, re.I):
+            cls = "in_vitro"
     text = _blob(evidence, paper)
     # Evidence-hierarchy level (the pyramid). Computed once and attached to every path.
     _lk = evidence_level(evidence, paper, cls)
@@ -635,6 +662,12 @@ def assess_reliability(evidence: dict, paper: Optional[dict] = None) -> Reliabil
         score, comps = 30, {"design": 30}
 
     directness = CLASS_DIRECTNESS.get(cls, 20)
+    if scope == "mixed" and cls in {"human_clinical_controlled", "human_clinical", "human_observational"}:
+        directness = 25  # Resolve the human experiment before a clinical interpretation.
+    if scope == "nonclinical" and cls in {"human_clinical_controlled", "human_clinical", "human_observational"}:
+        directness = 25  # Conflicting classifications require review, not a human-evidence boost.
+    if cls == "evidence_synthesis":
+        directness = {"human": 90, "nonclinical": 45, "mixed": 25, "unknown": 22}[scope]
     directness = _apt_adjust(directness, cls, evidence)  # no-op when APT absent
     rationale = _rationale(cls, comps, directness)
     return Reliability(
