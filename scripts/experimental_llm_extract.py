@@ -25,6 +25,18 @@ Backends
 
 Offline plumbing check: `--mock` returns a canned response so the sampling,
 comparison, and report generation can be exercised without any model or network.
+
+ISOLATION POLICY
+----------------
+This script is isolated experimental research tooling.
+
+Production retrieval, classification, evidence grading, ranking, site generation,
+and GitHub Actions must not import, invoke, or depend on this script or on an LLM SDK.
+
+Any future LLM-derived annotation must be stored separately with explicit provenance
+(e.g. extraction_method="llm:<model>@<date>"). It must not overwrite or silently
+replace deterministic rule-derived values and must not feed rank, rigor, or
+directness.
 """
 
 from __future__ import annotations

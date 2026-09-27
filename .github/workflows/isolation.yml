@@ -1,0 +1,25 @@
+name: LLM isolation policy
+
+# Fails if production code or workflows import an LLM SDK or import/invoke the
+# experimental LLM tool. Stdlib-only test, no dependencies to install. The other
+# workflows run only on a schedule or on demand, so this one runs on every push
+# and pull request.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Enforce LLM isolation policy (incl. negative test)
+        run: python3 tests/test_llm_isolation.py
