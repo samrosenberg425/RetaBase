@@ -49,6 +49,17 @@ from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from retarats_pipeline.release_validation import DEFAULT_MAX_DROP, RELEASE_ID_RE, site_counts, validate_release
 
+
+def _rules_version() -> str:
+    """Best-effort scientific-retrieval-rules fingerprint (WS4). Metadata only --
+    never blocks promotion, so a broken/missing config doesn't fail the writer."""
+    try:
+        from retarats_pipeline.rules_version import compute_rules_version
+        return compute_rules_version()
+    except Exception:
+        return ""
+
+
 MANIFEST_SCHEMA = 1
 STORE_TAG = "corpus-store"
 POINTER_NAME = "last-good.json"
@@ -720,6 +731,7 @@ def promote(store: Store, work_dir: str, site_dir: str, release_id: str, cache_d
         "base_release_id": marker.get("base_release_id"),
         "bootstrap": bool(marker.get("bootstrap")),
         "corpus_fingerprint": logical_fingerprint(work_dir),
+        "rules_version": _rules_version(),
         "files": entries,
         "counts": counts_from_entries(entries),
         "site": site_counts(vres),

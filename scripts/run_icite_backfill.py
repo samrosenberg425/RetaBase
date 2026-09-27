@@ -8,7 +8,16 @@ these fields (staged separately, so this enrichment is safe to run on its own).
 
 Resumable: skips papers that already have iCite data; saves after fetching.
 
+WS4 freshness policy: daily runs (the default -- missing-only) top up NEW papers;
+``--refresh-older-than-days N`` additionally re-enriches papers whose iCite data
+is older than N days, oldest-first, so the FULL corpus rotates through a refresh
+on roughly a weekly cadence (citation counts/RCR are not static -- a paper's
+metrics keep changing after it's first enriched). A refresh attempt that gets no
+usable iCite record back leaves the paper's existing values untouched (see
+``got_any`` below) -- an upstream hiccup never erases previously-fetched data.
+
     python3 scripts/run_icite_backfill.py --db data/retarats_pubmed.sqlite --newest-first --max-records 20000
+    python3 scripts/run_icite_backfill.py --db data/retarats_pubmed.sqlite --refresh-older-than-days 6 --all
 
 NETWORK REQUIRED (icite.od.nih.gov) -> run on your machine or the Actions runner.
 """
@@ -19,6 +28,8 @@ import argparse
 import os
 import sqlite3
 import sys
+from datetime import datetime, timezone
+from typing import List, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -79,23 +90,62 @@ def _year(p: dict) -> int:
         return 0
 
 
+def _icite_age_days(p: dict, now: Optional[datetime] = None) -> Optional[float]:
+    """Days since this paper's iCite data was last refreshed, or None if it has
+    never been enriched (handled separately by ``_needs``)."""
+    stamp = p.get("icite_updated_utc")
+    if not stamp:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    now = now or datetime.now(timezone.utc)
+    return (now - dt).total_seconds() / 86400.0
+
+
+def _stale(p: dict, refresh_older_than_days: float, now: Optional[datetime] = None) -> bool:
+    """A paper that already has iCite data is due for a refresh once it's older
+    than the cutoff -- this is what makes the weekly job re-check the corpus
+    that the daily (missing-only) job never touches again."""
+    age = _icite_age_days(p, now)
+    return age is not None and age >= refresh_older_than_days
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Enrich corpus with NIH iCite metrics.")
     ap.add_argument("--db", default="data/retarats_pubmed.sqlite")
     ap.add_argument("--max-records", type=int, default=20000, help="Max papers to enrich this run.")
     ap.add_argument("--all", action="store_true", help="Enrich every missing paper (resumable).")
     ap.add_argument("--newest-first", action="store_true", help="Prioritize recent papers.")
+    ap.add_argument("--refresh-older-than-days", type=float, default=0,
+                    help="Also re-enrich papers whose iCite data is older than this many days "
+                         "(oldest-first), not just genuinely missing ones. 0 = off (daily default).")
     ap.add_argument("--batch-size", type=int, default=200, help="PMIDs per iCite request.")
     args = ap.parse_args()
 
     conn = sqlite3.connect(args.db)
     papers = load_payload_table(conn, "papers")
+    now = datetime.now(timezone.utc)
     missing = [p for p in papers if _needs(p) and str(p.get("pmid", "")).strip().isdigit()]
     if args.newest_first:
         missing.sort(key=_year, reverse=True)
     print(f"Papers: {len(papers)}; with iCite: {len(papers) - len(missing)}; missing: {len(missing)}")
 
-    work = missing if args.all else missing[: args.max_records]
+    stale: List[dict] = []
+    if args.refresh_older_than_days > 0:
+        missing_pmids = {p.get("pmid") for p in missing}
+        stale = [p for p in papers if p.get("pmid") not in missing_pmids and str(p.get("pmid", "")).strip().isdigit()
+                and _stale(p, args.refresh_older_than_days, now)]
+        # Oldest-refreshed first, so a bounded --max-records rotates through the
+        # WHOLE corpus over successive weekly runs rather than always hitting the
+        # same subset.
+        stale.sort(key=lambda p: _icite_age_days(p, now) or 0, reverse=True)
+        if stale:
+            print(f"Also refreshing {len(stale)} paper(s) with iCite data older than "
+                  f"{args.refresh_older_than_days:g} day(s).")
+
+    work = (missing + stale) if args.all else (missing + stale)[: args.max_records]
     if not work:
         print("Nothing to enrich.")
         conn.close()

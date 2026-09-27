@@ -78,8 +78,14 @@ def main() -> int:
 
     with open(os.path.join(curated, "site_data.json"), encoding="utf-8") as fh:
         fp = (json.load(fh).get("corpus_stats") or {}).get("corpus_fingerprint", "")
+    try:
+        from retarats_pipeline.rules_version import compute_rules_version
+        rules_version = compute_rules_version()
+    except Exception:
+        rules_version = ""
     status = sp.build_status(rid, os.path.join(work, "source_status.json"),
-                             build_sha=os.environ.get("GITHUB_SHA", "")[:7] or "local", corpus_fingerprint=fp)
+                             build_sha=os.environ.get("GITHUB_SHA", "")[:7] or "local", corpus_fingerprint=fp,
+                             rules_version=rules_version)
     sp.write_status(os.path.join(site, "status.json"), status)
     for line in sp.summary_lines(status):
         print(line)

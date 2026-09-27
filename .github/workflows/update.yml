@@ -100,24 +100,73 @@ jobs:
       # policy: config/source_policy.csv). Fetch steps keep "a source hiccup must not block
       # a publish" semantics: the failure is recorded + surfaced in status.json, and the data
       # already in the corpus (last-good) still deploys.
-      - name: Incremental PubMed fetch (last 8 days)
+      # WS4: datetype=edat (Entrez/indexing date, not pdat) + a 14-day window, both
+      # driven by config/pubmed_discovery.json. Live measurement (docs/retrieval_benchmark_review.md,
+      # local-only) across 8 sampled molecules found edat catching genuine on-topic
+      # PMIDs that pdat missed entirely at the same window, with zero cases of pdat
+      # catching something edat missed; an independent review confirmed 4 of those
+      # 5 edat-only PMIDs as true permanent pdat misses (indexing lagged the nominal
+      # pub date past the daily window). Existing evidence_id dedup makes the wider
+      # window free (already-seen records skipped).
+      - name: Incremental PubMed fetch (edat, 14-day window)
         env:
           NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
           NCBI_EMAIL: ${{ secrets.NCBI_EMAIL }}
           API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
         run: |
           rc=0
-          python3 retarats_v2.py --config-mode local --mode daily --daily-days 8 \
+          python3 retarats_v2.py --config-mode local --mode daily --daily-days 14 --datetype edat \
             --summary-mode rule_based --sinks local \
             --local-db work/retarats_pubmed.sqlite --state-db work/retarats_state.sqlite || rc=$?
           python3 scripts/record_source_run.py --state work/source_status.json --source pubmed_daily --exit-code "$rc"
 
+      # WS4 weekly re-sweep: on Mondays (UTC), also (a) re-run each rule over the
+      # current + previous year (datetype=edat) to catch anything the daily window
+      # still missed -- existing dedup makes already-known records free -- and
+      # (b) refresh known PMIDs that PubMed now flags as retracted/erratum'd.
+      # Gated inside the SAME writer job (not a separate workflow) so it shares this
+      # job's single restore/build/promote, rather than needing its own corpus lock.
+      - name: "WS4: weekly PubMed re-sweep (current + previous year, edat) + retraction/erratum refresh"
+        if: ${{ github.event_name == 'schedule' }}
+        env:
+          NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+          NCBI_EMAIL: ${{ secrets.NCBI_EMAIL }}
+          API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
+        run: |
+          if [ "$(date -u +%u)" = "1" ]; then
+            resweep_rc=0
+            RESWEEP_START_YEAR=$(( $(date -u +%Y) - 1 ))
+            python3 retarats_v2.py --config-mode local --mode backfill --datetype edat \
+              --start-year "$RESWEEP_START_YEAR" \
+              --summary-mode rule_based --sinks local \
+              --local-db work/retarats_pubmed.sqlite --state-db work/retarats_state.sqlite || resweep_rc=$?
+
+            retraction_rc=0
+            python3 scripts/run_retraction_refresh.py --db work/retarats_pubmed.sqlite \
+              --molecules config/MOLECULES.csv --retrieval-out work/retraction_refresh.json || retraction_rc=$?
+
+            rc=0
+            err=""
+            if [ "$resweep_rc" != "0" ]; then rc=1; err="resweep exited $resweep_rc"; fi
+            if [ "$retraction_rc" != "0" ]; then rc=1; err="${err:+$err; }retraction refresh exited $retraction_rc"; fi
+            RETRIEVAL_JSON=$(cat work/retraction_refresh.json 2>/dev/null || echo '{}')
+            python3 scripts/record_source_run.py --state work/source_status.json --source pubmed_resweep_retractions \
+              --exit-code "$rc" --error "$err" --retrieval-json "$RETRIEVAL_JSON"
+          else
+            echo "Not Monday UTC; skipping the weekly re-sweep this run."
+          fi
+
+      # WS4: --rolling-refresh re-queries OpenAlex (only) for the oldest-dated
+      # already-filled values every day, so citation counts keep climbing instead
+      # of freezing at their first value. Semantic Scholar stays fill-only (never
+      # rolling-refreshed) -- it is only tried when OpenAlex has nothing.
       - name: Backfill citation counts (OpenAlex, impact axis)
         env:
           API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
         run: |
           rc=0
-          python3 scripts/run_impact_backfill.py --db work/retarats_pubmed.sqlite --newest-first --max-records 8000 || rc=$?
+          python3 scripts/run_impact_backfill.py --db work/retarats_pubmed.sqlite --newest-first --max-records 8000 \
+            --rolling-refresh 2000 || rc=$?
           python3 scripts/record_source_run.py --state work/source_status.json --source openalex --exit-code "$rc"
 
       - name: Enrich with NIH iCite metrics
@@ -125,6 +174,21 @@ jobs:
           rc=0
           python3 scripts/run_icite_backfill.py --db work/retarats_pubmed.sqlite --newest-first --max-records 20000 || rc=$?
           python3 scripts/record_source_run.py --state work/source_status.json --source icite --exit-code "$rc"
+
+      # WS4: iCite policy is "full corpus approximately weekly" (daily above only
+      # tops up genuinely missing papers). On Mondays, also refresh every paper
+      # whose iCite data is 6+ days old, oldest-first, uncapped (--all) so the
+      # whole corpus rotates through in one run.
+      - name: "WS4: weekly full-corpus iCite refresh"
+        if: ${{ github.event_name == 'schedule' }}
+        run: |
+          if [ "$(date -u +%u)" = "1" ]; then
+            rc=0
+            python3 scripts/run_icite_backfill.py --db work/retarats_pubmed.sqlite --all --refresh-older-than-days 6 || rc=$?
+            python3 scripts/record_source_run.py --state work/source_status.json --source icite --exit-code "$rc"
+          else
+            echo "Not Monday UTC; skipping the weekly full-corpus iCite refresh this run."
+          fi
 
       - name: Fetch ClinicalTrials.gov registry trials
         env:

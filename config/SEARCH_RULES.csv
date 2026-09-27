@@ -22,7 +22,7 @@ humanin_strict_tiab_v1,humanin,strict,"(""Humanin""[tiab] OR ""mitochondrial-der
 humanin_broad_gene_v1,humanin,broad,"(""Humanin""[All Fields] OR ""MTRNR2""[All Fields] OR ""MTRNR2L""[All Fields]) NOT (""head and neck""[tiab] OR ""H&N""[tiab])",True,optional
 kisspeptin_strict_tiab_v1,kisspeptin,strict,"(""Kisspeptins""[majr] OR ""Kisspeptin""[ti] OR ""Kisspeptin-10""[ti] OR ""KP-10""[ti] OR ""Metastin""[ti])",True,subject-anchored (MeSH major topic OR title)
 pt_141_strict_tiab_v1,pt_141,strict,"(""PT-141""[tiab] OR ""Bremelanotide""[tiab])",True,
-melanotan_ii_strict_tiab_v1,melanotan_ii,strict,"(""Melanotan II""[tiab] OR ""MT-II""[tiab])",True,
+melanotan_ii_strict_tiab_v1,melanotan_ii,strict,"(""Melanotan II""[tiab] OR (""MT-II""[tiab] NOT ""metallothionein""[tiab]))",True,"MT-II[tiab] alone is dominated by metallothionein-II hits (unrelated protein); NOT metallothionein removes them while ""Melanotan II"" phrase matches stay unconditional. Live-verified 2026-09-27: 0/45 sampled excluded PMIDs were genuine Melanotan II papers (all confirmed metallothionein); see docs/retrieval_benchmark_review.md."
 melanotan_i_strict_tiab_v1,melanotan_i,strict,"(""Afamelanotide""[tiab] OR ""Melanotan I""[tiab])",True,
 dihexa_strict_tiab_v1,dihexa,strict,"(""Dihexa""[tiab] OR ""PNB-0408""[tiab])",True,
 cerebrolysin_strict_tiab_v1,cerebrolysin,strict,"(""Cerebrolysin""[tiab])",True,

@@ -22,8 +22,11 @@ from retarats_pipeline.profiles import build_molecule_profiles, load_evidence_pa
 from retarats_pipeline.pubmed import PubMedClient, PubMedRecord, utc_now_iso
 from retarats_pipeline.relevance import classify_molecule_relevance
 from retarats_pipeline.role_classifier import classify_role, load_role_rules
+from retarats_pipeline.rules_version import load_pubmed_discovery_policy
 from retarats_pipeline.sinks import PipelineState, build_sinks
 from retarats_pipeline.summarizers import make_summary_agent
+
+_DISCOVERY_POLICY = load_pubmed_discovery_policy()
 
 
 def main() -> None:
@@ -163,8 +166,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mode", choices=["daily", "backfill"], default=os.getenv("V2_RUN_MODE", os.getenv("RUN_MODE", "daily")).lower())
     parser.add_argument("--start-year", type=int, default=int(os.getenv("V2_DEFAULT_START_YEAR", os.getenv("DEFAULT_START_YEAR", "2000"))))
     parser.add_argument("--end-year", type=int, default=int(os.getenv("V2_DEFAULT_END_YEAR", "0")), help="Optional upper year bound (0 = current year). Enables single-year backfill windows.")
-    parser.add_argument("--daily-days", type=int, default=int(os.getenv("V2_DEFAULT_DAILY_DAYS", os.getenv("DEFAULT_DAILY_DAYS", "7"))))
-    parser.add_argument("--datetype", default=os.getenv("NCBI_DATETYPE", "pdat"))
+    parser.add_argument("--daily-days", type=int,
+                        default=int(os.getenv("V2_DEFAULT_DAILY_DAYS", os.getenv("DEFAULT_DAILY_DAYS",
+                                                                                   str(_DISCOVERY_POLICY["daily_days"])))))
+    parser.add_argument("--datetype", default=os.getenv("NCBI_DATETYPE", _DISCOVERY_POLICY["datetype"]))
     parser.add_argument("--molecule", help="Optional molecule_id filter, e.g. retatrutide")
     parser.add_argument("--max-rules", type=int, default=0)
     parser.add_argument("--max-records-per-rule", type=int, default=0)

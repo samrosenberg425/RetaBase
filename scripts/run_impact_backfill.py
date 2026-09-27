@@ -17,6 +17,15 @@ sources tried in order:
 the fill is fully auditable. The next curated build feeds ``citation_count`` into
 ranking automatically (it is merged onto every evidence row).
 
+WS4 freshness policy: the missing-only fill below covers "new papers daily".
+``--rolling-refresh N`` additionally re-queries OpenAlex ONLY (never re-triggers
+the Semantic Scholar fallback, which stays fill-only) for the N
+OpenAlex-sourced papers with the oldest ``citation_updated_utc``, so citation
+counts keep climbing after the first fill instead of freezing forever. If
+OpenAlex returns nothing for a refresh candidate, the paper's existing
+citation_count/source/timestamp are left untouched (see the ``n is not None``
+gate below) -- an upstream hiccup never erases a previously-filled value.
+
 **Recency:** the historical fetch (``run_backfill.py``) walks newest→oldest, so
 the papers table is already recency-ordered; ``--max-records`` therefore backfills
 the most recent papers first. Pass ``--newest-first`` to be explicit (it sorts
@@ -63,6 +72,28 @@ def _pub_year(paper: dict) -> int:
         return 0
 
 
+def _citation_age_days(paper: dict, now=None) -> float:
+    from datetime import datetime, timezone
+    stamp = paper.get("citation_updated_utc")
+    if not stamp:
+        return float("inf")
+    try:
+        dt = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+    except ValueError:
+        return float("inf")
+    now = now or datetime.now(timezone.utc)
+    return (now - dt).total_seconds() / 86400.0
+
+
+def openalex_refresh_candidates(papers, limit: int):
+    """Oldest-``citation_updated_utc``-first among papers whose CURRENT value
+    came from OpenAlex (never Semantic Scholar -- that source is fill-only, see
+    module docstring) -- the "rolling refresh of oldest values" policy."""
+    openalex_sourced = [p for p in papers if str(p.get("citation_source", "")).startswith("openalex")]
+    openalex_sourced.sort(key=lambda p: _citation_age_days(p), reverse=True)
+    return openalex_sourced[:limit]
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Backfill citation counts (OpenAlex + Semantic Scholar) for the ranking impact axis.")
     ap.add_argument("--db", default="data/retarats_pubmed.sqlite")
@@ -76,6 +107,9 @@ def main() -> None:
                     help="Explicitly sort missing papers by pub_year descending before capping "
                          "(prioritize recent papers). The papers table is already newest-first from "
                          "run_backfill.py, so this mainly guarantees ordering.")
+    ap.add_argument("--rolling-refresh", type=int, default=0,
+                    help="Also re-query OpenAlex (only -- never Semantic Scholar) for this many "
+                         "OpenAlex-sourced papers with the oldest citation_updated_utc. 0 = off.")
     args = ap.parse_args()
 
     conn = sqlite3.connect(args.db)
@@ -154,6 +188,27 @@ def main() -> None:
               f"(OpenAlex {filled_openalex}, S2 {filled_s2})", flush=True)
         if args.sleep and start + chunk < total:
             time.sleep(args.sleep)
+
+    refreshed = 0
+    if args.rolling_refresh > 0:
+        candidates = openalex_refresh_candidates(papers, args.rolling_refresh)
+        print(f"Rolling refresh: {len(candidates)} OpenAlex-sourced paper(s) "
+              f"(oldest citation_updated_utc first)...", flush=True)
+        updated = []
+        for p in candidates:
+            doi, pmid = str(p.get("doi", "")), str(p.get("pmid", ""))
+            n, source = client.openalex_cited_by(doi=doi, pmid=pmid)
+            if n is None:
+                continue  # upstream had nothing this time; leave the old value untouched
+            p = dict(p)
+            p["citation_count"] = n
+            p["citation_source"] = source
+            p["citation_updated_utc"] = utc_now_iso()
+            updated.append(p)
+            refreshed += 1
+        if updated:
+            save_payload_rows(conn, "papers", "pmid", updated, updated_field="citation_updated_utc")
+        print(f"Rolling refresh: updated {refreshed} of {len(candidates)} candidate(s).")
 
     conn.close()
     print(f"Live: queried {queried} papers, filled {filled} citation counts "

@@ -195,7 +195,7 @@ def overall_status(sources: Dict[str, dict]) -> str:
 
 def build_status(release_id: str, runs_path: Optional[str] = None,
                  policy: Optional[Dict[str, dict]] = None, now: Optional[datetime] = None,
-                 build_sha: str = "", corpus_fingerprint: str = "") -> dict:
+                 build_sha: str = "", corpus_fingerprint: str = "", rules_version: str = "") -> dict:
     policy = policy if policy is not None else load_policy()
     now = _utc(now)
     runs = load_runs(runs_path)["sources"]
@@ -206,6 +206,7 @@ def build_status(release_id: str, runs_path: Optional[str] = None,
         "generated_utc": _iso(now),
         "build_sha": build_sha,
         "corpus_fingerprint": corpus_fingerprint,
+        "rules_version": rules_version,
         "overall": overall_status(sources),
         "unknown_sources": sorted(n for n, s in sources.items() if s["status"] == UNKNOWN),
         "sources": sources,
