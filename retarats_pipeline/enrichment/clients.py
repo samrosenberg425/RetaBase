@@ -44,14 +44,67 @@ class ClinicalTrialsClient:
         return data, source
 
     def search(self, query: str, page_size: int = 5) -> Tuple[List[dict], str]:
-        query = clean_text(query)
-        if not query:
-            return [], "empty_query"
-        params = {"format": "json", "pageSize": page_size, "query.term": query}
-        data, source = self.http.get_json("clinicaltrials_search", query[:160] + f"_{page_size}", CTG_BASE, params=params)
+        """Single first page. Kept for callers that only need a quick peek; the
+        registry fetch uses ``search_all`` to retrieve the full result set."""
+        data, source = self._search_page(query, page_size=page_size)
         if not data or data.get("error"):
             return [], source
         return data.get("studies") or [], source
+
+    def _search_page(self, query: str, page_size: int, page_token: Optional[str] = None,
+                      count_total: bool = False) -> Tuple[Optional[dict], str]:
+        query = clean_text(query)
+        if not query:
+            return None, "empty_query"
+        params: Dict[str, Any] = {"format": "json", "pageSize": page_size, "query.term": query}
+        if page_token:
+            params["pageToken"] = page_token
+        if count_total:
+            params["countTotal"] = "true"
+        key = query[:140] + f"_{page_size}_{page_token or 'first'}"
+        return self.http.get_json("clinicaltrials_search", key, CTG_BASE, params=params,
+                                   ttl_sec=self.http.config.search_ttl_sec)
+
+    def search_all(self, query: str, page_size: int = 100, max_pages: int = 20) -> Dict[str, Any]:
+        """Page through ``nextPageToken`` until exhausted or ``max_pages`` is hit.
+
+        Returns a dict tracking retrieval completeness: ``items`` (raw studies),
+        ``pages``, ``total_reported`` (CT.gov's ``totalCount``, first page only),
+        ``rows_retrieved``, ``exhausted`` (no more pages left), ``partial`` (stopped
+        early, either an upstream error mid-run or the ``max_pages`` safety cap),
+        ``ok`` (False only when the very first page failed outright), and ``error``.
+        """
+        result: Dict[str, Any] = {
+            "items": [], "pages": 0, "total_reported": None, "rows_retrieved": 0,
+            "exhausted": False, "partial": False, "ok": True, "error": "", "source": "",
+        }
+        query = clean_text(query)
+        if not query:
+            result["ok"] = False
+            result["error"] = "empty_query"
+            return result
+        token: Optional[str] = None
+        for i in range(max(1, max_pages)):
+            data, source = self._search_page(query, page_size=page_size, page_token=token, count_total=(i == 0))
+            result["source"] = source
+            if not data or data.get("error"):
+                result["ok"] = result["pages"] > 0
+                result["partial"] = result["pages"] > 0
+                result["error"] = (data or {}).get("error", "no_data")
+                break
+            studies = data.get("studies") or []
+            result["items"].extend(studies)
+            result["pages"] += 1
+            result["rows_retrieved"] += len(studies)
+            if result["total_reported"] is None and isinstance(data.get("totalCount"), int):
+                result["total_reported"] = data["totalCount"]
+            token = data.get("nextPageToken")
+            if not token:
+                result["exhausted"] = True
+                break
+        else:
+            result["partial"] = True
+        return result
 
     @staticmethod
     def parse_study(study: Mapping[str, Any]) -> Dict[str, Any]:
@@ -213,15 +266,67 @@ class IdentifierMetadataClient:
         return data, source
 
     def europepmc_search(self, query: str, page_size: int = 5, result_type: str = "lite") -> Tuple[Optional[dict], str]:
+        """Single first page (``cursorMark="*"``). ``europepmc_search_all`` pages
+        through the full result set via ``nextCursorMark``."""
+        return self._europepmc_search_page(query, page_size=page_size, result_type=result_type, cursor_mark="*")
+
+    def _europepmc_search_page(self, query: str, page_size: int, result_type: str,
+                                cursor_mark: str) -> Tuple[Optional[dict], str]:
         query = clean_text(query)
         if not query:
             return None, "empty_query"
-        params = {"query": query, "format": "json", "pageSize": page_size, "resultType": result_type}
-        # result_type is part of the cache key so "core" (abstract + commentCorrection
-        # links) caches separately from the default "lite" search.
-        ck = query[:180] + f"_{page_size}_{result_type}"
-        data, source = self.http.get_json("europepmc_search", ck, EUROPEPMC_SEARCH, params=params)
-        return data, source
+        params = {"query": query, "format": "json", "pageSize": page_size, "resultType": result_type,
+                  "cursorMark": cursor_mark}
+        # result_type + cursorMark are part of the cache key so "core" (abstract +
+        # commentCorrection links) caches separately from "lite", and each page of a
+        # paginated walk gets its own cache entry.
+        ck = query[:170] + f"_{page_size}_{result_type}_{cursor_mark}"
+        return self.http.get_json("europepmc_search", ck, EUROPEPMC_SEARCH, params=params,
+                                   ttl_sec=self.config.search_ttl_sec)
+
+    def europepmc_search_all(self, query: str, page_size: int = 100, result_type: str = "lite",
+                              max_pages: int = 20) -> Dict[str, Any]:
+        """Page through ``cursorMark``/``nextCursorMark`` until exhausted or capped.
+
+        Same completeness-tracking shape as ``ClinicalTrialsClient.search_all``:
+        ``items``, ``pages``, ``total_reported`` (EuropePMC's ``hitCount``),
+        ``rows_retrieved``, ``exhausted``, ``partial``, ``ok``, ``error``.
+        """
+        result: Dict[str, Any] = {
+            "items": [], "pages": 0, "total_reported": None, "rows_retrieved": 0,
+            "exhausted": False, "partial": False, "ok": True, "error": "", "source": "",
+        }
+        query = clean_text(query)
+        if not query:
+            result["ok"] = False
+            result["error"] = "empty_query"
+            return result
+        cursor = "*"
+        for _ in range(max(1, max_pages)):
+            data, source = self._europepmc_search_page(query, page_size=page_size, result_type=result_type,
+                                                         cursor_mark=cursor)
+            result["source"] = source
+            if not isinstance(data, Mapping) or data.get("error"):
+                result["ok"] = result["pages"] > 0
+                result["partial"] = result["pages"] > 0
+                result["error"] = (data or {}).get("error", "no_data") if isinstance(data, Mapping) else "no_data"
+                break
+            result_list = data.get("resultList") or {}
+            raw = result_list.get("result") if isinstance(result_list, Mapping) else None
+            items = [r for r in raw if isinstance(r, Mapping)] if isinstance(raw, list) else []
+            result["items"].extend(items)
+            result["pages"] += 1
+            result["rows_retrieved"] += len(items)
+            if result["total_reported"] is None and isinstance(data.get("hitCount"), int):
+                result["total_reported"] = data["hitCount"]
+            next_cursor = clean_text(data.get("nextCursorMark", ""))
+            if not next_cursor or next_cursor == cursor:
+                result["exhausted"] = True
+                break
+            cursor = next_cursor
+        else:
+            result["partial"] = True
+        return result
 
     def openalex_cited_by(self, doi: str = "", pmid: str = "") -> Tuple[Optional[int], str]:
         """Return (cited_by_count, source) from OpenAlex by DOI (preferred) or PMID.

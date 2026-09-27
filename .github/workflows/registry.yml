@@ -52,16 +52,24 @@ jobs:
           REFRESH: ${{ github.event.inputs.refresh_trials == 'true' && '--refresh' || '' }}
         run: |
           rc=0
-          python3 scripts/run_trials_fetch.py --db work/retarats_trials.sqlite $REFRESH || rc=$?
-          python3 scripts/record_source_run.py --state work/source_status.json --source ctgov --exit-code "$rc"
+          python3 scripts/run_trials_fetch.py --db work/retarats_trials.sqlite --retrieval-out work/ctgov_retrieval.json $REFRESH || rc=$?
+          RETRIEVAL_JSON=$(cat work/ctgov_retrieval.json 2>/dev/null || echo '{}')
+          OUTCOME=$(echo "$RETRIEVAL_JSON" | jq -r '.outcome // ""')
+          ARGS=()
+          [ -n "$OUTCOME" ] && ARGS+=(--outcome "$OUTCOME")
+          python3 scripts/record_source_run.py --state work/source_status.json --source ctgov --exit-code "$rc" "${ARGS[@]}" --retrieval-json "$RETRIEVAL_JSON"
 
       - name: Fetch EuropePMC preprints (work/ only)
         env:
           API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
         run: |
           rc=0
-          python3 scripts/run_preprints_fetch.py --db work/retarats_preprints.sqlite || rc=$?
-          python3 scripts/record_source_run.py --state work/source_status.json --source europepmc_preprints --exit-code "$rc"
+          python3 scripts/run_preprints_fetch.py --db work/retarats_preprints.sqlite --retrieval-out work/europepmc_preprints_retrieval.json || rc=$?
+          RETRIEVAL_JSON=$(cat work/europepmc_preprints_retrieval.json 2>/dev/null || echo '{}')
+          OUTCOME=$(echo "$RETRIEVAL_JSON" | jq -r '.outcome // ""')
+          ARGS=()
+          [ -n "$OUTCOME" ] && ARGS+=(--outcome "$OUTCOME")
+          python3 scripts/record_source_run.py --state work/source_status.json --source europepmc_preprints --exit-code "$rc" "${ARGS[@]}" --retrieval-json "$RETRIEVAL_JSON"
 
       - name: Build curated layer + site + status.json, validate release
         run: python3 scripts/build_release.py --work work --out exports --release-id "$RELEASE_ID"

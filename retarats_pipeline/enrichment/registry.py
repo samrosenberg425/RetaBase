@@ -167,6 +167,7 @@ def normalize_preprint(
         result.get("firstIndexDate", "")
     )
     published_pmid, published_doi = _published_version(result)
+    version_number, withdrawn, pub_types = _version_and_withdrawal(result)
     return {
         "id": preprint_id(result),
         "molecule_id": clean_text(molecule_id),
@@ -182,7 +183,25 @@ def normalize_preprint(
         "abstract": clean_text(result.get("abstractText", "")),
         "published_pmid": published_pmid,
         "published_doi": published_doi,
+        # Version/withdrawal status EuropePMC records per preprint (also core-only).
+        "version_number": version_number,
+        "withdrawn": withdrawn,
+        "pub_types": pub_types,
     }
+
+
+def _version_and_withdrawal(result: Mapping[str, Any]) -> tuple[Any, bool, str]:
+    """Extract (version_number, withdrawn, pub_types) from a EuropePMC ``core``
+    preprint result. ``withdrawn`` is True when the CURRENT version's own
+    ``pubTypeList`` names a withdrawal (e.g. "preprint-withdrawal"); an earlier
+    version being a withdrawal notice for a *later* one is not what we want, so
+    this reads the top-level (current) ``pubTypeList``, not ``versionList``."""
+    version_number = result.get("versionNumber", "")
+    pub_type_list = result.get("pubTypeList") or {}
+    pub_types_raw = pub_type_list.get("pubType") if isinstance(pub_type_list, Mapping) else None
+    pub_types = [clean_text(t) for t in (pub_types_raw or []) if clean_text(t)]
+    withdrawn = any("withdraw" in t.lower() for t in pub_types)
+    return version_number, withdrawn, semicolon_join(pub_types)
 
 
 def _published_version(result: Mapping[str, Any]) -> tuple[str, str]:

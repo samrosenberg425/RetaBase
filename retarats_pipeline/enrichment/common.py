@@ -61,6 +61,17 @@ class APIConfig:
     user_agent: str = ""
     max_trial_search_results: int = 5
     max_pubtator_batch: int = 50
+    # Search/discovery endpoints (CT.gov study search, EuropePMC search) must not
+    # cache forever: a molecule's result set changes over time (new trials, status
+    # updates, new preprints). This TTL lets a cached search go stale and be
+    # re-fetched, while by-id lookups (crossref/unpaywall/openalex/etc.) keep the
+    # old cache-forever behavior (ttl_sec=None) since those responses are stable.
+    search_ttl_sec: int = 6 * 3600
+    # Bounded retry/backoff for HTTP 429 and transient 5xx. No infinite retries;
+    # after max_retries attempts the failure is surfaced, never silently dropped.
+    max_retries: int = 4
+    retry_base_delay_sec: float = 1.0
+    retry_max_delay_sec: float = 30.0
 
     @classmethod
     def from_env(cls, api_enabled: bool = True, cache_dir: str = "data/api_cache") -> "APIConfig":
@@ -76,6 +87,8 @@ class APIConfig:
             timeout_sec=int(os.getenv("API_TIMEOUT_SEC", "25")),
             min_interval_sec=float(os.getenv("API_MIN_INTERVAL_SEC", "0.12")),
             cache_dir=cache_dir,
+            search_ttl_sec=int(os.getenv("API_SEARCH_TTL_SEC", str(6 * 3600))),
+            max_retries=int(os.getenv("API_MAX_RETRIES", "4")),
         )
         cfg.user_agent = f"{cfg.tool_name}/0.1 (mailto:{cfg.contact_email})"
         return cfg
@@ -235,8 +248,33 @@ def text_blob(*parts: Any) -> str:
     return " ".join(clean_text(p) for p in parts if clean_text(p))
 
 
+RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+
+# Outcome tags returned as the second element of get_json/get_text, alongside "cache"
+# and "api" (already used by callers to tell a fresh live fetch from a replay):
+#   stale_cache   - live refresh failed (or was skipped, offline) but a previously
+#                   cached response was served instead, so the caller keeps working
+#                   with slightly-old data rather than treating this as a hard miss.
+#   http_error    - a non-retryable HTTP error (4xx other than 429), no cache to fall
+#                   back on.
+#   retry_exhausted - a retryable error (429/5xx) persisted after max_retries attempts,
+#                   no cache to fall back on.
+#   exception     - a network/transport exception persisted after retries, no cache.
+STALE_CACHE = "stale_cache"
+RETRY_EXHAUSTED = "retry_exhausted"
+
+
 class CachedHTTPClient:
-    """Small cached HTTP client for polite, restartable enrichment runs."""
+    """Small cached HTTP client for polite, restartable enrichment runs.
+
+    Caching is cache-forever by default (``ttl_sec=None``), matching the original
+    behavior for stable by-id lookups. Passing ``ttl_sec`` lets a cache entry go
+    stale so search/discovery endpoints re-poll upstream instead of freezing on
+    whatever was first fetched. A stale or failed live refresh falls back to the
+    last good cached response (tagged ``stale_cache``) rather than returning
+    nothing, so a transient upstream hiccup degrades gracefully instead of looking
+    like "zero results".
+    """
 
     def __init__(self, config: APIConfig):
         self.config = config
@@ -250,54 +288,109 @@ class CachedHTTPClient:
         safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", key)[:180]
         return self.cache_dir / namespace / f"{safe}.json"
 
-    def get_json(self, namespace: str, key: str, url: str, params: Optional[Mapping[str, Any]] = None) -> Tuple[Optional[dict], str]:
-        cache_path = self._cache_path(namespace, key)
-        ensure_dir(cache_path.parent)
-        if cache_path.exists():
-            try:
-                return json.loads(cache_path.read_text(encoding="utf-8")), "cache"
-            except Exception:
-                pass
-        if not self.config.api_enabled:
-            return None, "api_disabled"
-        assert requests is not None
+    def _throttle(self) -> None:
         elapsed = time.time() - self.last_request
         if elapsed < self.config.min_interval_sec:
             time.sleep(self.config.min_interval_sec - elapsed)
+
+    def _retry_delay(self, attempt: int, retry_after: Optional[str]) -> float:
+        if retry_after:
+            try:
+                return min(float(retry_after), self.config.retry_max_delay_sec)
+            except ValueError:
+                pass
+        return min(self.config.retry_base_delay_sec * (2 ** attempt), self.config.retry_max_delay_sec)
+
+    def _request_with_retry(self, url: str, params: Optional[Mapping[str, Any]], headers: dict):
+        """GET with bounded retry/backoff on 429 and transient 5xx.
+
+        Returns (response_or_None, status_tag, detail) where status_tag is one of
+        "ok", "http_error", RETRY_EXHAUSTED, "exception".
+        """
+        assert requests is not None
+        last_detail = ""
+        attempts = max(1, self.config.max_retries + 1)
+        for attempt in range(attempts):
+            self._throttle()
+            try:
+                resp = requests.get(url, params=dict(params or {}), headers=headers, timeout=self.config.timeout_sec)
+                self.last_request = time.time()
+            except Exception as exc:
+                last_detail = f"{type(exc).__name__}: {str(exc)[:1000]}"
+                if attempt < attempts - 1:
+                    time.sleep(self._retry_delay(attempt, None))
+                    continue
+                return None, "exception", last_detail
+            if resp.status_code < 400:
+                return resp, "ok", ""
+            if resp.status_code in RETRYABLE_STATUS and attempt < attempts - 1:
+                last_detail = f"HTTP {resp.status_code}: {resp.text[:1000]}"
+                time.sleep(self._retry_delay(attempt, resp.headers.get("Retry-After")))
+                continue
+            tag = RETRY_EXHAUSTED if resp.status_code in RETRYABLE_STATUS else "http_error"
+            return resp, tag, f"HTTP {resp.status_code}: {resp.text[:1000]}"
+        return None, "exception", last_detail  # pragma: no cover - loop always returns
+
+    def get_json(
+        self,
+        namespace: str,
+        key: str,
+        url: str,
+        params: Optional[Mapping[str, Any]] = None,
+        ttl_sec: Optional[int] = None,
+        force_refresh: bool = False,
+    ) -> Tuple[Optional[dict], str]:
+        cache_path = self._cache_path(namespace, key)
+        ensure_dir(cache_path.parent)
+        cached: Optional[dict] = None
+        if cache_path.exists() and not force_refresh:
+            try:
+                cached = json.loads(cache_path.read_text(encoding="utf-8"))
+                age = time.time() - cache_path.stat().st_mtime
+                if ttl_sec is None or age < ttl_sec:
+                    return cached, "cache"
+            except Exception:
+                cached = None
+        if not self.config.api_enabled:
+            return (cached, STALE_CACHE) if cached is not None else (None, "api_disabled")
         headers = {"User-Agent": self.config.user_agent or f"retarats-enrichment (mailto:{self.config.contact_email})"}
-        try:
-            resp = requests.get(url, params=dict(params or {}), headers=headers, timeout=self.config.timeout_sec)
-            self.last_request = time.time()
-            if resp.status_code >= 400:
-                return {"error": f"HTTP {resp.status_code}", "text": resp.text[:1000]}, "http_error"
+        resp, tag, detail = self._request_with_retry(url, params, headers)
+        if tag == "ok":
             data = resp.json()
             cache_path.write_text(json_dumps(data), encoding="utf-8")
             return data, "api"
-        except Exception as exc:
-            return {"error": type(exc).__name__, "text": str(exc)[:1000]}, "exception"
+        if cached is not None:
+            return cached, STALE_CACHE
+        return {"error": detail or tag}, tag
 
-    def get_text(self, namespace: str, key: str, url: str, params: Optional[Mapping[str, Any]] = None) -> Tuple[str, str]:
+    def get_text(
+        self,
+        namespace: str,
+        key: str,
+        url: str,
+        params: Optional[Mapping[str, Any]] = None,
+        ttl_sec: Optional[int] = None,
+        force_refresh: bool = False,
+    ) -> Tuple[str, str]:
         cache_path = self._cache_path(namespace, key).with_suffix(".txt")
         ensure_dir(cache_path.parent)
-        if cache_path.exists():
+        cached: Optional[str] = None
+        if cache_path.exists() and not force_refresh:
             try:
-                return cache_path.read_text(encoding="utf-8"), "cache"
+                cached = cache_path.read_text(encoding="utf-8")
+                age = time.time() - cache_path.stat().st_mtime
+                if ttl_sec is None or age < ttl_sec:
+                    return cached, "cache"
             except Exception:
-                pass
+                cached = None
         if not self.config.api_enabled:
-            return "", "api_disabled"
-        assert requests is not None
-        elapsed = time.time() - self.last_request
-        if elapsed < self.config.min_interval_sec:
-            time.sleep(self.config.min_interval_sec - elapsed)
+            return (cached, STALE_CACHE) if cached is not None else ("", "api_disabled")
         headers = {"User-Agent": self.config.user_agent or f"retarats-enrichment (mailto:{self.config.contact_email})"}
-        try:
-            resp = requests.get(url, params=dict(params or {}), headers=headers, timeout=self.config.timeout_sec)
-            self.last_request = time.time()
-            if resp.status_code >= 400:
-                return f"ERROR HTTP {resp.status_code}: {resp.text[:1000]}", "http_error"
+        resp, tag, detail = self._request_with_retry(url, params, headers)
+        if tag == "ok":
             text = resp.text or ""
             cache_path.write_text(text, encoding="utf-8")
             return text, "api"
-        except Exception as exc:
-            return f"ERROR {type(exc).__name__}: {str(exc)[:1000]}", "exception"
+        if cached is not None:
+            return cached, STALE_CACHE
+        return f"ERROR {detail or tag}", tag

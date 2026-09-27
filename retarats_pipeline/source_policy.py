@@ -101,19 +101,44 @@ def load_runs(path: Optional[str]) -> dict:
     return data
 
 
+# Per-attempt outcome, distinct from the time-since-last-success CURRENT/DEGRADED/
+# FAILED labels below. LIVE/CACHED are both successes (ok=True) that a plain
+# exit-code check cannot tell apart; PARTIAL means some but not all of the attempt's
+# queries/pages succeeded (still ok=True: partial data is promoted, not discarded);
+# FAILED means the attempt found nothing usable and is NOT a legitimate zero-result
+# success (ok=False) -- this is the "swallowed upstream failure" case a bare
+# exit-code of 0 used to hide.
+OUTCOME_LIVE, OUTCOME_CACHED, OUTCOME_PARTIAL, OUTCOME_FAILED = "live", "cached", "partial", "failed"
+OUTCOMES = (OUTCOME_LIVE, OUTCOME_CACHED, OUTCOME_PARTIAL, OUTCOME_FAILED)
+
+
 def record_run(path: str, source: str, ok: bool, now: Optional[datetime] = None,
                counts: Optional[dict] = None, error: str = "",
-               policy: Optional[Dict[str, dict]] = None) -> dict:
+               policy: Optional[Dict[str, dict]] = None,
+               outcome: str = "", retrieval: Optional[dict] = None) -> dict:
     """Record one attempt of ``source``. A success advances last_success; a failure
-    only advances last_attempted (and stores the error) so staleness keeps growing."""
+    only advances last_attempted (and stores the error) so staleness keeps growing.
+
+    ``outcome`` (one of OUTCOMES, optional) records what KIND of attempt this was --
+    a fresh live fetch, a fetch served entirely from cache, a partial retrieval, or
+    an upstream failure that returned nothing usable -- so status.json can tell
+    "successful live fetch" apart from "successful cached fetch" apart from a
+    swallowed failure, which a bare ok/fail bit cannot. ``retrieval`` (optional)
+    carries pagination completeness metadata (total_reported/rows_retrieved/pages/
+    exhausted/partial) for sources that page through a result set.
+    """
     policy = policy if policy is not None else load_policy()
     if source not in policy:
         raise PolicyError(f"unknown source {source!r}; known: {sorted(policy)}")
+    if outcome and outcome not in OUTCOMES:
+        raise PolicyError(f"unknown outcome {outcome!r}; known: {OUTCOMES}")
     stamp = _iso(_utc(now))
     data = load_runs(path)
     entry = dict(data["sources"].get(source) or {})
     entry["last_attempted_utc"] = stamp
     entry["last_attempt_ok"] = bool(ok)
+    if outcome:
+        entry["last_outcome"] = outcome
     if ok:
         entry["last_success_utc"] = stamp
         entry["error"] = ""
@@ -121,6 +146,8 @@ def record_run(path: str, source: str, ok: bool, now: Optional[datetime] = None,
         entry["error"] = (error or "failed")[:500]
     if counts:
         entry["counts"] = {k: int(counts[k]) for k in COUNT_KEYS if k in counts}
+    if retrieval is not None:
+        entry["retrieval"] = retrieval
     data["sources"][source] = entry
     data["schema"] = STATUS_SCHEMA
     os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
@@ -150,11 +177,13 @@ def evaluate_source(rule: dict, entry: Optional[dict], now: datetime) -> dict:
         "last_attempted_utc": entry.get("last_attempted_utc", ""),
         "last_success_utc": entry.get("last_success_utc", ""),
         "last_attempt_ok": entry.get("last_attempt_ok"),
+        "last_outcome": entry.get("last_outcome", ""),
         "age_days": age,
         "degraded_after_days": rule["degraded_after_days"],
         "failed_after_days": rule["failed_after_days"],
         "deploy_stale_last_good": rule["deploy_stale_last_good"],
         "counts": entry.get("counts", {}),
+        "retrieval": entry.get("retrieval", {}),
         "error": entry.get("error", ""),
     }
 
