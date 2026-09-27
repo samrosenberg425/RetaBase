@@ -793,6 +793,38 @@ def test_cli_and_release_id():
         shutil.rmtree(td, ignore_errors=True)
 
 
+def test_cli_entry_points_parse_and_run():
+    """Every CI-invoked script must at least construct its parser and run the exact argument
+    shapes the workflows use (a duplicate-flag bug here broke the first real bootstrap)."""
+    import subprocess
+    for script in ("corpus_state", "validate_release", "record_source_run", "build_release", "build_curated_database",
+                   "build_trials_json", "build_preprints_json"):
+        r = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", script + ".py"), "--help"],
+                           capture_output=True, text=True)
+        check(f"cli: {script}.py --help exits 0", r.returncode == 0 and "usage" in r.stdout.lower())
+    td = tempfile.mkdtemp(prefix="corpus_state_test_")
+    try:
+        st = os.path.join(td, "work", "source_status.json")
+        script = os.path.join(ROOT, "scripts", "record_source_run.py")
+
+        def run(*a):
+            return subprocess.run([sys.executable, script, "--state", st, *a], capture_output=True, text=True)
+        r = run("--source", "pubmed_daily", "--exit-code", "0")   # exact shape used in update.yml
+        check("cli: record_source_run --exit-code 0 records success", r.returncode == 0 and
+              sp.load_runs(st)["sources"]["pubmed_daily"]["last_attempt_ok"] is True)
+        r = run("--source", "ctgov", "--exit-code", "3")
+        e = sp.load_runs(st)["sources"]["ctgov"]
+        check("cli: record_source_run --exit-code 3 records a failure (and exits 0)",
+              r.returncode == 0 and e["last_attempt_ok"] is False and "last_success_utc" not in e)
+        r = run("--source", "icite", "--error", "HTTP 503", "--count-new", "4", "--count-error", "2")
+        e = sp.load_runs(st)["sources"]["icite"]
+        check("cli: --error and namespaced count flags coexist", r.returncode == 0 and e["error"] == "HTTP 503"
+              and e["counts"] == {"new": 4, "error": 2})
+        check("cli: unknown source -> non-zero", run("--source", "nope", "--exit-code", "0").returncode == 1)
+    finally:
+        shutil.rmtree(td, ignore_errors=True)
+
+
 def test_builders_stamp_release_id():
     """The real builders stamp release_id into every public JSON asset (and stay unstamped without one)."""
     import importlib.util

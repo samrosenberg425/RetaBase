@@ -18,18 +18,20 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from retarats_pipeline import source_policy as sp  # noqa: E402
 
 
-def main() -> int:
+def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--state", default="work/source_status.json")
     ap.add_argument("--source", required=True)
     ap.add_argument("--exit-code", type=int, default=None, help="exit status of the step (0 = success)")
     ap.add_argument("--error", default="", help="record a failure with this message")
+    # Count flags are namespaced (--count-new, --count-error, ...): a bare --error would
+    # collide with the failure-message flag above.
     for k in sp.COUNT_KEYS:
-        ap.add_argument(f"--{k}", type=int, default=None)
-    args = ap.parse_args()
+        ap.add_argument(f"--count-{k}", dest=f"count_{k}", type=int, default=None)
+    args = ap.parse_args(argv)
     ok = (args.exit_code == 0) if args.exit_code is not None else not args.error
     err = args.error or ("" if ok else f"step exited with status {args.exit_code}")
-    counts = {k: getattr(args, k) for k in sp.COUNT_KEYS if getattr(args, k) is not None}
+    counts = {k: getattr(args, f"count_{k}") for k in sp.COUNT_KEYS if getattr(args, f"count_{k}") is not None}
     try:
         sp.record_run(args.state, args.source, ok, counts=counts, error=err)
     except sp.PolicyError as exc:
