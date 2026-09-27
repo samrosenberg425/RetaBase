@@ -30,3 +30,7 @@ tests/e2e/test-results/
 # curated config/regulatory.csv is what ships.
 config/regulatory_suggested.csv
 .cache/
+# Durable-state staging (scripts/corpus_state.py restore -> work/) and its temp dirs.
+work/
+.restore-*/
+.promote-*/

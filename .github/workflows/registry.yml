@@ -1,16 +1,13 @@
-name: Registry sources (trials + preprints)
+name: Registry sources (trials + preprints) — manual
 
-# Weekly (and on-demand) fetch of the SEPARATE, non-peer-reviewed corpus sources:
-# ClinicalTrials.gov registry trials + EuropePMC preprints. Fetches into their
-# own SQLite DBs (data/retarats_trials.sqlite, data/retarats_preprints.sqlite),
-# then rebuilds the compact JSON feeds (trials_data.json, preprints_data.json).
+# The daily update.yml now fetches registry trials + EuropePMC preprints itself (single
+# corpus writer). This workflow is kept as a MANUAL-ONLY run for an on-demand registry
+# refresh; its schedule was removed so it no longer competes with the daily writer.
 #
-# This workflow does NOT deploy Pages — update.yml owns publishing and copies the
-# feeds into exports/site. Here we only fetch + build the JSON.
+# Same single path as every writer: restore -> stage (work/) -> mutate -> build ->
+# validate -> promote. It does NOT deploy Pages; the next update.yml run publishes.
 
 on:
-  schedule:
-    - cron: "0 7 * * 1,4"   # twice weekly (Mon + Thu) 07:00 UTC, after the main update
   workflow_dispatch:
     inputs:
       refresh_trials:
@@ -22,11 +19,10 @@ on:
         default: false
 
 permissions:
-  contents: read
+  contents: write           # corpus-store release: versioned assets + last-good pointer
 
 concurrency:
-  # Serialized with update/backfill/citations: only one job touches the shared
-  # corpus cache at a time so writes never race/overwrite each other.
+  # Serialized with update/backfill/fulltext: only one job promotes at a time.
   group: retarats-corpus
   cancel-in-progress: false
 
@@ -43,32 +39,34 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # Restore the corpus + registry DBs (same cache path/key as the other
-      # corpus workflows) so the separate trials/preprints DBs persist too.
-      - name: Restore corpus cache
-        uses: actions/cache@v4
-        with:
-          path: data
-          key: retarats-corpus-${{ github.run_id }}
-          restore-keys: |
-            retarats-corpus-
+      - name: Restore last-good corpus (verified) into work/
+        uses: ./.github/actions/corpus-restore
 
-      - name: Fetch ClinicalTrials.gov registry trials
+      - name: Allocate release_id
+        run: echo "RELEASE_ID=$(python3 scripts/corpus_state.py release-id)" >> "$GITHUB_ENV"
+
+      - name: Fetch ClinicalTrials.gov registry trials (work/ only)
         env:
           API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
-          # Only set on a manual run with refresh_trials=true; a scheduled run stays
-          # incremental (skips known NCTs) so we don't re-fetch 4k+ trials weekly.
+          # Only set on a manual run with refresh_trials=true.
           REFRESH: ${{ github.event.inputs.refresh_trials == 'true' && '--refresh' || '' }}
         run: |
-          python3 scripts/run_trials_fetch.py --db data/retarats_trials.sqlite $REFRESH || true
+          rc=0
+          python3 scripts/run_trials_fetch.py --db work/retarats_trials.sqlite $REFRESH || rc=$?
+          python3 scripts/record_source_run.py --state work/source_status.json --source ctgov --exit-code "$rc"
 
-      - name: Fetch EuropePMC preprints
+      - name: Fetch EuropePMC preprints (work/ only)
         env:
           API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
         run: |
-          python3 scripts/run_preprints_fetch.py --db data/retarats_preprints.sqlite || true
+          rc=0
+          python3 scripts/run_preprints_fetch.py --db work/retarats_preprints.sqlite || rc=$?
+          python3 scripts/record_source_run.py --state work/source_status.json --source europepmc_preprints --exit-code "$rc"
 
-      - name: Build registry JSON feeds
-        run: |
-          python3 scripts/build_trials_json.py --db data/retarats_trials.sqlite --out exports/curated/trials_data.json
-          python3 scripts/build_preprints_json.py --db data/retarats_preprints.sqlite --out exports/curated/preprints_data.json
+      - name: Build curated layer + site + status.json, validate release
+        run: python3 scripts/build_release.py --work work --out exports --release-id "$RELEASE_ID"
+
+      - name: Promote (validate -> upload new versioned asset -> verify sha256 -> advance last-good)
+        uses: ./.github/actions/corpus-promote
+        with:
+          release-id: ${{ env.RELEASE_ID }}

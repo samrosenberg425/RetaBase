@@ -1,0 +1,29 @@
+name: Promote corpus (validate -> verify -> advance last-good)
+description: >-
+  The ONLY step that may advance the last-good pointer. Validates the candidate
+  (release consistency + count gates vs last-good), uploads it as a NEW versioned asset,
+  downloads it back and verifies its sha256, publishes its manifest, and only then
+  replaces last-good.json. The acceleration cache is saved strictly AFTER promotion.
+
+inputs:
+  release-id:
+    description: "release_id allocated for this run (already stamped into exports/site)"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Promote candidate corpus
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        RELEASE_ID: ${{ inputs.release-id }}
+      run: |
+        python3 scripts/corpus_state.py promote --work work --site-dir exports/site \
+          --release-id "$RELEASE_ID" --cache-dir data
+
+    - name: Save acceleration cache (only after promotion)
+      uses: actions/cache/save@v4
+      with:
+        path: data
+        key: retarats-corpus-${{ inputs.release-id }}

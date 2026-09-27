@@ -2,8 +2,8 @@ name: Audit corpus coverage
 
 # On-demand, READ-ONLY check of how many papers the corpus holds per year (vs the
 # backfill checkpoint), so you can see which years are under-populated before
-# deciding what to re-fetch. Restores the shared cache but never writes it back,
-# so it's safe to run any time and doesn't need the corpus lock.
+# deciding what to re-fetch. Restores the verified last-good corpus but never promotes
+# or writes anything, so it's safe to run any time and doesn't need the corpus lock.
 
 on:
   workflow_dispatch:
@@ -21,15 +21,10 @@ jobs:
           python-version: "3.11"
       - run: pip install -r requirements.txt
 
-      # Restore-only (no post-save) so we read the latest corpus without creating
-      # a new cache entry or racing the writer workflows.
-      - name: Restore corpus cache (read-only)
-        uses: actions/cache/restore@v4
-        with:
-          path: data
-          key: retarats-corpus-none
-          restore-keys: |
-            retarats-corpus-
+      # Restore-only (never promotes or saves) so we read the verified last-good corpus
+      # without racing the writer workflows.
+      - name: Restore last-good corpus (verified, read-only)
+        uses: ./.github/actions/corpus-restore
 
       - name: Report per-year coverage
-        run: python3 scripts/audit_corpus_years.py --db data/retarats_pubmed.sqlite --min-year 2000
+        run: python3 scripts/audit_corpus_years.py --db work/retarats_pubmed.sqlite --min-year 2000

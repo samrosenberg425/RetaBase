@@ -1,0 +1,36 @@
+name: Restore corpus (verified, staged)
+description: >-
+  Stage the last-good corpus into work/. Order: Actions cache copy that is byte-identical
+  (sha256) to the last-good manifest -> last-good versioned asset from the corpus-store
+  release -> hard failure. The Actions cache is acceleration only, never authoritative.
+  A hollow corpus is never bootstrapped unless bootstrap=true AND the store is empty.
+
+inputs:
+  bootstrap:
+    description: "Manual bootstrap: seed from the legacy cache (data/) when the corpus-store release is EMPTY."
+    default: "false"
+  simulate:
+    description: "Fault simulation. 'cache_miss' skips the cache restore."
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Restore acceleration cache (never authoritative)
+      if: ${{ inputs.simulate != 'cache_miss' }}
+      uses: actions/cache/restore@v4
+      with:
+        path: data
+        key: retarats-corpus-none
+        restore-keys: |
+          retarats-corpus-
+
+    - name: Restore last-good corpus into work/ (sha256-verified)
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        BOOTSTRAP: ${{ inputs.bootstrap }}
+      run: |
+        extra=""
+        if [ "$BOOTSTRAP" = "true" ]; then extra="--bootstrap --seed-dir data"; fi
+        python3 scripts/corpus_state.py restore --dest work --cache-dir data $extra

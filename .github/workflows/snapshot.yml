@@ -1,10 +1,11 @@
 name: Corpus snapshot (durable backup)
 
-# The corpus lives in the Actions cache, which is operational (LRU-evicted, pruned
-# by cache-gc) and not a durable archive. This job takes a periodic COMPRESSED
-# snapshot of the SQLite corpus + a checksum + the stats, and publishes them as a
-# GitHub Release asset (durable, versioned, 2 GB/file, off the cache budget). It
-# only READS the cache (restore-only), so it never disturbs the live corpus.
+# The authoritative corpus lives in the `corpus-store` release (last-good pointer +
+# versioned assets); the Actions cache is only an accelerator. This job takes a periodic
+# COMPRESSED weekly snapshot of the SQLite corpus + a checksum + the stats, and publishes
+# them as a separate GitHub Release asset (history, retained independently of corpus-store
+# pruning). It only READS the last-good corpus (restore-only, verified), so it never
+# disturbs the live corpus.
 
 on:
   schedule:
@@ -20,29 +21,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Restore corpus cache (read-only)
-        uses: actions/cache/restore@v4
-        with:
-          path: data
-          key: retarats-corpus-none
-          restore-keys: |
-            retarats-corpus-
+      - name: Restore last-good corpus (verified, read-only)
+        uses: ./.github/actions/corpus-restore
 
       - name: Package snapshot
         id: pack
         run: |
-          if [ ! -f data/retarats_pubmed.sqlite ]; then
+          if [ ! -f work/retarats_pubmed.sqlite ]; then
             echo "No corpus in the cache yet; nothing to snapshot."
             exit 0
           fi
           d=$(date -u +%Y%m%d)
           mkdir -p snap
           # Compact the DB (reclaims deleted space) before compressing. Safe: this
-          # runner copy is never written back to the cache.
-          python3 -c "import sqlite3; c=sqlite3.connect('data/retarats_pubmed.sqlite'); c.execute('VACUUM'); c.close()"
-          tar -I 'gzip -9' -cf "snap/retarats_corpus_${d}.tar.gz" -C data retarats_pubmed.sqlite
+          # runner copy is never promoted or written back anywhere.
+          python3 -c "import sqlite3; c=sqlite3.connect('work/retarats_pubmed.sqlite'); c.execute('VACUUM'); c.close()"
+          tar -I 'gzip -9' -cf "snap/retarats_corpus_${d}.tar.gz" -C work retarats_pubmed.sqlite
           sha256sum "snap/retarats_corpus_${d}.tar.gz" > "snap/retarats_corpus_${d}.sha256"
-          [ -f data/corpus_stats_baseline.json ] && cp data/corpus_stats_baseline.json "snap/corpus_stats_${d}.json" || true
+          [ -f work/.baseline_stats.json ] && cp work/.baseline_stats.json "snap/corpus_stats_${d}.json" || true
           ls -lh snap
           echo "date=${d}" >> "$GITHUB_OUTPUT"
 

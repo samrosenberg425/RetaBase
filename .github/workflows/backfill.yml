@@ -1,15 +1,15 @@
-name: Historical backfill (auto)
+name: Historical backfill (manual)
 
-# Large historical backfill that CONTINUES ITSELF on a schedule until done.
-# Walks backwards from a start year, size-capped, resumable via
-# data/backfill_checkpoint.json in the cache. GitHub jobs cap at ~6h, so each
-# scheduled run does another ~6h chunk and the checkpoint resumes where the last
-# stopped. Once it reaches target_gb (or min_year) later runs are quick no-ops.
-# You can also trigger it manually with custom bounds.
+# Manual-only historical backfill (the 6-hourly schedule was retired: every year is marked
+# done in the checkpoint, and an unattended writer that races the daily update is exactly
+# what the single-writer design removes). Walks backwards from a start year, size-capped,
+# resumable via backfill_checkpoint.json, which now lives INSIDE the durable corpus state
+# (work/ -> promoted archive) instead of the Actions cache.
+#
+# Same single path as every writer: restore -> stage (work/) -> mutate -> build -> validate
+# -> promote. This job does NOT deploy Pages; the next update.yml run publishes the result.
 
 on:
-  schedule:
-    - cron: "15 */6 * * *"   # every 6 h: auto-continue the fill until the target is reached
   workflow_dispatch:
     inputs:
       start_year:
@@ -30,10 +30,10 @@ on:
         default: false
 
 permissions:
-  contents: read
+  contents: write           # corpus-store release: versioned assets + last-good pointer
 
 concurrency:
-  # Serialized with update + citations so corpus-cache writes never race.
+  # Serialized with update + fulltext so only one job promotes at a time.
   group: retarats-corpus
   cancel-in-progress: false
 
@@ -51,15 +51,13 @@ jobs:
       - name: Validate config CSVs (fail fast on a malformed rule file)
         run: python3 scripts/validate_config.py
 
-      - name: Restore corpus cache
-        uses: actions/cache@v4
-        with:
-          path: data
-          key: retarats-corpus-${{ github.run_id }}
-          restore-keys: |
-            retarats-corpus-
+      - name: Restore last-good corpus (verified) into work/
+        uses: ./.github/actions/corpus-restore
 
-      - name: Run backfill
+      - name: Allocate release_id
+        run: echo "RELEASE_ID=$(python3 scripts/corpus_state.py release-id)" >> "$GITHUB_ENV"
+
+      - name: Run backfill (work/ only)
         env:
           NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
           NCBI_EMAIL: ${{ secrets.NCBI_EMAIL }}
@@ -71,21 +69,13 @@ jobs:
             --target-gb ${{ github.event.inputs.target_gb || '8' }} \
             --max-years ${{ github.event.inputs.max_years || '3' }} \
             ${{ github.event.inputs.force == 'true' && '--force' || '' }} \
-            --db data/retarats_pubmed.sqlite --state-db data/retarats_state.sqlite
+            --db work/retarats_pubmed.sqlite --state-db work/retarats_state.sqlite \
+            --checkpoint work/backfill_checkpoint.json
 
-      # Citations run IN THIS SAME JOB so they never compete with the backfill for
-      # the corpus lock. This advances them every 6 h automatically -- even when the
-      # fetch above is a no-op (target reached), this step still tops up citations.
-      - name: Top up citations for the corpus (OpenAlex)
-        env:
-          API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
-        run: |
-          python3 scripts/run_impact_backfill.py --db data/retarats_pubmed.sqlite \
-            --newest-first --max-records 8000 || true
+      - name: Build curated layer + site + status.json, validate release
+        run: python3 scripts/build_release.py --work work --out exports --release-id "$RELEASE_ID"
 
-      # Enrich with NIH iCite metrics (RCR, APT, human/animal/molecular, triangle
-      # coords, clinical flags). Same job = same lock, so no workflow competition.
-      - name: Enrich with NIH iCite metrics
-        run: |
-          python3 scripts/run_icite_backfill.py --db data/retarats_pubmed.sqlite \
-            --newest-first --max-records 20000 || true
+      - name: Promote (validate -> upload new versioned asset -> verify sha256 -> advance last-good)
+        uses: ./.github/actions/corpus-promote
+        with:
+          release-id: ${{ env.RELEASE_ID }}

@@ -1,32 +1,62 @@
 name: Update database and publish site
 
-# Scheduled incremental update: fetch new PubMed records, rebuild the curated
-# layer + site, and deploy the static dashboard to GitHub Pages. The (large)
-# SQLite corpus is kept in the Actions cache (~10 GB free per repo) so the git
-# repo stays small; only the compact site + curated exports are published.
+# Daily incremental update: fetch new PubMed records + registry sources, rebuild the
+# curated layer + site, and deploy the static dashboard to GitHub Pages.
+#
+# DURABLE STATE. The authoritative corpus lives in the `corpus-store` GitHub Release
+# (versioned corpus-<release_id>.tar.gz + manifest-<release_id>.json + a tiny
+# last-good.json pointer), NOT in the Actions cache. The cache is acceleration only.
+# Every corpus writer follows ONE path:
+#
+#   restore -> stage (work/) -> mutate -> build -> validate -> promote
+#
+# Nothing mutates the restored last-good copy: all fetch/enrichment steps write only to
+# work/. The pointer advances only after the candidate is validated, uploaded as a new
+# versioned asset and checksum-verified (see scripts/corpus_state.py, docs/corpus_state.md).
 #
 # Two jobs (GitHub's canonical Pages pattern):
-#   build  -> fetch + rebuild + upload the Pages artifact (serialized with the
-#             other corpus workflows via the shared 'retarats-corpus' lock).
-#   deploy -> deploy the artifact, in its OWN 'pages' concurrency group so
-#             overlapping runs never collide at the deploy step (that collision
-#             is what produced the transient "Deployment failed, try again later").
+#   build  -> restore + fetch + rebuild + validate + PROMOTE + upload the Pages artifact
+#             (serialized with the other corpus writers via the 'retarats-corpus' lock).
+#   deploy -> deploy the artifact, in its OWN 'pages' concurrency group so overlapping
+#             runs never collide at the deploy step.
 
 on:
   schedule:
     - cron: "0 6 * * *"     # daily 06:00 UTC — rebuild + republish from the growing corpus
   workflow_dispatch:         # allow manual runs
+    inputs:
+      bootstrap:
+        description: >-
+          MANUAL BOOTSTRAP (first run only): if the corpus-store release is EMPTY, seed it from
+          the legacy Actions cache. Ignored when a last-good corpus already exists.
+        type: boolean
+        default: false
+      simulate:
+        description: >-
+          Failure drill. cache_miss = skip the cache (must restore from the store);
+          empty_trials = inject an empty trials table (promotion must be refused, job red,
+          last-good + live site untouched); mixed_release = re-stamp one shard with a stale
+          release_id (must be rejected, job red).
+        type: choice
+        options: [none, cache_miss, empty_trials, mixed_release]
+        default: none
+      refresh_trials:
+        description: >-
+          Re-fetch and OVERWRITE already-stored trials. Needed once after adding a new stored field
+          (e.g. the trial->publication result_pmids links), because the normal run SKIPS NCTs it
+          already has and would never backfill them.
+        type: boolean
+        default: false
 
 permissions:
-  contents: read
+  contents: write           # corpus-store release: versioned assets + last-good pointer
   pages: write
   id-token: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    # Serialized with backfill/citations/registry so only one job writes the
-    # shared corpus cache at a time (prevents cache-overwrite races).
+    # Serialized with the other corpus writers so only one job promotes at a time.
     concurrency:
       group: retarats-corpus
       cancel-in-progress: false
@@ -53,80 +83,95 @@ jobs:
       - name: Validate config CSVs (fail fast on a malformed rule file)
         run: python3 scripts/validate_config.py
 
-      # Restore the growing SQLite corpus from cache (survives between runs).
-      - name: Restore corpus cache
-        uses: actions/cache@v4
+      # ---- restore -> stage --------------------------------------------------------
+      # HARD gate: cache copy only if sha256-identical to last-good; otherwise the
+      # last-good release asset; otherwise the job fails (no silent hollow bootstrap).
+      - name: Restore last-good corpus (verified) into work/
+        uses: ./.github/actions/corpus-restore
         with:
-          path: data
-          key: retarats-corpus-${{ github.run_id }}
-          restore-keys: |
-            retarats-corpus-
+          bootstrap: ${{ github.event.inputs.bootstrap || 'false' }}
+          simulate: ${{ github.event.inputs.simulate || '' }}
 
-      - name: Guard against a lost/truncated corpus cache
-        # HARD gate (no `|| true`): if the restored corpus has collapsed below 90%
-        # of last run's recorded size, a cache miss/corruption likely happened.
-        # Fail here so we never rebuild + republish a hollowed-out site; the last
-        # good deploy stays up. No prior state (first run) passes through.
-        run: |
-          python3 scripts/check_corpus_freshness.py --mode guard \
-            --db data/retarats_pubmed.sqlite --state data/freshness_state.json \
-            --min-ratio 0.9
+      - name: Allocate release_id
+        run: echo "RELEASE_ID=$(python3 scripts/corpus_state.py release-id)" >> "$GITHUB_ENV"
 
+      # ---- mutate (work/ only) -----------------------------------------------------
+      # Each step records its outcome in work/source_status.json (per-source freshness
+      # policy: config/source_policy.csv). Fetch steps keep "a source hiccup must not block
+      # a publish" semantics: the failure is recorded + surfaced in status.json, and the data
+      # already in the corpus (last-good) still deploys.
       - name: Incremental PubMed fetch (last 8 days)
         env:
           NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
           NCBI_EMAIL: ${{ secrets.NCBI_EMAIL }}
           API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
         run: |
+          rc=0
           python3 retarats_v2.py --config-mode local --mode daily --daily-days 8 \
             --summary-mode rule_based --sinks local \
-            --local-db data/retarats_pubmed.sqlite --state-db data/retarats_state.sqlite || true
+            --local-db work/retarats_pubmed.sqlite --state-db work/retarats_state.sqlite || rc=$?
+          python3 scripts/record_source_run.py --state work/source_status.json --source pubmed_daily --exit-code "$rc"
 
       - name: Backfill citation counts (OpenAlex, impact axis)
         env:
           API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
         run: |
-          python3 scripts/run_impact_backfill.py --db data/retarats_pubmed.sqlite --max-records 8000 || true
+          rc=0
+          python3 scripts/run_impact_backfill.py --db work/retarats_pubmed.sqlite --newest-first --max-records 8000 || rc=$?
+          python3 scripts/record_source_run.py --state work/source_status.json --source openalex --exit-code "$rc"
 
-      - name: Rebuild curated layer + site
+      - name: Enrich with NIH iCite metrics
         run: |
-          python3 scripts/build_curated_database.py --db data/retarats_pubmed.sqlite --out-dir exports/curated
-          python3 scripts/build_public_site.py --curated-dir exports/curated --out-dir exports/site --mode fetch
-          # DEPLOYMENT GATE: no `|| true` -- if the curated build fails validation
-          # (bad/empty data, dup ids, out-of-range scores, human-evidence collapse),
-          # this step fails, the build job fails, and the deploy job (needs: build)
-          # is skipped -- so the last good site stays up instead of publishing a bad
-          # build. Fetch/enrichment steps keep `|| true` (a source hiccup shouldn't
-          # block a publish); only the final validation is a hard gate.
-          # --baseline points at data/ (the persistent Actions cache) so the anomaly
-          # gates compare this run against the previous known-good corpus_stats.json.
-          python3 scripts/validate_curated.py --curated-dir exports/curated --baseline data/corpus_stats_baseline.json
-          # Validation passed (no `|| true` above) -> promote THIS build's stats to
-          # the baseline so the NEXT run compares against this now-known-good corpus.
-          # On its own line after validate, so it only runs if validate didn't abort.
-          cp exports/curated/corpus_stats.json data/corpus_stats_baseline.json
-          cp exports/curated/site_data.json exports/site/site_data.json
-          # Lazy-loaded modal detail sidecar (fetched on first card open).
-          cp exports/curated/site_detail.json exports/site/site_detail.json
-          # Progressive-feed shards (rank-ordered remainder streamed in the background).
-          cp exports/curated/site_records_*.json exports/site/ 2>/dev/null || true
-          # Rebuild + publish the registry feeds straight from the trials/preprints
-          # SQLite DBs that registry.yml populates in the SHARED cache (exports/ is
-          # ephemeral, so we can't rely on a file it wrote). Guarded so that if those
-          # DBs don't exist yet (registry.yml hasn't run), the deploy still succeeds.
-          python3 scripts/build_trials_json.py --db data/retarats_trials.sqlite --out exports/site/trials_data.json 2>/dev/null || true
-          python3 scripts/build_preprints_json.py --db data/retarats_preprints.sqlite --out exports/site/preprints_data.json 2>/dev/null || true
+          rc=0
+          python3 scripts/run_icite_backfill.py --db work/retarats_pubmed.sqlite --newest-first --max-records 20000 || rc=$?
+          python3 scripts/record_source_run.py --state work/source_status.json --source icite --exit-code "$rc"
+
+      - name: Fetch ClinicalTrials.gov registry trials
+        env:
+          API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
+          REFRESH: ${{ github.event.inputs.refresh_trials == 'true' && '--refresh' || '' }}
+        run: |
+          rc=0
+          python3 scripts/run_trials_fetch.py --db work/retarats_trials.sqlite $REFRESH || rc=$?
+          python3 scripts/record_source_run.py --state work/source_status.json --source ctgov --exit-code "$rc"
+
+      - name: Fetch EuropePMC preprints
+        env:
+          API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
+        run: |
+          rc=0
+          python3 scripts/run_preprints_fetch.py --db work/retarats_preprints.sqlite || rc=$?
+          python3 scripts/record_source_run.py --state work/source_status.json --source europepmc_preprints --exit-code "$rc"
+
+      - name: "SIMULATION empty_trials — inject an empty trials table (promotion must be refused)"
+        if: ${{ github.event.inputs.simulate == 'empty_trials' }}
+        run: python3 scripts/corpus_state.py simulate --kind empty_trials --work work
+
+      # ---- build -> validate -------------------------------------------------------
+      - name: Build curated layer + site + status.json, validate release
+        # DEPLOYMENT GATE (no `|| true`): a failing curated validation, missing/empty asset
+        # or mixed release_id fails the job, so nothing is promoted or deployed and the last
+        # good site stays up. Baseline for the anomaly gates = the durable last-good manifest.
+        run: python3 scripts/build_release.py --work work --out exports --release-id "$RELEASE_ID"
+
+      - name: "SIMULATION mixed_release — re-stamp one shard with a stale release_id (must be rejected)"
+        if: ${{ github.event.inputs.simulate == 'mixed_release' }}
+        run: python3 scripts/corpus_state.py simulate --kind mixed_release --work work --site-dir exports/site
 
       - name: Corpus freshness alert (soft)
-        # SOFT alert (`|| true`): records the corpus size and, if it hasn't grown
-        # in >= 14 days, emits a ::warning:: + job-summary line so a silently-dead
-        # fetch (expired NCBI key, upstream change) is visible. Never blocks the
-        # publish -- a quiet news day shouldn't stop a rebuild. Runs after the
-        # baseline promotion so state only advances on a validated build.
+        # SOFT alert (`|| true`): records the corpus size and, if it hasn't grown in >= 14
+        # days, emits a ::warning:: + job-summary line. Runs BEFORE promote so the updated
+        # state file is archived with this release.
         run: |
           python3 scripts/check_corpus_freshness.py --mode freshness \
-            --db data/retarats_pubmed.sqlite --state data/freshness_state.json \
+            --db work/retarats_pubmed.sqlite --state work/freshness_state.json \
             --stats exports/curated/corpus_stats.json --max-stale-days 14 || true
+
+      # ---- promote (the only place last-good can advance) ----------------------------
+      - name: Promote (validate -> upload new versioned asset -> verify sha256 -> advance last-good)
+        uses: ./.github/actions/corpus-promote
+        with:
+          release-id: ${{ env.RELEASE_ID }}
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
