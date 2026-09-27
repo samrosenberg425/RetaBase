@@ -71,7 +71,7 @@ def _compact(row: Dict) -> Dict:
     return out
 
 
-def build(db_path: str = DEFAULT_DB, out_path: str = DEFAULT_OUT) -> dict:
+def build(db_path: str = DEFAULT_DB, out_path: str = DEFAULT_OUT, release_id: str = "") -> dict:
     preprints = _load_preprints(db_path)
     compact = [_compact(p) for p in preprints]
     # date descending; blank dates sink to the bottom.
@@ -81,6 +81,8 @@ def build(db_path: str = DEFAULT_DB, out_path: str = DEFAULT_OUT) -> dict:
         "count": len(compact),
         "preprints": compact,
     }
+    if release_id:
+        payload["release_id"] = release_id
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, separators=(",", ":"), ensure_ascii=False)
@@ -91,8 +93,10 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Build preprints_data.json from the preprints SQLite table.")
     ap.add_argument("--db", default=DEFAULT_DB)
     ap.add_argument("--out", default=DEFAULT_OUT)
+    ap.add_argument("--release-id", default=os.environ.get("RELEASE_ID", ""),
+                    help="Stamp this release_id into the feed (default: $RELEASE_ID; blank = unstamped).")
     args = ap.parse_args()
-    result = build(args.db, args.out)
+    result = build(args.db, args.out, release_id=args.release_id)
     print(f"Wrote {result['count']} preprints -> {result['out']}")
 
 

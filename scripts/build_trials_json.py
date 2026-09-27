@@ -55,7 +55,7 @@ def _neg_date(date: str):
     return tuple(-ord(c) for c in str(date or ""))
 
 
-def build(db_path: str = DEFAULT_DB, out_path: str = DEFAULT_OUT) -> dict:
+def build(db_path: str = DEFAULT_DB, out_path: str = DEFAULT_OUT, release_id: str = "") -> dict:
     trials = _load_trials(db_path)
     compact = [_compact(t) for t in trials]
     compact.sort(key=_sort_key)
@@ -66,6 +66,8 @@ def build(db_path: str = DEFAULT_DB, out_path: str = DEFAULT_OUT) -> dict:
         "ongoing_count": ongoing_count,
         "trials": compact,
     }
+    if release_id:
+        payload["release_id"] = release_id
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, separators=(",", ":"), ensure_ascii=False)
@@ -76,8 +78,10 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Build trials_data.json from the trials SQLite table.")
     ap.add_argument("--db", default=DEFAULT_DB)
     ap.add_argument("--out", default=DEFAULT_OUT)
+    ap.add_argument("--release-id", default=os.environ.get("RELEASE_ID", ""),
+                    help="Stamp this release_id into the feed (default: $RELEASE_ID; blank = unstamped).")
     args = ap.parse_args()
-    result = build(args.db, args.out)
+    result = build(args.db, args.out, release_id=args.release_id)
     print(f"Wrote {result['count']} trials ({result['ongoing_count']} ongoing) -> {result['out']}")
 
 

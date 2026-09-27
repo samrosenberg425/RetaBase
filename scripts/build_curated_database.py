@@ -105,7 +105,7 @@ def load_payload_table(conn: sqlite3.Connection, table: str) -> List[dict]:
     return rows
 
 
-def build(db_path: str, out_dir: str, limit: int = 0) -> dict:
+def build(db_path: str, out_dir: str, limit: int = 0, release_id: str = "") -> dict:
     conn = sqlite3.connect(db_path)
     papers = load_payload_table(conn, "papers")
     evidence = load_payload_table(conn, "evidence")
@@ -293,7 +293,10 @@ def build(db_path: str, out_dir: str, limit: int = 0) -> dict:
               f"{feed_stats['total_public_records']} published "
               f"({feed_stats['capped_molecule_count']} molecule(s) capped; "
               f"focus<= {feed_stats['focus_cap']}, other<= {feed_stats['other_cap']})")
-    _write_site_json(os.path.join(out_dir, "site_data.json"), feed, _molecule_index(curated_rows), corpus_stats)
+    if release_id:
+        corpus_stats["release_id"] = release_id
+    _write_site_json(os.path.join(out_dir, "site_data.json"), feed, _molecule_index(curated_rows), corpus_stats,
+                     release_id=release_id)
 
     # --- review_queue.csv ---
     queue = [r for r in curated_rows if r.get("publication_status") == "review"]
@@ -781,8 +784,13 @@ def _cap_site_feed(records: List[dict], focus_cap: int = FEED_FOCUS_CAP, other_c
     return kept, stats
 
 
-def _write_site_json(path: str, records: List[dict], molecules: List[dict], corpus_stats: dict | None = None) -> None:
-    """Compact, rank-sorted JSON feed for a hosted (fetch-based) site."""
+def _write_site_json(path: str, records: List[dict], molecules: List[dict], corpus_stats: dict | None = None,
+                     release_id: str = "") -> None:
+    """Compact, rank-sorted JSON feed for a hosted (fetch-based) site.
+
+    When ``release_id`` is given it is stamped into site_data.json, every shard and
+    site_detail.json so scripts/validate_release.py can reject a mixed-release set.
+    Omitted (legacy/local builds) -> output is byte-identical to before."""
     import datetime as _dt
 
     # PAYLOAD SIZE: omit empty values instead of emitting `"field":""` for all 63
@@ -831,8 +839,10 @@ def _write_site_json(path: str, records: List[dict], molecules: List[dict], corp
         name = "site_records_{0:03d}.json".format(i // FEED_SHARD_SIZE + 1)
         shard_names.append(name)
         with open(os.path.join(out_dir, name), "w", encoding="utf-8") as fh:
-            json.dump({"records": rest[i:i + FEED_SHARD_SIZE]}, fh,
-                      separators=(",", ":"), ensure_ascii=False)
+            shard = {"records": rest[i:i + FEED_SHARD_SIZE]}
+            if release_id:
+                shard["release_id"] = release_id
+            json.dump(shard, fh, separators=(",", ":"), ensure_ascii=False)
 
     payload = {
         "generated_utc": generated,
@@ -845,13 +855,17 @@ def _write_site_json(path: str, records: List[dict], molecules: List[dict], corp
         "experimental": experimental,
         "corpus_stats": corpus_stats or {},
     }
+    if release_id:
+        payload["release_id"] = release_id
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, separators=(",", ":"), ensure_ascii=False)
     # Sidecar detail feed, fetched on demand when the first card modal is opened.
     detail_path = os.path.join(out_dir, "site_detail.json")
+    detail_payload = {"generated_utc": generated, "detail": detail_map}
+    if release_id:
+        detail_payload["release_id"] = release_id
     with open(detail_path, "w", encoding="utf-8") as fh:
-        json.dump({"generated_utc": generated, "detail": detail_map},
-                  fh, separators=(",", ":"), ensure_ascii=False)
+        json.dump(detail_payload, fh, separators=(",", ":"), ensure_ascii=False)
 
 
 # Optional PubChem enrichment (scripts/enrich_pubchem.py). NETWORK is required to
@@ -1221,9 +1235,11 @@ def main() -> None:
     ap.add_argument("--db", default="data/retarats_pubmed.sqlite")
     ap.add_argument("--out-dir", default="exports/curated")
     ap.add_argument("--limit", type=int, default=0, help="Process only the first N evidence rows (0 = all).")
+    ap.add_argument("--release-id", default=os.environ.get("RELEASE_ID", ""),
+                    help="Stamp this release_id into the site JSON assets (default: $RELEASE_ID; blank = unstamped).")
     args = ap.parse_args()
 
-    result = build(args.db, args.out_dir, args.limit)
+    result = build(args.db, args.out_dir, args.limit, release_id=args.release_id)
     stats = result["stats"]
     print(f"Curated {result['curated']} evidence rows -> {args.out_dir}/")
     print(f"  facets_long rows : {result['facets_long']}")

@@ -1,0 +1,8 @@
+source,cadence,degraded_after_days,failed_after_days,deploy_stale_last_good,description
+pubmed_daily,daily,3,10,yes,PubMed incremental fetch (E-utilities)
+ctgov,daily,3,10,yes,ClinicalTrials.gov registry trials
+europepmc_preprints,daily,3,14,yes,Europe PMC preprints
+icite,weekly,10,30,yes,NIH iCite citation metrics
+openalex,rolling weekly,10,30,yes,OpenAlex citation counts
+pubmed_resweep_retractions,weekly,10,21,yes,PubMed re-sweep and retraction/erratum refresh
+fulltext,twice weekly,10,30,yes,Open-access full text (PMC BioC / Europe PMC)
