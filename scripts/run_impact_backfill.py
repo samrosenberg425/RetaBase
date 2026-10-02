@@ -94,6 +94,9 @@ def openalex_refresh_candidates(papers, limit: int):
     return openalex_sourced[:limit]
 
 
+ROLLING_MAX_CONSECUTIVE_MISSES = 50
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Backfill citation counts (OpenAlex + Semantic Scholar) for the ranking impact axis.")
     ap.add_argument("--db", default="data/retarats_pubmed.sqlite")
@@ -110,6 +113,9 @@ def main() -> None:
     ap.add_argument("--rolling-refresh", type=int, default=0,
                     help="Also re-query OpenAlex (only -- never Semantic Scholar) for this many "
                          "OpenAlex-sourced papers with the oldest citation_updated_utc. 0 = off.")
+    ap.add_argument("--rolling-refresh-budget-sec", type=float, default=900.0,
+                    help="Wall-clock cap for the rolling refresh (0 = unlimited). Work done so far is "
+                         "saved; the rest rolls over to the next run.")
     args = ap.parse_args()
 
     conn = sqlite3.connect(args.db)
@@ -195,19 +201,40 @@ def main() -> None:
         print(f"Rolling refresh: {len(candidates)} OpenAlex-sourced paper(s) "
               f"(oldest citation_updated_utc first)...", flush=True)
         updated = []
-        for p in candidates:
+        started = time.monotonic()
+        consecutive_miss = 0
+        stop_reason = ""
+        for i, p in enumerate(candidates, 1):
+            if args.rolling_refresh_budget_sec and time.monotonic() - started > args.rolling_refresh_budget_sec:
+                stop_reason = f"time budget {args.rolling_refresh_budget_sec:g}s reached"
+                break
             doi, pmid = str(p.get("doi", "")), str(p.get("pmid", ""))
-            n, source = client.openalex_cited_by(doi=doi, pmid=pmid)
-            if n is None:
+            # force_refresh: by-id lookups are otherwise cached forever, which would make
+            # a "refresh" return the very value it is meant to replace.
+            n, source = client.openalex_cited_by(doi=doi, pmid=pmid, force_refresh=True)
+            if n is None or "stale_cache" in source:
+                consecutive_miss += 1
+                if consecutive_miss >= ROLLING_MAX_CONSECUTIVE_MISSES:
+                    stop_reason = f"{consecutive_miss} consecutive misses (OpenAlex unavailable or throttling)"
+                    break
                 continue  # upstream had nothing this time; leave the old value untouched
+            consecutive_miss = 0
             p = dict(p)
             p["citation_count"] = n
             p["citation_source"] = source
             p["citation_updated_utc"] = utc_now_iso()
             updated.append(p)
             refreshed += 1
+            if len(updated) >= 200:
+                save_payload_rows(conn, "papers", "pmid", updated, updated_field="citation_updated_utc")
+                updated = []
+            if i % 100 == 0:
+                print(f"  rolling refresh: {i}/{len(candidates)} looked up, {refreshed} refreshed "
+                      f"({time.monotonic() - started:.0f}s)", flush=True)
         if updated:
             save_payload_rows(conn, "papers", "pmid", updated, updated_field="citation_updated_utc")
+        if stop_reason:
+            print(f"Rolling refresh stopped early: {stop_reason}.", flush=True)
         print(f"Rolling refresh: updated {refreshed} of {len(candidates)} candidate(s).")
 
     conn.close()

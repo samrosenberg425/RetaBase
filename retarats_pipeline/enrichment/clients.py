@@ -328,7 +328,7 @@ class IdentifierMetadataClient:
             result["partial"] = True
         return result
 
-    def openalex_cited_by(self, doi: str = "", pmid: str = "") -> Tuple[Optional[int], str]:
+    def openalex_cited_by(self, doi: str = "", pmid: str = "", force_refresh: bool = False) -> Tuple[Optional[int], str]:
         """Return (cited_by_count, source) from OpenAlex by DOI (preferred) or PMID.
 
         OpenAlex needs no API key — only a contact email for the polite pool. We
@@ -339,13 +339,15 @@ class IdentifierMetadataClient:
         pmid = clean_text(pmid)
         if doi:
             url = f"{OPENALEX_WORKS}/https://doi.org/{quote(doi, safe='')}"
-            data, source = self.http.get_json("openalex_doi", doi, url, params={"mailto": mailto})
+            data, source = self.http.get_json("openalex_doi", doi, url, params={"mailto": mailto},
+                                              force_refresh=force_refresh)
             n = _openalex_cited_by(data)
             if n is not None:
                 return n, f"openalex_doi:{source}"
         if pmid:
             url = f"{OPENALEX_WORKS}/pmid:{quote(pmid, safe='')}"
-            data, source = self.http.get_json("openalex_pmid", pmid, url, params={"mailto": mailto})
+            data, source = self.http.get_json("openalex_pmid", pmid, url, params={"mailto": mailto},
+                                              force_refresh=force_refresh)
             n = _openalex_cited_by(data)
             if n is not None:
                 return n, f"openalex_pmid:{source}"

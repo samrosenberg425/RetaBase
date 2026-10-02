@@ -136,13 +136,13 @@ jobs:
           if [ "$(date -u +%u)" = "1" ]; then
             resweep_rc=0
             RESWEEP_START_YEAR=$(( $(date -u +%Y) - 1 ))
-            python3 retarats_v2.py --config-mode local --mode backfill --datetype edat \
+            timeout 7200 python3 retarats_v2.py --config-mode local --mode backfill --datetype edat \
               --start-year "$RESWEEP_START_YEAR" \
               --summary-mode rule_based --sinks local \
               --local-db work/retarats_pubmed.sqlite --state-db work/retarats_state.sqlite || resweep_rc=$?
 
             retraction_rc=0
-            python3 scripts/run_retraction_refresh.py --db work/retarats_pubmed.sqlite \
+            timeout 1800 python3 scripts/run_retraction_refresh.py --db work/retarats_pubmed.sqlite \
               --molecules config/MOLECULES.csv --retrieval-out work/retraction_refresh.json || retraction_rc=$?
 
             rc=0
@@ -160,13 +160,17 @@ jobs:
       # already-filled values every day, so citation counts keep climbing instead
       # of freezing at their first value. Semantic Scholar stays fill-only (never
       # rolling-refreshed) -- it is only tried when OpenAlex has nothing.
+      # Every new WS4 step is wrapped in `timeout` (a hard backstop) so a stalled
+      # upstream is recorded as a failed source (rc 124) and the publish still
+      # proceeds, instead of the step eating the job's 6h limit and cancelling the
+      # whole run (which happened on every run from 2026-09-28 to 2026-10-02).
       - name: Backfill citation counts (OpenAlex, impact axis)
         env:
           API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
         run: |
           rc=0
-          python3 scripts/run_impact_backfill.py --db work/retarats_pubmed.sqlite --newest-first --max-records 8000 \
-            --rolling-refresh 2000 || rc=$?
+          timeout 2700 python3 scripts/run_impact_backfill.py --db work/retarats_pubmed.sqlite --newest-first --max-records 8000 \
+            --rolling-refresh 2000 --rolling-refresh-budget-sec 900 || rc=$?
           python3 scripts/record_source_run.py --state work/source_status.json --source openalex --exit-code "$rc"
 
       - name: Enrich with NIH iCite metrics
@@ -184,7 +188,7 @@ jobs:
         run: |
           if [ "$(date -u +%u)" = "1" ]; then
             rc=0
-            python3 scripts/run_icite_backfill.py --db work/retarats_pubmed.sqlite --all --refresh-older-than-days 6 || rc=$?
+            timeout 5400 python3 scripts/run_icite_backfill.py --db work/retarats_pubmed.sqlite --all --refresh-older-than-days 6 || rc=$?
             python3 scripts/record_source_run.py --state work/source_status.json --source icite --exit-code "$rc"
           else
             echo "Not Monday UTC; skipping the weekly full-corpus iCite refresh this run."

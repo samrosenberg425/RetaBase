@@ -429,7 +429,7 @@ def run():
     orig_openalex = IdentifierMetadataClient.openalex_cited_by
     # Upstream OpenAlex has nothing this time (simulated outage/miss): the
     # existing citation_count must survive untouched.
-    IdentifierMetadataClient.openalex_cited_by = lambda self, doi="", pmid="": (None, "openalex_not_found")
+    IdentifierMetadataClient.openalex_cited_by = lambda self, doi="", pmid="", force_refresh=False: (None, "openalex_not_found")
     try:
         old_argv = sys.argv
         sys.argv = ["run_impact_backfill.py", "--db", impact_db, "--max-records", "0", "--rolling-refresh", "1"]
@@ -445,6 +445,59 @@ def run():
     conn.close()
     check("rolling refresh: upstream miss preserves the existing citation_count", row1["citation_count"] == 5)
     check("rolling refresh: upstream miss does not advance citation_updated_utc", row1["citation_updated_utc"] == old_ts)
+
+    # Rolling refresh is bounded: (a) a persistent upstream stall aborts after N
+    # consecutive misses instead of grinding through every candidate, (b) a time budget
+    # stops it with work-so-far saved, (c) lookups bypass the by-id forever-cache.
+    many = [{"pmid": str(1000 + i), "citation_count": 1, "citation_source": "openalex_doi:api",
+             "citation_updated_utc": old_ts} for i in range(rib.ROLLING_MAX_CONSECUTIVE_MISSES + 30)]
+    calls = {"n": 0, "force": []}
+
+    def _always_miss(self, doi="", pmid="", force_refresh=False):
+        calls["n"] += 1
+        calls["force"].append(force_refresh)
+        return (None, "openalex_not_found")
+
+    def _run_refresh(rows, budget="900"):
+        db = os.path.join(tmpdir, f"impact_{len(rows)}_{budget}_{calls['n']}.sqlite")
+        c = sqlite3.connect(db)
+        c.execute("create table papers (pmid text primary key, payload_json text, updated_at_utc text)")
+        for r in rows:
+            c.execute("insert into papers values (?, ?, ?)", (r["pmid"], json.dumps(r), old_ts))
+        c.commit(); c.close()
+        old_argv = sys.argv
+        sys.argv = ["run_impact_backfill.py", "--db", db, "--max-records", "0",
+                    "--rolling-refresh", str(len(rows)), "--rolling-refresh-budget-sec", budget]
+        try:
+            rib.main()
+        finally:
+            sys.argv = old_argv
+        c = sqlite3.connect(db)
+        out = {pm: json.loads(pl) for pm, pl in c.execute("select pmid, payload_json from papers")}
+        c.close()
+        return out
+
+    IdentifierMetadataClient.openalex_cited_by = _always_miss
+    try:
+        _run_refresh(many)
+    finally:
+        IdentifierMetadataClient.openalex_cited_by = orig_openalex
+    check("rolling refresh: persistent misses abort early (not every candidate queried)",
+          calls["n"] == rib.ROLLING_MAX_CONSECUTIVE_MISSES)
+    check("rolling refresh: lookups bypass the forever-cache (force_refresh=True)", all(calls["force"]))
+
+    def _hit(self, doi="", pmid="", force_refresh=False):
+        return (42, "openalex_doi:api")
+
+    IdentifierMetadataClient.openalex_cited_by = _hit
+    try:
+        saved = _run_refresh(many[:5])
+        check("rolling refresh: successful lookups are written", all(r["citation_count"] == 42 for r in saved.values()))
+        cleared = _run_refresh(many[:5], budget="0.000001")
+    finally:
+        IdentifierMetadataClient.openalex_cited_by = orig_openalex
+    check("rolling refresh: time budget stops the loop (values left untouched)",
+          sum(1 for r in cleared.values() if r["citation_count"] == 42) < 5)
 
     # =========================================================================
     # retarats_pipeline/rules_version.py: stability + change detection
