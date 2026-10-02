@@ -46,6 +46,7 @@ from retarats_pipeline.curation.publication_status import (
 )
 from retarats_pipeline.curation.ranking import RANK_FIELDS, compute_rank
 from retarats_pipeline.curation.reliability import RELIABILITY_FIELDS as _RELIABILITY_FIELDS, assess_reliability
+from retarats_pipeline.manual_exclusions import hold_decision_fields, load_exclusions, plan_holds
 from retarats_pipeline.curation.ontology import FIELDS as ONTOLOGY_FIELDS, ANNOTATION_FIELDS, VERSION as ONTOLOGY_VERSION, CONFIG as ONTOLOGY_CONFIG, annotate
 
 # Paper fields we merge onto each evidence row (identity + links + text for facets).
@@ -122,6 +123,21 @@ def build(db_path: str, out_dir: str, limit: int = 0, release_id: str = "") -> d
     required = load_required_fields()
 
     os.makedirs(out_dir, exist_ok=True)
+
+    # Manual holds (config/manual_exclusions.csv): planned up front so pattern rules see
+    # whole-molecule counts (safety cap). Records stay in the corpus; they are only marked
+    # excluded_noise so they drop out of public_records.csv. Fail-open: see manual_exclusions.py.
+    plan_rows = []
+    for ev in (evidence[:limit] if limit else evidence):
+        paper = paper_by_pmid.get(str(ev.get("pmid", "") or ""), {})
+        plan_rows.append({"molecule_id": ev.get("molecule_id", ""), "pmid": ev.get("pmid", ""),
+                          "title": ev.get("title") or paper.get("title", ""),
+                          "abstract": ev.get("abstract") or paper.get("abstract", ""),
+                          "keywords": ev.get("keywords") or paper.get("keywords", "")})
+    holds, hold_msgs = plan_holds(load_exclusions(), plan_rows)
+    for m in hold_msgs:
+        print(f"  manual_exclusions: {m}", file=sys.stderr)
+    hold_report: List[dict] = []
 
     curated_rows: List[dict] = []
     facets_long_rows: List[dict] = []
@@ -208,6 +224,11 @@ def build(db_path: str, out_dir: str, limit: int = 0, release_id: str = "") -> d
         # 4) publication decision (broad inclusion; reads evidence_class + directness).
         decision = decide_publication(row, rules, required)
         row.update(decision.to_dict())
+        if i in holds:
+            row.update(hold_decision_fields(holds[i]))
+            hold_report.append({"evidence_id": row.get("evidence_id", ""), "molecule_id": row.get("molecule_id", ""),
+                                "pmid": pmid, "title": row.get("title", ""),
+                                "rule": holds[i].label, "reason": holds[i].reason})
 
         # 5) appraisal + LLM-ready scaffold
         row.update(appraise_evidence(row).to_dict())
@@ -219,11 +240,11 @@ def build(db_path: str, out_dir: str, limit: int = 0, release_id: str = "") -> d
 
         # stats
         stats["processed"] += 1
-        stats["publication_status"][decision.publication_status] += 1
-        if decision.website_section:
-            stats["website_section"][decision.website_section] += 1
+        stats["publication_status"][row["publication_status"]] += 1
+        if row.get("website_section"):
+            stats["website_section"][row["website_section"]] += 1
         stats["reliability_tier"][rel.reliability_tier] += 1
-        if decision.auto_publish_eligible:
+        if row.get("auto_publish_eligible"):
             stats["auto_publish"] += 1
         if not decision.required_fields_present:
             stats["missing_required"] += 1
@@ -262,6 +283,10 @@ def build(db_path: str, out_dir: str, limit: int = 0, release_id: str = "") -> d
         facets_long_rows,
         ["evidence_id", "molecule_id", "facet_group", "facet_value", "facet_label", "facet_source"],
     )
+
+    _write_csv(os.path.join(out_dir, "manual_exclusions_report.csv"), hold_report,
+               ["evidence_id", "molecule_id", "pmid", "title", "rule", "reason"])
+    stats["manual_holds"] = len(hold_report)
 
     # --- public_records.csv (broad browsable feed = everything on-topic) ---
     public = [r for r in curated_rows if r.get("publication_status") in {"featured", "listed"}]
@@ -1246,6 +1271,7 @@ def main() -> None:
     print(f"  public_records   : {result['public']}")
     print(f"  review_queue     : {result['queue']}")
     print(f"  molecule_index   : {result['molecules']}")
+    print(f"  manual holds      : {stats.get('manual_holds', 0)} (see manual_exclusions_report.csv)")
     print(f"  auto_publish_eligible: {stats['auto_publish']}")
     print(f"  missing required fields: {stats['missing_required']}")
     print(f"  model_primary != model_type (disambiguation impact): {stats['model_disambiguation_changed']}")

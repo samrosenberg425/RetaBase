@@ -1,0 +1,2 @@
+molecule_id,pmid,hold_if_text_has,but_not_if_text_has,reason,added_on
+melanotan_ii,,metallothionein|metallothioneins,melanotan|melanocortin|melanocortins|MSH|MC1R|MC3R|MC4R|afamelanotide|bremelanotide|PT-141,"MT-II is also the shorthand for metallothionein-II; records about the metallothionein protein with no melanocortin/melanotan context are not Melanotan II evidence (search rule fixed 2026-09-27 in 9db38ff; this holds the records fetched before the fix)",2026-10-02

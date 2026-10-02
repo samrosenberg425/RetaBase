@@ -58,6 +58,7 @@ DEFAULT_PUBMED_DB = "data/retarats_pubmed.sqlite"
 DEFAULT_TRIALS_DB = "data/retarats_trials.sqlite"
 DEFAULT_PREPRINTS_DB = "data/retarats_preprints.sqlite"
 DEFAULT_BENCHMARK = "config/retrieval_benchmark.csv"
+DEFAULT_MANUAL_EXCLUSIONS = "config/manual_exclusions.csv"
 
 
 # --------------------------------------------------------------------------
@@ -174,6 +175,38 @@ def build_corpus_index(pubmed_db: str = DEFAULT_PUBMED_DB, trials_db: str = DEFA
         finally:
             conn.close()
     return index
+
+
+def manually_held_keys(pubmed_db: str = DEFAULT_PUBMED_DB,
+                       exclusions_path: str = DEFAULT_MANUAL_EXCLUSIONS) -> Set[Tuple[str, str]]:
+    """(molecule_id, pmid) pairs the curated build holds off the public site via
+    config/manual_exclusions.csv. They are still in the corpus, but the site does not show
+    them, so for "should this be absent?" purposes they count as absent -- reported
+    separately by the CLI so a hold can never silently mask a retrieval-rule failure."""
+    import sqlite3
+
+    from retarats_pipeline.manual_exclusions import load_exclusions, plan_holds
+
+    if not exclusions_path or not os.path.exists(exclusions_path) or not os.path.exists(pubmed_db):
+        return set()
+    excl = load_exclusions(exclusions_path)
+    if not excl.rules:
+        return set()
+    conn = sqlite3.connect(pubmed_db)
+    try:
+        papers = {str(p.get("pmid", "")): p for p in load_payload_table(conn, "papers")}
+        evidence = load_payload_table(conn, "evidence")
+    finally:
+        conn.close()
+    plan_rows = []
+    for ev in evidence:
+        paper = papers.get(str(ev.get("pmid", "") or ""), {})
+        plan_rows.append({"molecule_id": ev.get("molecule_id", ""), "pmid": ev.get("pmid", ""),
+                          "title": ev.get("title") or paper.get("title", ""),
+                          "abstract": ev.get("abstract") or paper.get("abstract", ""),
+                          "keywords": ev.get("keywords") or paper.get("keywords", "")})
+    holds, _ = plan_holds(excl, plan_rows)
+    return {(str(plan_rows[i]["molecule_id"]), str(plan_rows[i]["pmid"]).lower()) for i in holds}
 
 
 @dataclass
@@ -433,8 +466,17 @@ def _ctgov_search_all_by_field(client, query: str, field_param: str, page_size: 
 def _cmd_offline(args: argparse.Namespace) -> int:
     rows = load_benchmark_rows(args.benchmark)
     index = build_corpus_index(args.pubmed_db, args.trials_db, args.preprints_db)
+    held = manually_held_keys(args.pubmed_db, args.manual_exclusions)
+    in_corpus_but_held = [r for r in approved_only(rows) if r.id_type == "pmid" and r.key in held and r.key in index["pmid"]]
+    index["pmid"] = index["pmid"] - held
     report = check_offline(rows, index)
     print(report.render())
+    if held:
+        print(f"\nManual holds: {len(held)} (molecule, pmid) pair(s) are in the corpus but held off the site by "
+              f"{args.manual_exclusions}; treated as absent above.")
+        for r in in_corpus_but_held:
+            print(f"  approved row {r.molecule_id}/{r.id} ({r.expected}) is currently held -- "
+                  + ("OK (expected exclude)" if r.expected == "exclude" else "WARNING: an approved INCLUDE is held"))
 
     dups = duplicate_evidence(args.pubmed_db)
     if dups:
@@ -504,6 +546,8 @@ def main(argv=None) -> int:
     p.add_argument("--preprints-db", default=DEFAULT_PREPRINTS_DB)
     p.add_argument("--write-baseline", default="", help="Write a per-molecule count snapshot here.")
     p.add_argument("--baseline-counts", default="", help="Diff current counts against a prior snapshot.")
+    p.add_argument("--manual-exclusions", default=DEFAULT_MANUAL_EXCLUSIONS,
+                   help="Records held by this file count as absent ('' disables).")
     p.set_defaults(func=_cmd_offline)
 
     p = sub.add_parser("propose", help="Append a model-PROPOSED row to a candidates file (never approved).")
