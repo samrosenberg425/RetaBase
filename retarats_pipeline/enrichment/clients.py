@@ -4,7 +4,8 @@ import re
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from urllib.parse import quote
 
-from .common import APIConfig, CachedHTTPClient, clean_text, find_nct_ids, first_nonblank, semicolon_join
+from .common import (APIConfig, CachedHTTPClient, clean_text, find_nct_ids, first_nonblank, search_cache_key,
+                     semicolon_join)
 
 CTG_BASE = "https://clinicaltrials.gov/api/v2/studies"
 PMC_IDCONV = "https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/"
@@ -61,7 +62,7 @@ class ClinicalTrialsClient:
             params["pageToken"] = page_token
         if count_total:
             params["countTotal"] = "true"
-        key = query[:140] + f"_{page_size}_{page_token or 'first'}"
+        key = search_cache_key(query, page_size, page_token or "first")
         return self.http.get_json("clinicaltrials_search", key, CTG_BASE, params=params,
                                    ttl_sec=self.http.config.search_ttl_sec)
 
@@ -280,7 +281,7 @@ class IdentifierMetadataClient:
         # result_type + cursorMark are part of the cache key so "core" (abstract +
         # commentCorrection links) caches separately from "lite", and each page of a
         # paginated walk gets its own cache entry.
-        ck = query[:170] + f"_{page_size}_{result_type}_{cursor_mark}"
+        ck = search_cache_key(query, page_size, result_type, cursor_mark)
         return self.http.get_json("europepmc_search", ck, EUROPEPMC_SEARCH, params=params,
                                    ttl_sec=self.config.search_ttl_sec)
 

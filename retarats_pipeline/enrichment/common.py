@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import os
 import re
@@ -262,6 +263,16 @@ RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 #   exception     - a network/transport exception persisted after retries, no cache.
 STALE_CACHE = "stale_cache"
 RETRY_EXHAUSTED = "retry_exhausted"
+
+
+def search_cache_key(query: str, *parts: Any) -> str:
+    """Cache key for a SEARCH response: a readable prefix plus a hash of the exact query and
+    paging parts. ``CachedHTTPClient._cache_path`` collapses every run of punctuation to ``_``,
+    so ``("A b" OR "C d")`` and ``(A b OR C d)`` -- different searches -- used to share one cache
+    file and a corrected (quoted) query was answered from the old query's cached results."""
+    raw = "\x1f".join([str(query)] + [str(p) for p in parts])
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", str(query))[:100] + "_" + digest
 
 
 class CachedHTTPClient:

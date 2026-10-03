@@ -251,6 +251,24 @@ def run():
         finally:
             common_mod.requests = orig
 
+    # --- a corrected (quoted) search must NOT be answered from the old (unquoted) query's cache.
+    # The cache file name collapses runs of punctuation to "_", so the two queries used to share one file.
+    pages = [_FakeResp(200, {"hitCount": 1, "resultList": {"result": [{"id": "OLD"}]}}),
+             _FakeResp(200, {"hitCount": 1, "resultList": {"result": [{"id": "NEW"}]}})]
+    http, fake, orig = _client(pages)
+    try:
+        client = IdentifierMetadataClient(http, APIConfig(cache_dir=http.config.cache_dir))
+        old = client.europepmc_search_all('(Thymosin Beta-4 OR TB4) AND SRC:PPR', page_size=100)
+        new = client.europepmc_search_all('("Thymosin Beta-4" OR "TB4") AND SRC:PPR', page_size=100)
+        check("cache: quoted and unquoted queries are separate cache entries (no cross-serving)",
+              [r["id"] for r in old["items"]] == ["OLD"] and [r["id"] for r in new["items"]] == ["NEW"]
+              and new["source"] == "api")
+        again = client.europepmc_search_all('("Thymosin Beta-4" OR "TB4") AND SRC:PPR', page_size=100)
+        check("cache: the same query is still served from its own cache", [r["id"] for r in again["items"]] == ["NEW"]
+              and again["source"] == "cache")
+    finally:
+        common_mod.requests = orig
+
     # =========================================================================
     # registry.py: preprint version / withdrawal normalization
     # =========================================================================
