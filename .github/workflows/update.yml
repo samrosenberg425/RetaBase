@@ -171,13 +171,17 @@ jobs:
       # upstream is recorded as a failed source (rc 124) and the publish still
       # proceeds, instead of the step eating the job's 6h limit and cancelling the
       # whole run (which happened on every run from 2026-09-28 to 2026-10-02).
+      # Sizing (run 2026-10-03 02:38): the first 1,000 lookups took ~250s (~4/s); the next ~12 minutes
+      # were an OpenAlex throttling tail that added only ~10 more lookups, so ~1,000 of 2,000 per run either way.
+      # 1,000 records / 300s keeps the same effective cadence (~1,000 oldest values refreshed per day) and drops ~10 minutes of dead waiting. It only bounds how
+      # many citation counts are refreshed per day; no ranking logic depends on it.
       - name: Backfill citation counts (OpenAlex, impact axis)
         env:
           API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
         run: |
           rc=0
           timeout 2700 python3 scripts/run_impact_backfill.py --db work/retarats_pubmed.sqlite --newest-first --max-records 8000 \
-            --rolling-refresh 2000 --rolling-refresh-budget-sec 900 || rc=$?
+            --rolling-refresh 1000 --rolling-refresh-budget-sec 300 || rc=$?
           python3 scripts/record_source_run.py --state work/source_status.json --source openalex --exit-code "$rc"
 
       - name: Enrich with NIH iCite metrics
