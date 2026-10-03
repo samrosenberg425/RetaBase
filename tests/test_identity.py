@@ -78,6 +78,10 @@ def run():
     check("preprint markup is stripped before matching ('VPAC<sub>1</sub>' reads VPAC1, entities decoded)",
           idn.plain_text("VPAC <sub>1</sub> and <i>TB</i><sub>4</sub> &gt; 1 <h4>ABSTRACT</h4>x").replace("  ", " ").startswith("VPAC 1 and TB4 > 1")
           and idn.plain_text("VPAC<sub>1</sub>") == "VPAC1")
+    check("term: Unicode minus / superscript-minus count as hyphens ('angiotensin-(1\u207b7)')",
+          c("Angiotensin-(1-7)").search("angiotensin-(1\u207b7) (Ang-(1\u207b7))") and c("PTH(1-34)").search("PTH 1\u221234"))
+    check("term: a bracket is not a separator between digit runs (cytogenetic '(p22)[2]' is not P-22-2)",
+          not c("P-22-2").search("add(9)(p22)[2]/46") and c("P-22-2").search("P22-2") and c("P-22-2").search("P 22 2"))
     check("term: Greek letters are tokens", c("Tα1").search("the Tα1 peptide"))
     check("acronym detection", idn.is_acronym("VIP") and idn.is_acronym("TB-4") and not idn.is_acronym("Melanotan")
           and not idn.is_acronym("MOTS-c") and not idn.is_acronym("Thymosin alpha 1"))

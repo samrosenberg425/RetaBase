@@ -140,13 +140,18 @@ def compile_term(term: str, case_sensitive: bool = False) -> "re.Pattern[str]":
     if not toks:
         return re.compile(r"(?!x)x")
     seps = set("".join(re.findall(r"[^\w\s]|_", term.strip())))
-    # always optional between pieces: space/underscore, hyphens and dashes, brackets, colon ('PTH [1-34]',
-    # 'beta(4)', 'acetyl-L: -carnitine'); plus any other punctuation the term itself spells ('ActRIIB.Fc').
-    joiner_chars = r"\s_\-\u2010-\u2015()\[\]{}:/" + "".join(re.escape(c) for c in sorted(seps) if c not in "-_()[]{}:")
-    # two adjacent digit runs need a real separator ('22-2' must not match '222'); anything else may be glued
+    # hyphen-like characters, incl. the Unicode variants PubMed abstracts use ('angiotensin-(1⁻7)', minus sign)
+    dash = r"\-\u2010-\u2015\u207b\u208b\u2212\ufe63\uff0d"
+    extra = "".join(re.escape(c) for c in sorted(seps) if c not in "-_()[]{}:")
+    # always optional between pieces: space/underscore, dashes, brackets, colon ('PTH [1-34]', 'beta(4)',
+    # 'acetyl-L: -carnitine'); plus any other punctuation the term itself spells ('ActRIIB.Fc').
+    joiner = r"\s_" + dash + r"()\[\]{}:/" + extra
+    # two adjacent digit runs need a REAL separator (space / dash / the term's own punctuation), never a bracket:
+    # '22-2' must not match '222' or a cytogenetic '(p22)[2]'
+    digit_joiner = r"\s_" + dash + extra
     parts = [re.escape(toks[0])]
     for prev, tok in zip(toks, toks[1:]):
-        parts.append(f"[{joiner_chars}]{'+' if prev.isdigit() and tok.isdigit() else '*'}" + re.escape(tok))
+        parts.append((f"[{digit_joiner}]+" if prev.isdigit() and tok.isdigit() else f"[{joiner}]*") + re.escape(tok))
     body = "".join(parts)
     # a plain-word name also matches its plural ('Kisspeptins'); acronyms and codes do not
     plural = "s?" if (not case_sensitive and toks[-1].isalpha() and len(toks[-1]) >= 5 and not is_acronym(term)) else ""
