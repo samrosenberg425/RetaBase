@@ -26,7 +26,8 @@ _MISSING = {"", "not reported", "not clearly reported", "unclear", "na", "n/a", 
 _PROVENANCE = json.dumps(
     {
         "source": "rule_based_v1",
-        "inputs": ["primary_study_type", "model_type", "role_category", "comparator", "sample_size", "outcome_direction"],
+        "inputs": ["primary_study_type", "model_type", "role_category", "comparator", "sample_size", "refined_n",
+                   "outcome_direction", "abstract", "fulltext_methods", "fulltext_results"],
         "llm": "not_used",
     }
 )
@@ -68,11 +69,45 @@ def _val(evidence: dict, *keys: str) -> str:
     return ""
 
 
-def appraise_evidence(evidence: dict) -> Appraisal:
+def _has_text(evidence: dict, paper, *keys: str) -> bool:
+    """True when any of ``keys`` holds non-blank text on the paper or the evidence row."""
+    for k in keys:
+        for src in (paper or {}, evidence):
+            if str(src.get(k, "") or "").strip():
+                return True
+    return False
+
+
+def _text_source(evidence: dict, paper) -> tuple:
+    """(has_abstract, has_full_text, label) describing what text the extractors could read.
+
+    Full text means the open-access Methods/Results the extractors actually use
+    (``fulltext_methods`` / ``fulltext_results``); the old "pmc" substring test on an
+    extraction-source field never matched, so every record claimed to have no full text.
+    """
+    has_abs = _has_text(evidence, paper, "abstract")
+    has_ft = _has_text(evidence, paper, "fulltext_methods", "fulltext_results")
+    if has_ft:
+        label = "abstract and open-access full text" if has_abs else "title and open-access full text"
+    elif has_abs:
+        label = "title and abstract"
+    else:
+        label = "title only"
+    return has_abs, has_ft, label
+
+
+def appraise_evidence(evidence: dict, paper: dict | None = None) -> Appraisal:
+    """Rule-based strengths / limitations / synopsis.
+
+    Missing information is reported as "not found in the available text" (or as "source
+    unavailable" when there is no abstract or full text to read). It is never presented as
+    a finding that the study lacked the feature.
+    """
     primary = str(evidence.get("primary_study_type", "") or "")
     model = str(evidence.get("model_type", "") or "").lower()
     role = str(evidence.get("role_category", "") or "")
-    tier = str(evidence.get("reliability_tier", "") or "")
+    has_abs, has_ft, src_label = _text_source(evidence, paper)
+    source_unavailable = not has_abs and not has_ft
 
     strengths: List[str] = []
     limits: List[str] = []
@@ -91,7 +126,14 @@ def appraise_evidence(evidence: dict) -> Appraisal:
         strengths.append("placebo-controlled")
     elif comparator:
         strengths.append(f"comparator reported ({comparator[:40]})")
-    n = _val(evidence, "sample_size", "abstract_sample_size")
+    # Same sources, same order as the rigor rubric's sample-size credit (refined_n first),
+    # so this text can never contradict a parsed N shown elsewhere on the record.
+    n = ""
+    for _k in ("refined_sample_size", "refined_n", "sample_size", "abstract_sample_size"):
+        _v = _val(evidence, _k)
+        if _v and any(ch.isdigit() for ch in _v):
+            n = _v
+            break
     if n:
         strengths.append(f"sample size reported ({n[:30]})")
     safety = _val(evidence, "safety_signal", "abstract_safety_signal")
@@ -99,27 +141,36 @@ def appraise_evidence(evidence: dict) -> Appraisal:
         strengths.append("safety/tolerability discussed")
 
     # --- limitations ---
+    # Items 1..n are things the study design implies; the "not found" items only say what the
+    # automated reader did not find in the text it had (and are skipped, replaced by a single
+    # source-unavailable note, when there was no abstract or full text to read).
+    def not_found(what: str) -> None:
+        if not source_unavailable:
+            limits.append(f"{what} not found in the {src_label}")
+
     if model == "animal":
         limits.append("preclinical (animal) evidence; may not translate to humans")
     elif model == "in vitro":
         limits.append("in vitro / cell-level evidence only")
-    elif model in {"", "unclear"}:
-        limits.append("study model unclear from abstract")
+    elif model in {"", "unclear"} and not source_unavailable:
+        limits.append(f"study model unclear from the {src_label}")
+    if source_unavailable:
+        limits.append("no abstract or open-access full text available: design details could not be assessed")
     if not comparator:
-        limits.append("no comparator/control clearly reported")
+        not_found("comparator/control")
     if not n:
-        limits.append("sample size not reported in abstract")
+        not_found("sample size")
     if _missing(evidence.get("outcome_direction")) or "unclear" in str(evidence.get("outcome_direction", "")).lower():
-        limits.append("outcome direction not clearly stated")
+        if not source_unavailable:
+            limits.append(f"outcome direction not clearly stated in the {src_label}")
     if _missing(evidence.get("dose_route")):
-        limits.append("dose/route not reported")
+        not_found("dose/route")
     if _missing(evidence.get("duration")):
-        limits.append("study duration not reported")
+        not_found("study duration")
     if role != "direct_intervention" and role not in {"biomarker_readout", "pathway_component"}:
         limits.append(f"molecule role is '{role or 'unclear'}', not a direct treatment")
-    src = str(evidence.get("initial_extraction_source", "") or evidence.get("abstract_extraction_source", ""))
-    if "pmc" not in src.lower():
-        limits.append("extracted from title/abstract only (no full text)")
+    if has_abs and not has_ft:
+        limits.append("analysed from the title and abstract only; no open-access full text was available")
     if "Meta-analysis" not in primary and "Systematic review" not in primary and primary != "RCT":
         limits.append("single study; not corroborated here")
 
@@ -137,8 +188,6 @@ def appraise_evidence(evidence: dict) -> Appraisal:
         bits.append(f"{mol} evidence record")
     if outcome:
         bits.append(f"reported outcome: {outcome}")
-    if tier:
-        bits.append(f"reliability tier: {tier}")
     summary = "; ".join(bits)
 
     # confidence in the appraisal itself

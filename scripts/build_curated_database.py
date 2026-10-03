@@ -41,6 +41,7 @@ from retarats_pipeline.curation.journal import JOURNAL_FIELDS, journal_reputatio
 from retarats_pipeline.curation.publication_status import (
     PUBLICATION_FIELDS,
     decide_publication,
+    featured_block_reason,
     load_publication_rules,
     load_required_fields,
 )
@@ -245,6 +246,8 @@ def build(db_path: str, out_dir: str, limit: int = 0, release_id: str = "") -> d
         row["off_focus_reason"] = off_focus_reason(row, paper)
 
         # 4) publication decision (broad inclusion; reads evidence_class + directness).
+        #    WS5A: retracted / PubMed-preprint / non-research records are never Featured.
+        row["featured_block_reason"] = featured_block_reason(row, paper)
         decision = decide_publication(row, rules, required)
         row.update(decision.to_dict())
         if i in holds:
@@ -261,7 +264,7 @@ def build(db_path: str, out_dir: str, limit: int = 0, release_id: str = "") -> d
                                     "match_type": v.match_type, "matched_term": v.matched_term, "reason": v.reason})
 
         # 5) appraisal + LLM-ready scaffold
-        row.update(appraise_evidence(row).to_dict())
+        row.update(appraise_evidence(row, paper).to_dict())
 
         # 6) combined ranking (reliability + directness + relevance + recency + impact)
         row.update(compute_rank(row).to_dict())

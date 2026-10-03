@@ -1,6 +1,6 @@
 ## What RetaBase is
 
-A transparent, rule-based evidence database for bioactives gaining new attention as emerging medications or novel use cases. Every paper is scored by an auditable rubric — no black-box model decides what ranks first — so you can see, and reproduce, why anything appears where it does.
+A transparent, rule-based evidence database for bioactives gaining new attention as emerging medications or novel use cases. Every paper is sorted by study design using fixed, auditable rules — no black-box model decides what appears first — so you can see, and reproduce, why anything appears where it does. The site does not rate how well any individual study was done.
 
 ::charts::
 
@@ -12,16 +12,13 @@ Pick a view:
 
 ## How to read a card
 
-Each paper shows four score rings. **Rank** is the overall best-first score; the three smaller rings are what feed it:
+Each card is one paper. The badge at its left is its **evidence level** (for example "L4"): its place on the study-design pyramid, assigned automatically by rules. It describes the *kind* of study, not how well the study was done, and it can be wrong. Below the title you will see the journal, year, citation counts and tags for condition, outcome and model.
 
-::rings::
+- **Evidence level** — study design, from systematic reviews at the top to laboratory studies at the bottom. The default order is evidence level first, then an automated ordering score within a level; it is not a quality score.
+- **Citations** — how often the paper has been cited. This reflects age and field, not quality; recent papers have had little time to be cited.
+- **Retracted** — retracted papers stay searchable and carry a red badge.
 
-- **Rank** — overall best-first order (blends the three below with topical relevance, recency and venue).
-- **Rigor** — how well the study was run for its own type; not comparable across classes; guidelines are n/a.
-- **Directness** — how directly it applies to humans (human RCT high, in-vitro low).
-- **Impact** — citation-impact percentile within its field (via iCite).
-
-Hover any ring for a quick definition, or open a paper to see the full Scope Score with a side-by-side explanation.
+Open a paper to see the full record. Missing details are shown as *not found in the available text*, which does not mean the study failed to do it or failed to report it.
 
 ## Safety & scope
 

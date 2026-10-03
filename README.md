@@ -4,7 +4,7 @@
 
 🔎 **Live dashboard:** https://samrosenberg425.github.io/RetaBase/
 
-RetaBase continuously pulls the biomedical literature for a curated set of bioactive molecules, scores each paper for **study quality** and **translational directness** with rule-based, auditable methods, and publishes a browsable, filterable dashboard — ranked so the most reliable and impactful evidence comes first. It also surfaces **ClinicalTrials.gov** registry studies and **preprints** in separate, clearly-labeled sections.
+RetaBase continuously pulls the biomedical literature for a curated set of bioactive molecules, classifies each paper by **study design** with rule-based, auditable methods, and publishes a browsable, filterable dashboard ordered by evidence level first. It does not rate how well any individual study was conducted, and its internal 0–100 heuristics are not validated quality measures. It also surfaces **ClinicalTrials.gov** registry studies and **preprints** in separate, clearly-labeled sections.
 
 > ⚠️ **Not medical advice.** RetaBase is a research/literature-aggregation tool. Nothing here is a recommendation to use, dose, or avoid any substance. Many of these compounds are experimental or not approved for the uses discussed. Consult a qualified clinician.
 
@@ -14,7 +14,7 @@ RetaBase continuously pulls the biomedical literature for a curated set of bioac
 
 - **Physicians** whose patients ask about these compounds and who want the evidence landscape at a glance.
 - **Researchers** who want a filterable, exportable map of the literature (human vs preclinical, by indication, endpoint, mechanism, etc.).
-- **Curious readers** who want to understand what the science actually says, with reliability made explicit.
+- **Curious readers** who want to understand what the science actually says, with study type, and what could not be read from the text, made explicit.
 
 ---
 
@@ -33,24 +33,24 @@ EuropePMC ────┘                         → appraisal
 2. **Enrich** — citation counts from **OpenAlex** (fallback **Semantic Scholar**); **NIH iCite** field/time-normalized metrics (Relative Citation Ratio, NIH percentile, Approximate Potential to Translate, the human/animal/molecular "triangle of translation", and clinical-article flags); **PubChem** compound IDs (CID links + synonyms); registry trials from **ClinicalTrials.gov**; preprints from **EuropePMC** (bioRxiv/medRxiv).
 3. **Curate** (`retarats_pipeline/curation/`, pure rule-based, offline, non-destructive):
    - **facets** — normalized tags (species incl. non-human primate, indication, endpoint, mechanism, route, drug class, population, sex, formulation, evidence direction, plus iCite-derived evidence-impact tier and clinical-article status).
-   - **reliability** — study quality scored *within evidence class* (GRADE/SYRCLE/ARRIVE-informed), so a rigorous in-vitro study can score high for its type.
-   - **directness** — how directly the evidence applies to humans (human RCT high → in-vitro low); iCite's APT, human/animal/molecular triangle, and clinical-article flag inform directness and the human/animal/in-vitro classification when the keyword heuristics are silent.
-   - **ranking** — a transparent blend that surfaces the best evidence first (see below).
+   - **reliability** (legacy heuristic, hidden from the public site) — a study-type starting value plus keyword credits from the title/abstract. Not a validated measure of rigor or quality, and not comparable across study types.
+   - **directness** (legacy heuristic, hidden from the public site) — a fixed value per study type (human RCT high → in-vitro low). It ignores the molecule's role in the paper and is not a measure of how directly the evidence applies; iCite's human/animal/molecular triangle and clinical-article flag inform the human/animal/in-vitro classification when the keyword heuristics are silent.
+   - **ranking** — a legacy within-level ordering score (see below). It is not a quality measure.
    - **publication status** — broad inclusion; only genuinely off-topic records are excluded.
    - **appraisal** — rule-based strengths/limitations + an LLM-ready summary slot.
 4. **Publish** — `build_curated_database.py` writes a compact `site_data.json`; `build_public_site.py` renders a single self-contained `index.html`; GitHub Pages serves it.
 
-### The ranking (fully auditable)
+### The ordering score (legacy; auditable, not a quality measure)
 
-`rank_score` (0–100) is a weighted blend, each axis shown in the record's breakdown:
+The feed is ordered by evidence level first. Within a level, `rank_score` (0–100) orders records. It is a weighted blend with the weights hard-coded in `retarats_pipeline/curation/ranking.py`; it is stored in the data files but not shown on the public site:
 
 | axis | weight | meaning |
 |---|---|---|
-| directness | 33% | translational evidence level (human RCT > … > in-vitro) |
-| quality | 28% | within-class study quality (reliability) |
-| relevance | 20% | how central the molecule is to the paper |
+| directness | 30% | fixed value per study type (a legacy heuristic) |
+| quality | 28% | study-type starting value plus keyword credits (a legacy heuristic) |
+| relevance | 18% | how central the molecule is to the paper |
 | recency | 10% | newer evidence ranked higher |
-| impact | 5% | prefers iCite field-normalized metrics (NIH percentile, then RCR) over raw citation count (log-scaled); 0 until backfilled |
+| impact | 10% | prefers iCite field-normalized metrics (NIH percentile, then RCR) over raw citation count (log-scaled); 0 when unavailable, which is common for recent papers |
 | venue | 4% | journal reputation (curated; neutral for unknown) |
 
 Full method write-up is in the dashboard's **About / Methods** tab and `docs/curation_and_publication.md`.
@@ -59,14 +59,14 @@ Full method write-up is in the dashboard's **About / Methods** tab and `docs/cur
 
 ## The dashboard
 
-- **Evidence** — all records, rank-sorted, with include/exclude multi-select filters (with select-all per domain), year (before/after/range/exact), journal-name, and min-citations filters, plus cross-filter counts. Sort by rank, reliability, directness, **impact percentile**, **translational potential (APT)**, or **clinical influence**; toggle **clinical articles only**; and open a **Triangle view** that plots the filtered papers on the NIH iCite biomedicine triangle (Human / Animal / Molecular).
-- **Clinical evidence** — human data only (no animal/in-vitro/methods).
+- **Evidence** — all records, ordered by evidence level first, with include/exclude multi-select filters (with select-all per domain), year (before/after/range/exact), journal-name, and min-citations filters, plus cross-filter counts. Sort by the default order (evidence level first), year, citations, **impact percentile**, **translational potential (APT)**, or **clinical influence**; toggle **clinical articles only**; and open a **Triangle view** that plots the filtered papers on the NIH iCite biomedicine triangle (Human / Animal / Molecular).
+- **Clinical evidence** — records the automated classification places in human categories (no animal/in-vitro/methods; the classification can be wrong).
 - **Trials registry** — ongoing & completed ClinicalTrials.gov studies (registrations, not results).
 - **Preprints** — bioRxiv/medRxiv (not peer-reviewed).
 - **Bioactives** — per-molecule index.
 - **About / Methods** — how every metric is defined and computed.
 
-Each paper shows authors (linked to Google Scholar), journal + reputation tier, a reliability meter, a directness badge, citation count, a plain-language summary, and strengths/limitations. A per-paper detail view shows every field with the score breakdowns. Everything renders safely (all values via `textContent`; no injection).
+Each paper shows authors (linked to Google Scholar), journal + reputation tier, an evidence-level badge, citation counts, a plain-language summary, and strengths/limitations. A per-paper detail view shows every field. The legacy 0–100 values are not shown in the public build. Everything renders safely (all values via `textContent`; no injection).
 
 **Embed it anywhere** with an iframe:
 ```html
@@ -165,7 +165,7 @@ python3 tests/test_curation.py && python3 tests/test_extractors.py \
 
 ## Design principles
 
-Rule-based and **auditable** (every tag, score, and decision is explainable from config), **non-destructive** (enrichment proposes, never overwrites), **offline curation** (no LLM/network needed to rebuild the site), and **broad inclusion** (reliability is a label, not a hide-gate). No PRISMA compliance is claimed, but the search/curation is PRISMA-S-informed and defensible.
+Rule-based and **auditable** (every tag, score, and decision is explainable from config), **non-destructive** (enrichment proposes, never overwrites), **offline curation** (no LLM/network needed to rebuild the site), and **broad inclusion** (automated labels never hide a record). No PRISMA compliance is claimed, but the search/curation is PRISMA-S-informed and defensible.
 
 ## How to cite
 

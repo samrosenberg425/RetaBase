@@ -96,29 +96,27 @@ def run():
     check("no leftover dark-theme hardcodes", "#0f1115" not in html_text and "#06101f" not in html_text)
     check("nike-style sticky topbar", ".topbar {" in html_text and "position: sticky" in html_text)
     check("home + methods tabs present", 'id="tab-home"' in html_text and 'id="tab-methods"' in html_text)
-    check("score bar is labelled 'Rigor'", 'el("span", "meter-cap", "Rigor")' in html_text
-          and ".meter-cap" in html_text)
-    check("score bar has a quick hover example", "can both score ~70" in html_text and "wrap.title" in html_text)
-    check("score bar has a '?' info popover", "info-dot" in html_text and "How to read these scores" in html_text
-          and "openScoreLegend" in html_text)
-    check("legend explains within-class rigor + directness + rank + evidence level",
-          "its OWN evidence class" in html_text and "human-relevance axis" in html_text
-          and "best-first score WITHIN an evidence level" in html_text
-          and "place on the evidence pyramid" in html_text)
+    # WS5A: the Rigor meter, its "?" legend popover and the "can both score ~70" example are gone.
+    check("no Rigor score bar / meter", 'el("span", "meter-cap", "Rigor")' not in html_text
+          and ".meter-cap" not in html_text and "reliabilityMeter" not in html_text)
+    check("no 'both score ~70' example", "can both score ~70" not in html_text)
+    check("no score-legend popover", "info-dot" not in html_text and "How to read these scores" not in html_text
+          and "openScoreLegend" not in html_text)
+    check("no 'human-relevance axis' / 'best-first score' legend wording",
+          "human-relevance axis" not in html_text and "best-first score WITHIN" not in html_text)
     check("inputs get accent focus rings", "box-shadow: 0 0 0 3px var(--accent-soft)" in html_text)
     # split feed: modal-only detail lazy-loads from site_detail.json via DETAIL/dval
     check("detail sidecar is fetched on demand", 'fetchJson("site_detail.json")' in html_text)
     check("DETAIL map + dval helper present", "var DETAIL" in html_text and "function dval(r, k)" in html_text)
     check("modal reads detail via dval (with record fallback)",
-          'dval(r, "reliability_components")' in html_text and 'dval(r, "appraisal_strengths")' in html_text)
+          'dval(r, "appraisal_strengths")' in html_text and 'dval(r, "appraisal_limitations")' in html_text)
+    check("legacy breakdowns are internal-only",
+          'INTERNAL ? parseComp(dval(r, "reliability_components"))' in html_text
+          and 'INTERNAL ? parseComp(dval(r, "rank_components"))' in html_text)
     check("search haystack rebuilt without facet_all",
           "function hayFor" in html_text and "rec.facet_all" not in html_text)
-    # practice guidelines: authoritative badge instead of a rigor bar + popover note
-    check("guideline shows authoritative badge not a rigor bar",
-          'clinical_guideline' in html_text and 'authoritative guideline' in html_text
-          and '.guide-badge' in html_text)
-    check("popover explains guidelines aren't rigor-graded",
-          "Practice guidelines" in html_text and "shown as n/a" in html_text)
+    # practice guidelines: no rigor bar / badge any more (the rigor meter was removed)
+    check("no guideline rigor badge", "authoritative guideline" not in html_text and ".guide-badge" not in html_text)
     # min-cited filter de-emphasized + moved below the facet filters
     check("min-cited control moved below facet filters",
           html_text.index('id="facet-filters"') < html_text.index('for="min-cit"'))
@@ -160,9 +158,9 @@ def run():
     _mtypes = _all_types(_copy["methods"])
     check("methods copy parsed with a table + formula (incl. detail folds)",
           "table" in _mtypes and "formula" in _mtypes and "detail" in _mtypes)
-    check("home copy uses nav + rings tokens",
+    check("home copy uses the nav token and no longer the rings token",
           any(b.get("name") == "nav" for b in _copy["home"])
-          and any(b.get("name") == "rings" for b in _copy["home"]))
+          and not any(b.get("name") == "rings" for b in _copy["home"]))
     check("block renderer wired (no innerHTML)",
           "function renderBlocks" in html_text and "function renderSpans" in html_text
           and "var COPY = DATA.copy" in html_text)
@@ -202,8 +200,8 @@ def run():
           _hier[0]["key"] == "systematic_review" and _hier[0]["rank"] == 1
           and any(h["key"] == "in_vitro" for h in _hier))
     # sort: hierarchy vs mixed + a level filter facet
-    check("sort offers hierarchy-first AND mix-all-levels",
-          'value="rank"' in html_text and 'value="rank_mixed"' in html_text and "mix all levels" in html_text)
+    check("sort offers the default evidence-level-first order, not a mixed-level rank",
+          'value="rank"' in html_text and 'value="rank_mixed"' not in html_text and "mix all levels" not in html_text)
     check("Evidence level is a sidebar filter facet",
           ("evidence_level_short", "Evidence level") in site.FILTER_FACETS)
     # RetaRats logo top-right, clickable to the main site
@@ -248,11 +246,11 @@ def run():
           'id="help-banner"' in html_text and "renderHelpBanner" in html_text
           and isinstance(_fb.get("banner"), dict) and bool(_fb["banner"].get("text")))
     # Methods documentation: rigor variables, weight rationale, sources, hierarchy citation
-    check("methods define rigor variables + points",
+    check("methods define the legacy credits + points (labelled legacy)",
           "Human trials & observational studies" in COPY_TEXT and "Orthogonal methods" in COPY_TEXT
-          and "Sample size" in COPY_TEXT)
-    check("methods give weighting rationale + venue derivation",
-          "Why these weights" in COPY_TEXT and "curated journal-reputation table" in COPY_TEXT)
+          and "Sample size" in COPY_TEXT and "legacy" in COPY_TEXT.lower())
+    check("methods describe the input weights, with weights stated as hard-coded",
+          "Show each input, its weight" in COPY_TEXT and "not in an editable config" in COPY_TEXT)
     check("methods list data sources", "Where the data comes from" in COPY_TEXT
           and "E-utilities" in COPY_TEXT and "iCite" in COPY_TEXT and "ClinicalTrials.gov" in COPY_TEXT)
     check("methods cite OCEBM + evidence pyramid + GRADE",
@@ -548,8 +546,9 @@ def run():
           "function authorsLine" in feed_html)
     # (b) The home landing explains how to read the scores (rings legend).
     check("home copy: how to read a card", "How to read a card" in COPY_TEXT)
-    check("home copy: directness legend line",
-          "how directly it applies to humans" in COPY_TEXT)
+    check("home copy: no directness / rigor / rank ring legend",
+          "how directly it applies to humans" not in COPY_TEXT and "four score rings" not in COPY_TEXT
+          and "how well the study was run" not in COPY_TEXT)
     # public build (default internal=False) must NOT emit the export-decisions
     # button markup; the curator notes/approval code remains in the JS but is
     # gated behind the runtime INTERNAL flag (see the dedicated --internal test).
@@ -559,9 +558,9 @@ def run():
           "if (INTERNAL) {" in feed_html and "Notes are for curators" in feed_html)
     # (c) The new facet filters appear as configured labels.
     check("new filter label Drug class rendered", "Drug class" in feed_html)
-    # journal-tier badge helper wired in.
-    check("journal tier badge helper present",
-          "function journalTierBadge" in feed_html)
+    # WS5A: venue-quality tier badges are no longer shown (journal name itself still is).
+    check("journal tier badge helper removed",
+          "function journalTierBadge" not in feed_html and "jtier" not in feed_html)
     # friendly-label helper preserves raw values (only display prettified).
     check("pretty() helper present", "function pretty" in feed_html)
 
@@ -699,9 +698,9 @@ def run():
         check("Human data (human-only) tab present", ">Human data<" in brand_html)
         check("About / Methods tab present", "About / Methods" in brand_html)
         # About page carries the actual rank formula.
-        check("Methods copy carries the current rank formula",
+        check("Methods copy carries the current ordering formula (labelled as an ordering score)",
               "0.30" in COPY_TEXT and "0.28" in COPY_TEXT and "0.10" in COPY_TEXT
-              and "directness" in COPY_TEXT and "impact" in COPY_TEXT)
+              and "ordering score" in COPY_TEXT and "impact" in COPY_TEXT)
 
     # 14) --internal toggles the curator approval UI. Public build (default) omits
     #     the approve/reject/notes + export-decisions markup entirely; the internal
@@ -1144,7 +1143,7 @@ def run():
         site._safe_json_block({"records": []}),
         0, 0, "2026-01-01T00:00:00Z", 0, 0, "inline",
     )
-    check("Automated rigor label rendered", "Automated rigor" in rig_html)
+    check("Automated rigor label NOT rendered", "Automated rigor" not in rig_html)
     # The standalone "Reliability" meter/sort label is gone (capitalized, as a
     # user-facing label; lowercase field names in JS are unaffected).
     check("no standalone <b>Reliability</b> meter label", "<b>Reliability</b>" not in rig_html)
@@ -1155,7 +1154,7 @@ def run():
     # Detail-view formal risk-of-bias disclosure row.
     check("Formal risk of bias detail row present", "Formal risk of bias" in rig_html)
     check("risk of bias marked not assessed",
-          "not assessed (automated rigor signals only)" in rig_html)
+          "not assessed (no quality or risk-of-bias appraisal is performed)" in rig_html)
     # About / Methods honesty text: rule-based signals, explicitly NOT RoB 2 /
     # ROBINS-I / GRADE.
     check("methods copy: not a formal risk-of-bias assessment",
@@ -1164,12 +1163,13 @@ def run():
     check("methods copy names GRADE certainty", "GRADE" in COPY_TEXT)
     # Ranking presets: the control and all option labels.
     check("rank-preset control present", 'id="rank-preset"' in rig_html)
-    check("preset Default (blended rank)", "Default (blended rank)" in rig_html)
+    check("preset Default (evidence level first)", "Default (evidence level first)" in rig_html
+          and "blended rank" not in rig_html)
     check("preset Human-evidence first", "Human-evidence first" in rig_html)
-    check("preset Best synthesis", "Best synthesis" in rig_html)
-    check("preset Landmark", ">Landmark<" in rig_html)
+    check("preset Syntheses first (not 'Best synthesis')", "Syntheses first" in rig_html and "Best synthesis" not in rig_html)
+    check("preset Most cited", ">Most cited<" in rig_html)
     check("preset Latest", ">Latest<" in rig_html)
-    check("preset Mechanism", ">Mechanism<" in rig_html)
+    check("preset Mechanism removed (it sorted mixed classes by rigor)", ">Mechanism<" not in rig_html)
     check("presetSort comparator defined", "function presetSort" in rig_html)
     # Preset override wiring in applyFilters (predictable: preset overrides Sort).
     check("preset overrides sort when not default",

@@ -95,7 +95,16 @@ findings positively, so a language model reading that framing over-calls
 "beneficial"; measured agreement between a model and these rules was 1 in 81 papers,
 in that direction.
 
-## 4. Automated rigor (within-class quality, 0–100)
+> **Status (WS5A, 2026-10).** Sections 4–6 document legacy heuristics exactly as implemented. An
+> independent audit found that the 0–100 rigor, directness and rank values are **not validated
+> cross-class quality measures**: rigor is mostly a constant per study type plus keyword credits,
+> directness is a lookup by study type that ignores the molecule's role, and missing text scores 0.
+> The public site no longer shows them, no longer sorts or filters across study types by them, and no
+> longer describes them as quality, strength or confidence. They remain in the data files for
+> transparency while a validated replacement is developed. Wording below that calls them quality or
+> best-first measures is historical.
+
+## 4. Automated rigor (legacy heuristic, 0–100)
 
 A class-appropriate rubric — a randomised human trial and an in-vitro assay are not
 judged on the same criteria. Starts from a class base score and adds points for
@@ -111,7 +120,7 @@ citation mentions can't leak credit.
 This is **not** a formal risk-of-bias assessment (not Cochrane RoB 2, not ROBINS-I)
 and **not** GRADE. Formal RoB is not assessed; the site says so on every record.
 
-## 5. Directness (translational level)
+## 5. Directness (legacy heuristic: study-type value)
 
 How directly the evidence bears on humans: human RCT high → human observational →
 animal → in vitro low. Independent of rigor: a flawless cell study is still
@@ -120,8 +129,8 @@ human/animal/molecular proportions, those are preferred over keyword inference.
 
 ## 6. Rank (ordering only)
 
-A weighted blend summing to 1.00: directness 0.33, rigor 0.28, relevance 0.20,
-recency 0.10, impact 0.05, venue 0.04. Every component is emitted per record in
+A weighted blend summing to 1.00: directness 0.30, rigor 0.28, relevance 0.18,
+recency 0.10, impact 0.10, venue 0.04 (hard-coded in `ranking.py`). Every component is emitted per record in
 `rank_components`, so any position in the list can be explained. Impact uses iCite
 NIH percentile, then RCR (log-scaled), then raw citation count. Venue is neutral for
 unknown journals so an unfamiliar journal is never penalised. Rank is a **sorting
@@ -130,7 +139,8 @@ aid, not a verdict**.
 ## 7. Publication, capping and dedup
 
 Records are `featured / listed / review / excluded_noise` by completeness and
-strength. The published feed is capped per molecule and section to bound page
+an automatic class-driven rule (retracted records, PubMed-indexed preprints and non-research
+items such as letters and errata are never `featured`). The published feed is capped per molecule and section to bound page
 weight, but **human evidence and evidence syntheses are never dropped**, nor is
 anything at/above the 90th iCite percentile. Molecules with little literature are
 exempt from the cap entirely. A paper matched to the same molecule by several search

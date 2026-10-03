@@ -3,8 +3,6 @@
   "intro": "See something off? RetaBase is community-checked — a quick flag helps us keep it accurate. No account needed, takes a few seconds.",
   "aspects": [
     {"key": "evidence_level", "label": "Evidence level / study type"},
-    {"key": "rigor", "label": "Rigor score"},
-    {"key": "directness", "label": "Directness score"},
     {"key": "indication", "label": "Indication / condition tags"},
     {"key": "molecule", "label": "Which bioactive it's about"},
     {"key": "regulatory", "label": "Regulatory status"},

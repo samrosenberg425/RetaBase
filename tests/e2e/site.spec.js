@@ -30,11 +30,34 @@ test('Home is the default landing tab', async ({ page }) => {
   await expect(page.locator('#home-view')).toBeVisible();
 });
 
-test('score rings render on cards', async ({ page }) => {
+test('legacy 0-100 score rings are not shown on public cards or in the dialog', async ({ page }) => {
   await gotoEvidence(page);
-  await expect(page.locator('.card .score-box').first()).toBeVisible();
-  // Rank total ring + 3 sub-rings = 4 ring items per card.
-  expect(await page.locator('.card').first().locator('.ring-item').count()).toBe(4);
+  await expect(page.locator('.card').first()).toBeVisible();
+  expect(await page.locator('.card .score-box').count()).toBe(0);
+  expect(await page.locator('.card .ring-item').count()).toBe(0);
+  // The evidence-level badge (design hierarchy) is still the primary signal on a card.
+  await expect(page.locator('.card .evlevel').first()).toBeVisible();
+  await page.locator('.card').first().click();
+  const dialog = page.locator('#modal[role="dialog"]');
+  await expect(dialog).toBeVisible();
+  expect(await dialog.locator('.score-box, .scope-score, .ring-item').count()).toBe(0);
+  await page.keyboard.press('Escape');
+});
+
+test('cross-class quality sorts, tier filters and spotlight/max-rigor stats are absent', async ({ page }) => {
+  await gotoEvidence(page);
+  const sortValues = await page.locator('#sort option').evaluateAll(o => o.map(x => x.value));
+  for (const gone of ['rank_mixed', 'reliability', 'directness']) expect(sortValues).not.toContain(gone);
+  expect(sortValues).toContain('rank');
+  const presets = await page.locator('#rank-preset option').evaluateAll(o => o.map(x => x.value));
+  expect(presets).not.toContain('mechanism');
+  const body = (await page.locator('#sidebar').innerText()).toLowerCase();
+  expect(body).not.toContain('reliability tier');
+  expect(body).not.toContain('directness tier');
+  await page.click('#tab-molecules');
+  const mol = (await page.locator('#molecules-list').innerText()).toLowerCase();
+  expect(mol).not.toContain('max rigor');
+  expect(mol).not.toContain('spotlight');
 });
 
 test('search filters the list to matching records', async ({ page }) => {

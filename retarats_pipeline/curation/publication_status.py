@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import csv
 import os
+import re
 from dataclasses import asdict, dataclass
 from functools import lru_cache
 from typing import List, Optional, Sequence, Tuple
@@ -188,7 +189,8 @@ def check_required_fields(
 #
 # Reliability is a *label*, not a gate: everything on-topic is included and
 # filterable. Only genuinely off-topic records are excluded. Statuses:
-#   featured        included + spotlighted (high directness AND decent quality)
+#   featured        included + labelled Featured by a class-driven automatic rule
+#                   (never retracted, PubMed-preprint or non-research records)
 #   listed          included and browsable (the broad default)
 #   review          included but flagged for a curator (missing required fields)
 #   excluded_noise  off-topic / non-biomedical (the only hard exclusion)
@@ -231,6 +233,76 @@ SECTION_PRIORITY = {
     "Background and context": 35,
 }
 _OFF_TOPIC_LANES = {"environmental_or_materials"}
+
+# --- Featured safety (WS5A) -------------------------------------------------
+#
+# Featured is an automatic label from a class-driven rule; it must never be given to a
+# record that is withdrawn, not peer reviewed, or not a research report. These are
+# deterministic checks on PubMed publication types (and the retraction flag derived from
+# them). They only stop the Featured label: the record stays published as "listed".
+_RETRACTED_TYPES = frozenset({"retracted publication", "retraction of publication"})
+_PREPRINT_TYPES = frozenset({"preprint"})
+# Always a notice rather than a research report, whatever else the record is tagged with.
+_NOTICE_TYPES = frozenset({"published erratum", "retraction of publication"})
+# Commentary-type records. A research article that also carries one of these tags
+# (research letter, trial with a "comment") is kept eligible: when a primary-design
+# publication type is present the record is NOT treated as non-research.
+_COMMENTARY_TYPES = frozenset({
+    "letter", "editorial", "comment", "news", "newspaper article", "interview", "biography",
+})
+_PRIMARY_DESIGN_TYPES = frozenset({
+    "randomized controlled trial", "clinical trial", "systematic review", "meta-analysis",
+    "case reports", "controlled clinical trial", "pragmatic clinical trial", "equivalence trial",
+    "observational study", "practice guideline", "guideline",
+})
+
+
+# Unambiguous reply / correction title prefixes, for items PubMed did not tag as Letter/Comment.
+# Deliberately strict: "Response to sirolimus in ..." and "Correction of anemia ..." are research titles.
+_NON_RESEARCH_TITLE = re.compile(
+    r"^\s*\[?\s*(?:re\s*\.?\s*:|reply\s*:|reply to\b|in reply\b|authors?['\u2019]?\s+replys?\b|authors?['\u2019]\s+reply\b"
+    r"|comments? on\b|response to comment|letter to the editor\b|erratum\b|corrigendum\b|correction to\b|retraction notice\b)",
+    re.IGNORECASE,
+)
+
+
+def pubtype_set(*sources) -> frozenset:
+    """Lowercased publication types from the first non-empty source (list or ``;``-joined string)."""
+    for raw in sources:
+        if raw in (None, ""):
+            continue
+        if isinstance(raw, (list, tuple, set, frozenset)):
+            items = [str(x) for x in raw]
+        else:
+            items = str(raw).replace(",", ";").split(";")
+        types = {t.strip().lower() for t in items if t.strip()}
+        if types:
+            return frozenset(types)
+    return frozenset()
+
+
+def _truthy(value) -> bool:
+    return value is True or str(value if value is not None else "").strip().lower() in {"true", "1", "yes"}
+
+
+def featured_block_reason(evidence: dict, paper: Optional[dict] = None) -> str:
+    """Return why a record must never be Featured, or "" when nothing blocks it.
+
+    One of ``retracted`` | ``preprint`` | ``non_research``. Retraction wins over the others.
+    """
+    types = pubtype_set((paper or {}).get("pubtypes"), evidence.get("pubtypes"))
+    if _truthy(evidence.get("is_retracted")) or (_RETRACTED_TYPES & types):
+        return "retracted"
+    if _PREPRINT_TYPES & types:
+        return "preprint"
+    if _NOTICE_TYPES & types:
+        return "non_research"
+    if _COMMENTARY_TYPES & types and not (_PRIMARY_DESIGN_TYPES & types):
+        return "non_research"
+    title = str((paper or {}).get("title") or evidence.get("title") or "")
+    if _NON_RESEARCH_TITLE.match(title):
+        return "non_research"
+    return ""
 
 
 def decide_publication(
@@ -293,7 +365,13 @@ def decide_publication(
     elif (directness_tier == "high" and quality >= 50) \
             or (ev_class == "evidence_synthesis" and quality >= 60) \
             or ev_class == "clinical_guideline":
-        status, auto, reason, rule_id = ("featured", True, "", "broad_v1:featured")
+        # WS5A safety: retracted records, PubMed-indexed preprints and non-research
+        # items (letters, comments, errata) are never Featured. They stay published.
+        block = str(evidence.get("featured_block_reason", "") or "") or featured_block_reason(evidence)
+        if block:
+            status, auto, reason, rule_id = ("listed", False, "", f"ws5a:listed_{block}")
+        else:
+            status, auto, reason, rule_id = ("featured", True, "", "broad_v1:featured")
     else:
         status, auto, reason, rule_id = ("listed", False, "", "broad_v1:listed")
 

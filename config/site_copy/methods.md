@@ -1,153 +1,121 @@
 ## The short version
 
-RetaBase reads the published literature on each bioactive (the retatrutide-family molecules this database tracks) and puts the strongest, most human-relevant evidence first. It does this with a fixed, written rubric — no black-box model decides what ranks. Every **record** — a paper linked to a bioactive — carries three numbers you can inspect: where it sits on the **evidence pyramid** (its study design), how well it was **run** for its type (rigor), and how directly it applies to **people** (directness). A combined **rank** blends those three with how on-topic the paper is (relevance), how recent it is, how often it is cited, and how well-regarded its journal is, to order the feed.
+RetaBase reads the published literature on each bioactive (the retatrutide-family molecules this database tracks) and sorts it by **study design**. It does this with fixed, written rules — no black-box model decides what ranks. Every **record** — a paper linked to a bioactive — is placed on the **evidence pyramid** (its study design, for example systematic review, randomized trial, cohort or animal study). The default order is evidence level first, then an automated **ordering score** within a level.
 
-Read the numbers together. The evidence level tells you *what kind* of study it is; rigor tells you *how well* it was done; directness tells you *how relevant* it is to humans. A tidy lab study and a large clinical trial are never scored on the same curve.
+What the site does **not** do: it does not appraise how well any individual study was conducted, and it does not give a validated quality, strength or confidence score. The ordering score, and the other 0–100 values kept in the data files, are legacy automated heuristics. They are not validated, they are not comparable across different kinds of study, and they are not shown on the cards.
 
-> These are automated, rule-based signals for triage and best-first ordering. They are **not** a formal risk-of-bias assessment (Cochrane RoB 2, ROBINS-I) and **not** a GRADE certainty rating. No human reviewer appraises each study.
+> These are automated, rule-based signals for sorting and triage. They are **not** a formal risk-of-bias assessment (Cochrane RoB 2, ROBINS-I) and **not** a GRADE certainty rating. No human reviewer appraises each study. Study type is assigned automatically and can be wrong.
 
 ## The evidence pyramid
 
-Not all study designs carry equal weight. RetaBase places every record on an evidence pyramid and orders the feed by that **level first**, then by the rank score **within** a level. So a case report never outranks a randomized trial in the default view, and rigor and impact only ever compare like with like.
+Not all study designs carry equal weight. RetaBase places every record on an evidence pyramid and orders the feed by that **level first**, then by the automated ordering score **within** a level. For records that are classified correctly, a case report is therefore listed below a randomized trial in the default view. Because the level is assigned automatically, a record can sit at the wrong level — for example a review or cohort study labelled a trial, or a letter labelled a study.
 
 The clinical ordering runs from human evidence syntheses through practice guidelines, randomized trials, and observational designs. Nonclinical syntheses remain with nonclinical evidence; mixed investigations, mixed syntheses, and unresolved review scopes have separate groups. The Guide shows the full ordering. Systematic review and meta-analysis are compatible method tags even when one primary display level is selected.
 
-The level is detected from the paper's PubMed publication type and shown as a level badge (for example "L4") on each card. You can switch the feed between *level-first* and *mixed* ordering, and filter to a single level, in the sidebar.
+The level is taken from the paper's PubMed publication type where one is present, and shown as a level badge (for example "L4") on each card. Where the publication type is silent, it comes from keyword rules on the title and abstract and from NIH iCite's human / animal / molecular classification, which is lower confidence. You can filter to a single level in the sidebar.
 
 :::detail Show the sources behind the ladder
 
 The ladder follows established evidence hierarchies. For human studies it aligns with the Oxford Centre for Evidence-Based Medicine [2011 Levels of Evidence](https://www.cebm.net/wp-content/uploads/2014/06/CEBM-Levels-of-Evidence-2.1.pdf), where systematic reviews and randomized trials sit at the top for treatment questions. It extends the widely-taught [evidence pyramid](https://guides.library.ucdavis.edu/systematic-reviews/levels-of-evidence) downward to the animal and in-vitro tiers that clinical hierarchies leave out but which this database contains.
 
-This is a "where does the strongest evidence sit" shortcut based on study **design**. It is deliberately *not* a formal certainty rating like [GRADE](https://www.gradeworkinggroup.org/), which judges confidence in a specific effect after the relevant studies have been gathered and appraised. The display ordering lives in an editable config file (`config/evidence_hierarchy.csv`), so the ordering can be audited and adjusted.
+This is a "which kind of study is this" shortcut based on study **design**. It is deliberately *not* a formal certainty rating like [GRADE](https://www.gradeworkinggroup.org/), which judges confidence in a specific effect after the relevant studies have been gathered and appraised. The display ordering lives in an editable config file (`config/evidence_hierarchy.csv`), so the ordering can be audited and adjusted.
 
 :::
 
-## Rigor — how well a study was run
+## How records are ordered
 
-Rigor (0–100) measures how well a study was conducted **for its own type of study** (its "evidence class"). A randomized human trial and an in-vitro assay are judged on different rubrics: the score starts from a baseline for that study type (its "class base") and only ever *adds* points for design features detected in the reported methods and abstract — nothing is subtracted.
+The default feed order is: evidence level first (the pyramid above), then the **ordering score** within each level, then the original feed order for ties. The ordering score is not a quality score. It puts on-topic, recent, well-cited records of the same level first, and it also contains legacy values that depend on the kind of study.
 
 ```formula
-rigor = class base + design credits, capped at 100
+ordering score = 0.30·study-type value + 0.28·reported-features value + 0.18·relevance + 0.10·recency + 0.10·impact + 0.04·venue
 ```
 
-Because each type is graded on its own curve, the number is **not comparable across classes**: a high-rigor cell study is not stronger evidence than a lower-rigor trial. Credit for the core design features — blinding, randomization, and controls — is negation-aware and read from the **Methods** section: a study earns no blinding credit for "an open-label study, unlike double-blind trials…", and a technique named only in the introduction of a structured abstract doesn't count. (Other credits, such as sample size or dose-response, are matched across the whole abstract.)
+:::detail Show each input, its weight, and what it really is
 
-:::detail Show every credit, by study type
+| Input | Weight | What it actually is |
+| --- | --- | --- |
+| Study-type value (stored as "directness") | 0.30 | A fixed number for the record's study type (for example 95 for a controlled human trial, 25 for an in-vitro study). It ignores the molecule's role in the paper and is not a measure of how directly the evidence applies. |
+| Reported-features value (stored as "rigor") | 0.28 | A fixed starting number for the study type plus credits for design keywords found in the title or abstract (for example "double-blind"). About half of records get no keyword credit at all, and a keyword can fire on an unrelated word. Missing information scores 0; that is not a finding that the feature was absent. |
+| Relevance | 0.18 | How central the bioactive appears to be to the paper, from the molecule's role in it. |
+| Recency | 0.10 | Newer publication years score higher, scaled from a 1990 anchor. |
+| Impact | 0.10 | Citation-based: the NIH iCite percentile, else its Relative Citation Ratio, else a raw citation count. iCite percentiles are mostly not available yet for papers from the last two years, so those papers receive a lower impact value than their citations would suggest. They are listed lower within a level than older papers. |
+| Venue | 0.04 | A name match against a curated journal list. The matching can mislabel some journals. Unknown journals get a neutral value. |
 
-Each variable and the points it adds are enumerated here. The sum is capped at 100 and stored with a per-signal breakdown, so any card's rigor traces back to the exact credits it earned. Sample-size credit is 0 when no size is reported (a reported-but-small size still earns the smallest tier).
+The weights are fixed in the code (`retarats_pipeline/curation/ranking.py`), not in an editable config. Only the pyramid ordering is a config file.
+
+:::
+
+Because the study-type value and the starting numbers are constants for each kind of study, **none of these 0–100 values can be compared across different kinds of study**. A 70 for a cell study does not mean it is as good as a 70 for a trial. RetaBase therefore does not sort or filter by them across study types, and does not display them on cards. They stay in the data files for transparency and for future validation work.
+
+Records without an abstract may be assigned a study type with less confidence, and the legacy values come out lower for them. That reflects missing information, not poor study quality.
+
+:::detail Show what the reported-features value looks for
+
+The sum is capped at 100 and stored with a per-signal breakdown. Credits for blinding, randomization and controls are negation-aware ("an open-label study, unlike double-blind trials…" earns no blinding credit) and are read from the Methods part of a **structured abstract** when there is one. For unstructured abstracts, the whole title and abstract are searched. The paper's own Methods section is **not** read for these credits. Open-access full text is used only to extract sample size, dose, route and duration. A sample-size credit is 0 when no size could be read; a missing size is not a small size.
 
 #### Human trials & observational studies
 
-Base **design**: controlled trial 60, non-randomized interventional 45, observational 34. **Comparator**: placebo +12, active / standard-of-care (or any reported comparator) +8. **Blinding**: double +8, single +4. **Randomization** +6 (credited for non-RCTs that report it; RCTs already carry it in the design base). **Sample size**: n≥1000 +14, ≥300 +11, ≥100 +8, ≥30 +4, smaller +1. **Extras** +4 for multicentre / prospective / pre-registered.
+Starting value: controlled trial 60, non-randomized interventional 45, observational 34. **Comparator**: placebo +12, active / standard-of-care (or any reported comparator) +8. **Blinding**: double +8, single +4. **Randomization** +6 (for non-RCTs that report it). **Sample size**: n≥1000 +14, ≥300 +11, ≥100 +8, ≥30 +4, smaller +1. **Extras** +4 for multicentre / prospective / pre-registered.
 
 #### Evidence syntheses
 
-Base **design** 60. **Systematic search** +12 (PRISMA / PROSPERO / predefined search). **Quantitative pooling** +8 (meta-analysis / random-effects / forest plot). **Evidence base**: ≥10 included studies +12, ≥3 +6, else +3. **Appraisal** +6 (GRADE / risk-of-bias / Cochrane). **Consistency** +4 (low heterogeneity).
+Starting value 60. **Systematic search** +12 (matches words such as "systematic" and PRISMA / PROSPERO). **Quantitative pooling** +8. **Evidence base**: ≥10 included studies +12, ≥3 +6, else +3. **Appraisal** +6 (GRADE / risk-of-bias / Cochrane). **Consistency** +4 is matched on the word "consistent", not on a heterogeneity statistic.
 
 #### Preclinical (in vivo / animal)
 
-Base 45. Randomization +8, blinding +8, controls +8 (vehicle / sham / littermate). **Sample size**: n≥40 +8, ≥16 +6, ≥8 +4, ≥4 +2. Dose-response +10, time-course +4, replication +8, in-vivo outcome +5.
+Starting value 45. Randomization +8, blinding +8, controls +8 (vehicle / sham / littermate). **Sample size**: n≥40 +8, ≥16 +6, ≥8 +4, ≥4 +2. Dose-response +10, time-course +4, in-vivo outcome +5, and a **replication** keyword credit of +8 that can fire on unrelated words.
 
 #### In vitro / mechanistic
 
-Base 40. Controls +12. **Orthogonal methods**: ≥3 techniques +14, 2 +8. Dose-response +12, replication +12, physiological relevance +10 (primary / patient-derived cells, organoids).
+Starting value 40. Controls +12. **Orthogonal methods**: ≥3 techniques +14, 2 +8. Dose-response +12, a **replication** keyword credit of +12 that can fire on unrelated words, and physiological relevance +10 (primary / patient-derived cells, organoids).
 
 #### Narrative reviews & methods / assay papers
 
-**Narrative review**: base 45, plus +10 for a comprehensive / critical / up-to-date scope. **Methods / assay / tool**: base 40, plus validation metrics (sensitivity / specificity / limit of detection) +18, comparison to a reference or gold-standard method +14, reproducibility (inter- / intra-assay) +10, novelty / utility +8. A record that matches none of the class rubrics falls back to a fixed 30.
+**Narrative review**: starting value 45, plus +10 for a comprehensive / critical / up-to-date scope. **Methods / assay / tool**: starting value 40, plus validation metrics +18, comparison to a reference method +14, reproducibility +10, novelty / utility +8; these keyword matches are generic. A record that matches none of the class rubrics falls back to a fixed 30.
 
 :::
 
-## Directness — how relevant it is to people
+## How to read this site (and what not to read in)
 
-Directness (0–100) measures how directly a finding applies to humans, independent of how well the study was run. It is a heuristic based on evidence class and extracted population/system scope. It does not measure applicability to a specific clinical question. The values in the table below are the base for each class. For the preclinical, in-vitro, "methods/tool", and "other" classes only, a small bounded nudge from NIH iCite's translation-potential score (APT) can move the value up to +8 or down to −4 — enough to re-order records *within* a class, never enough to leapfrog human or synthesis evidence.
+The ordering is a **triage aid**. It is not a verdict on any single paper, and a few patterns are worth keeping in mind so they don't mislead you:
 
-:::detail Show the directness score for every study type
-
-| Evidence class | Directness |
-| --- | --- |
-| Human — controlled trial (RCT) | 95 |
-| Clinical practice guideline | 92 |
-| Evidence synthesis with explicit human scope | 90 |
-| Nonclinical evidence synthesis | 45 |
-| Mixed evidence synthesis or unresolved human/nonclinical design conflict | 25 |
-| Evidence synthesis with unresolved scope | 22 |
-| Human — interventional (non-RCT) | 80 |
-| Human — observational | 66 |
-| Preclinical (in vivo / animal) | 45 |
-| Narrative review | 42 |
-| In vitro / molecular | 25 |
-| Other / unclear | 22 |
-| Methods / assay / tool | 16 |
-
-:::
-
-## Rank — the best-first order
-
-Rank (0–100) blends the axes above with relevance, recency, citation impact and journal venue into the single score that orders the feed *within* each evidence level:
-
-```formula
-rank = 0.30·directness + 0.28·rigor + 0.18·relevance + 0.10·recency + 0.10·impact + 0.04·venue
-```
-
-Impact is time-normalized through the NIH [iCite](https://icite.od.nih.gov/) percentile, so a strong recent paper isn't buried by older, more-cited ones.
-
-:::detail Show each axis, its weight, and why
-
-| Axis | Weight | What it is | How it is derived |
-| --- | --- | --- | --- |
-| Directness | 0.30 | how directly it applies to humans | set by evidence class (RCT 95 … in-vitro 25) |
-| Rigor | 0.28 | within-class study quality | the rubric above |
-| Relevance | 0.18 | how central the bioactive is to the paper | the molecule's role (direct intervention scores highest) |
-| Recency | 0.10 | newer evidence ranked higher | publication year, scaled from a 1990 anchor |
-| Impact | 0.10 | citation impact | iCite percentile, else Relative Citation Ratio, else a raw count |
-| Venue | 0.04 | journal standing | a curated journal-reputation table |
-
-**Why these weights.** Directness and rigor are deliberately dominant — 58% together — because study design and conduct should drive ordering more than popularity. Recency is capped at 10% and never falls to zero for old work, so foundational papers aren't buried for their age. Impact prefers iCite's time- and field-normalized percentile and defaults to 0 (never negative) until a citation backfill runs, so it only ever promotes well-cited work. Venue is kept as its own small 4% axis rather than folded into impact — folding would inflate a zero impact axis to ~50 across the whole database — and unknown journals get a neutral 50, so a good study in an obscure journal is never sunk. The weights live in an editable config so they are easy to audit and tune.
-
-:::
-
-## How to read the scores (and what not to read in)
-
-The scores are a **triage aid** — they order what's worth reading first. They are not a verdict on any single paper, and a few patterns are worth keeping in mind so they don't mislead you:
-
-- **A low Impact ring often just means "new," not "weak."** Impact is citation-based, and citations take years to accumulate — so a strong, recent paper can show a low Impact simply because the field hasn't cited it yet. We soften this two ways (Impact uses iCite's time- and field-normalized percentile, and it never drops a paper's rank to zero), but the effect can't be erased. A brand-new study with no citations shows Impact 0, which means *not yet measured*, not *no impact*.
-- **Older papers can look stronger on citations for the same reason** — they've had more time to be cited. That doesn't make newer work worse; it has just been around less long. Recency is a deliberate counterweight, but read citation-driven signals with the publication year in mind.
-- **Rigor is only comparable within a class.** A high-rigor in-vitro study is *not* stronger evidence than a lower-rigor human trial — they're scored on different curves. Compare rigor only between papers of the same type.
-- **Evidence level reflects study design, not this study's execution.** A flawed RCT still sits above a strong cohort by design. Use the level for the *kind* of evidence, then rigor and the paper itself to judge quality *within* that level.
+- **Evidence level reflects study design, not this study's execution.** A flawed RCT still sits above a strong cohort by design. Use the level for the *kind* of study, then read the paper to judge how well it was done.
+- **The study type is assigned automatically and can be wrong.** Known patterns: reviews or cohort studies labelled as trials, letters, comments and errata labelled as studies, and cell or animal papers labelled human when the text mentions patients. Use the ⚑ Report link on a card when you spot one.
+- **Missing information is not poor quality.** If no abstract or full text is available, or a sample size or dose could not be read, the record says it was *not found in the available text*. That does not mean the study did not report it or did not do it.
+- **The level does not say what the bioactive's role was.** A record can be listed because the bioactive was a comparator, background therapy, an assay reagent or a measured outcome, not the thing being tested. Check the molecule's role in the paper.
+- **One trial can appear many times.** A large trial's primary report and its secondary analyses are separate records, so the count of records is not a count of independent studies.
+- **A low citation count often just means "new," not "weak."** Citations take years to accumulate, and the iCite percentile is mostly not yet available for recent papers. Older papers look better on citations for the same reason. That does not make newer work worse.
 - **Absence of evidence is not evidence of absence — or of safety.** Few records for a bioactive, or no reported harms, usually means it is understudied, not that it is safe or ineffective.
-- **Venue barely moves the score, and obscurity isn't penalized.** Journal reputation is a small 4% factor, and unknown journals get a neutral value — a good study in a little-known journal is never sunk.
+- **Venue is not a quality signal here.** Journal name is shown as bibliographic information only. A small 4% input to the legacy ordering score comes from a name list that can mislabel some journals, and no venue tier is displayed.
 
-The bottom line: the ordering points you at the strongest, most human-relevant evidence first, but it is not a substitute for reading the study. Every number on a card can be traced to its inputs, so you can always check *why* something ranks where it does.
+The bottom line: the ordering points you at higher study-design tiers first, but it is not a substitute for reading the study. Each automated value can be traced to its rule inputs, so you can check *why* something is listed where it is.
 
 ## Evidence classes & guidelines
 
-Each record is classified from its PubMed publication type, study-design signals, and the human / animal / molecular classification (NLM's "Triangle of Biomedicine") that iCite provides. The class sets both the rigor rubric and the directness value.
+Each record is classified from its PubMed publication type, study-design signals in the title and abstract, and the human / animal / molecular classification (NLM's "Triangle of Biomedicine") that iCite provides. The class sets the study-type value and which keyword credits apply. Classification is automated and can be wrong; where the publication type is missing it relies on keyword rules, which are lower confidence.
 
-Clinical practice guidelines are a special case. They are authoritative synthesized recommendations, not primary studies, and grading their quality needs a separate formal instrument (AGREE II) whose inputs we don't have. So RetaBase shows rigor as **n/a** for guidelines rather than a misleading number, treats them as high-directness, and ranks them near the top.
+Clinical practice guidelines are a special case. They are synthesized recommendations, not primary studies, and judging their quality needs a formal instrument (AGREE II) whose inputs we don't have. So RetaBase shows no reported-features value for guidelines (n/a). Guidelines are recognised from the PubMed publication type or, when that is missing, from title patterns, so a few expert consensus statements may be included.
 
 ## What gets featured
 
-Every record is included, but sorted into visibility tiers:
+Every record is included, but sorted into visibility labels:
 
-- **Featured** — directly relevant to people with at least moderate rigor, or a strong synthesis / guideline.
-- **Listed** — included, lower priority.
-- **Review** — missing required metadata, flagged for a curator.
+- **Featured** — an automatic label, not an endorsement. A record is Featured when the automated classification places it in a human controlled-trial class (or another human interventional class), as an evidence synthesis, or as a practice guideline, and its legacy values pass fixed cutoffs. Featured does **not** mean the study is of high quality, and it does not mean the bioactive is the intervention being tested. Retracted records, PubMed-indexed preprints, and non-research items (letters, comments, editorials, errata) are never Featured. They stay searchable, and retracted records carry a RETRACTED badge.
+- **Listed** — included, not Featured.
+- **Review** — a record missing required metadata is flagged for a curator and is not shown on the public site.
 - **Excluded as noise** — off-topic / non-biomedical; the only hard exclusion.
-
-On the Bioactive overview, a molecule's count of Featured records is surfaced as its **"spotlight papers"** — its strongest, most human-relevant evidence.
 
 ## Where the data comes from
 
 Every field is traceable to a public source, and each is refreshed by a scheduled job.
 
-- **Papers, abstracts & publication types** — PubMed via the NCBI E-utilities. The publication type is what determines the evidence level.
+- **Papers, abstracts & publication types** — PubMed via the NCBI E-utilities. The publication type is the main input to the evidence level, where PubMed has assigned one.
 - **Citation impact** — the NIH [iCite](https://icite.od.nih.gov/) API (percentile, Relative Citation Ratio, and the clinical-article flag), with [OpenAlex](https://openalex.org/) as a fallback raw citation count.
 - **Trials** — [ClinicalTrials.gov](https://clinicaltrials.gov/).
 - **Preprints** — bioRxiv / medRxiv via [Europe PMC](https://europepmc.org/).
 - **Regulatory status** — a curated table where every row carries its source and retrieval date, plus direct per-drug links into [DailyMed](https://dailymed.nlm.nih.gov/) (the FDA label) and [Drugs@FDA](https://www.accessdata.fda.gov/scripts/cder/daf/) (approvals).
 - **Chemical identity** — [PubChem](https://pubchem.ncbi.nlm.nih.gov/).
-- **Journal reputation (venue)** — a small curated allowlist of high-reputation biomedical journals, **not** a purchased impact factor; unknown journals get a neutral score and are never penalised.
+- **Journal reputation (venue)** — a small curated list of journal-name patterns, used only as a minor input to the legacy ordering score. It is **not** a purchased impact factor, the name matching can mislabel some journals, and no venue tier is shown on the site.
 
 ## Regulatory information & safety
 
@@ -159,7 +127,7 @@ Regulatory status varies by country and changes over time; every status shown ca
 
 ## Reproducibility & how to cite
 
-Every metric is rule-based, and the underlying feed and scoring code can be inspected and reproduced. The corpus fingerprint is a deterministic hash of the exact corpus composition, so a citation can name the version it saw; the full SQLite corpus is snapshotted weekly (compressed + SHA-256) as a release asset.
+Every automated value is rule-based, and the underlying feed and classification code can be inspected and reproduced. The corpus fingerprint is a deterministic hash of the exact corpus composition, so a citation can name the version it saw; the full SQLite corpus is snapshotted weekly (compressed + SHA-256) as a release asset.
 
 
 ## Categories and source evidence

@@ -81,8 +81,6 @@ FILTER_FACETS = [
     ("facet_research_article", "Research article"),
     ("facet_translational_compartment", "Translational compartment"),
     ("facet_publication_flag", "Publication flag"),
-    ("reliability_tier", "Reliability tier"),
-    ("directness_tier", "Directness tier"),
     ("website_section", "Website section"),
 ]
 
@@ -1327,9 +1325,6 @@ _TEMPLATE = """<!DOCTYPE html>
   .meta {{ display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; color: var(--muted); margin-bottom: 8px; align-items: center; }}
   .pill {{ background: var(--panel2); border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; }}
   .pill.retracted {{ background: #7f1d1d; border-color: #ef4444; color: #fff; font-weight: 700; letter-spacing: .02em; }}
-  /* reliability meter */
-  .meter-wrap {{ display: flex; align-items: center; gap: 6px; cursor: help; }}
-  .meter-cap {{ font-size: 11px; color: var(--muted); font-weight: 600; }}
   .load-progress {{ font-size: 12px; color: var(--accent); font-weight: 600; }}
   .load-progress:not(:empty)::before {{ content: "\\2193 "; opacity: .7; }}
   /* --- instant hover tooltip --- */
@@ -1428,27 +1423,6 @@ _TEMPLATE = """<!DOCTYPE html>
   .scope-row b {{ color: var(--accent2); }}
   .scope-row.hl {{ background: var(--panel); box-shadow: inset 0 0 0 1px var(--border); }}
   .scope-row.hl b {{ color: var(--accent); }}
-  .guide-badge {{ font-size: 11px; font-weight: 600; color: var(--accent2);
-    background: rgba(15,157,118,.10); border: 1px solid var(--accent2);
-    border-radius: 999px; padding: 1px 8px; white-space: nowrap; }}
-  .info-dot {{ width: 15px; height: 15px; padding: 0; margin-left: 1px; border-radius: 999px;
-    border: 1px solid var(--border); background: var(--panel2); color: var(--muted);
-    font-size: 10px; line-height: 13px; font-weight: 700; text-align: center; cursor: pointer;
-    flex: 0 0 auto; }}
-  .info-dot:hover {{ border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }}
-  .info-dot:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 1px; }}
-  .info-pop {{ position: fixed; z-index: 60; max-width: 340px; padding: 12px 14px;
-    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
-    box-shadow: 0 10px 30px rgba(20,40,60,.20); font-size: 12px; color: var(--text); }}
-  .info-pop-h {{ font-weight: 700; color: var(--accent); font-size: 12px; margin-bottom: 9px;
-    letter-spacing: .01em; }}
-  .info-pop-row {{ margin: 0 0 9px; line-height: 1.5; }}
-  .info-pop-row b {{ color: var(--accent2); font-weight: 700; }}
-  .info-pop-foot {{ margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--border);
-    color: var(--muted); font-size: 11px; }}
-  .meter {{ width: 84px; height: 8px; background: var(--panel2); border-radius: 999px; overflow: hidden; border: 1px solid var(--border); }}
-  .meter > i {{ display: block; height: 100%; border-radius: 999px; }}
-  .meter-lbl {{ font-size: 11px; font-weight: 600; }}
   .badge {{ font-size: 11px; font-weight: 600; border-radius: 999px; padding: 2px 8px; border: 1px solid var(--border); }}
   .tier-high {{ color: var(--tier-high); }} .fill-high {{ background: var(--tier-high); }}
   .tier-moderate {{ color: var(--tier-moderate); }} .fill-moderate {{ background: var(--tier-moderate); }}
@@ -1482,9 +1456,6 @@ _TEMPLATE = """<!DOCTYPE html>
   .authors {{ font-size: 12px; color: var(--muted); margin: 0 0 8px; }}
   .authors a {{ color: var(--accent); text-decoration: none; }}
   .authors a:hover {{ text-decoration: underline; }}
-  /* journal-tier badge */
-  .jtier {{ font-size: 10px; font-weight: 600; border-radius: 999px; padding: 1px 7px; margin-left: 5px;
-           border: 1px solid var(--border); color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }}
   /* "How to read this" explainer legend + note explainers */
   .explainer {{ margin-top: 10px; font-size: 12px; color: var(--muted); }}
   .explainer > summary {{ cursor: pointer; color: var(--accent); list-style: none; display: inline-block; }}
@@ -1942,10 +1913,7 @@ _TEMPLATE = """<!DOCTYPE html>
         <span id="load-progress" class="load-progress" aria-live="polite"></span>
         <label style="text-transform:none;display:inline-flex;gap:6px;align-items:center;color:var(--muted)">Sort
           <select id="sort">
-            <option value="rank">Rank (evidence level first)</option>
-            <option value="rank_mixed">Rank (mix all levels)</option>
-            <option value="reliability">Automated rigor</option>
-            <option value="directness">Directness</option>
+            <option value="rank">Default order (evidence level first)</option>
             <option value="citations">Times cited (most)</option>
             <option value="year">Year (newest)</option>
             <option value="percentile">Impact percentile</option>
@@ -1955,12 +1923,11 @@ _TEMPLATE = """<!DOCTYPE html>
         </label>
         <label style="text-transform:none;display:inline-flex;gap:6px;align-items:center;color:var(--muted)">View
           <select id="rank-preset">
-            <option value="default">Default (blended rank)</option>
+            <option value="default">Default (evidence level first)</option>
             <option value="clinical">Human-evidence first</option>
-            <option value="synthesis">Best synthesis</option>
-            <option value="landmark">Landmark</option>
+            <option value="synthesis">Syntheses first</option>
+            <option value="landmark">Most cited</option>
             <option value="latest">Latest</option>
-            <option value="mechanism">Mechanism</option>
           </select>
         </label>
         <label title="Keeps only papers NIH iCite flags as clinical articles. This is iCite's own classifier, separate from the Human data tab (which uses the evidence class)." style="text-transform:none;display:inline-flex;gap:6px;align-items:center;color:var(--muted)">
@@ -1985,7 +1952,7 @@ _TEMPLATE = """<!DOCTYPE html>
         <p>This view splits the evidence base by molecule &mdash; one card per tracked bioactive
           (peptides, small molecules &amp; related compounds). Each card summarizes how much and what
           kind of evidence exists for that compound: the number of papers, how much is human vs.
-          preclinical, its strongest rigor, an evidence-density tier, and its regulatory status where
+          preclinical, an evidence-density tier, and its regulatory status where
           known. <b>Click a card</b> to jump to the Evidence browser filtered to that molecule.</p>
       </div>
       <div class="count" id="molecules-count"></div>
@@ -2315,7 +2282,6 @@ _TEMPLATE = """<!DOCTYPE html>
     return (isNaN(c) || c <= 0) ? 0 : c;
   }}
 
-  function tierClass(t) {{ return (t || "").replace(/[^a-z_]/gi, "") || "not_applicable"; }}
 
   // ---- include/exclude filter predicate --------------------------------------
   // Each facet domain carries {{inc:[...], exc:[...]}}. INCLUDE is OR-within-domain
@@ -2535,120 +2501,6 @@ _TEMPLATE = """<!DOCTYPE html>
     return s === "true" || s === "1" || s === "yes";
   }}
 
-  // Shared "How to read these scores" popover, opened by the small "?" next to a
-  // card's Rigor label. One legend explains all three axes so the meaning lives in
-  // one place instead of a wall-of-text hover tooltip on every card.
-  var _infoPop = null;
-  function closeInfoPop() {{
-    if (_infoPop) {{
-      _infoPop.remove();
-      _infoPop = null;
-      document.removeEventListener("click", _infoPopOutside);
-      document.removeEventListener("keydown", _infoPopKey);
-    }}
-  }}
-  function _infoPopOutside(e) {{ if (_infoPop && !_infoPop.contains(e.target)) closeInfoPop(); }}
-  function _infoPopKey(e) {{ if (e.key === "Escape") closeInfoPop(); }}
-  function _scoreLegendRows() {{
-    return [
-      ["Rigor", "How well a study was conducted \\u2014 judged against the standards for its OWN evidence class. "
-        + "A trial is scored on trial standards (randomization, blinding, controls, sample size); an animal or "
-        + "cell study on preclinical standards. Because each type is graded on its own curve the number is NOT "
-        + "comparable across classes: a high-rigor cell study is not stronger evidence than a lower-rigor trial. "
-        + "Example: a small unblinded trial and a well-run mouse study can both score ~70 \\u2014 one is 70 for a "
-        + "trial, the other 70 for a mouse study."],
-      ["Directness", "How directly the finding applies to humans (human RCT high \\u2192 in-vitro low). "
-        + "This is the human-relevance axis that rigor deliberately ignores \\u2014 read the two together."],
-      ["Rank", "The best-first score WITHIN an evidence level: a blend of directness, rigor, topical relevance, "
-        + "recency, citation impact and journal venue. The feed is ordered by EVIDENCE LEVEL first (see the "
-        + "\\u201cL#\\u201d badge and the pyramid in the Guide), then by this rank within a level."],
-      ["Evidence level", "The study's place on the evidence pyramid (L1 = systematic review, down to lab/in-vitro). "
-        + "This is the PRIMARY ordering \\u2014 a case report never outranks an RCT. Detected from the PubMed "
-        + "publication type; see the Guide for the full ladder."],
-      ["Practice guidelines", "Clinical practice guidelines (flagged by their PubMed publication type) are "
-        + "authoritative synthesized recommendations, not primary studies \\u2014 so rigor is shown as n/a "
-        + "rather than graded on study conduct. They are treated as high-directness and ranked near the top."]
-    ];
-  }}
-  function openScoreLegend(anchor) {{
-    closeInfoPop();
-    var pop = el("div", "info-pop");
-    pop.setAttribute("role", "dialog");
-    pop.setAttribute("aria-label", "How to read these scores");
-    pop.appendChild(el("div", "info-pop-h", "How to read these scores"));
-    var rows = _scoreLegendRows();
-    for (var i = 0; i < rows.length; i++) {{
-      var row = el("div", "info-pop-row");
-      row.appendChild(el("b", null, rows[i][0]));
-      row.appendChild(document.createTextNode(" \\u2014 "));
-      row.appendChild(el("span", null, rows[i][1]));
-      pop.appendChild(row);
-    }}
-    pop.appendChild(el("div", "info-pop-foot",
-      "Every metric is rule-based and auditable \\u2014 open About / Methods for the exact formulas."));
-    document.body.appendChild(pop);
-    _infoPop = pop;
-    var rect = anchor.getBoundingClientRect();
-    var pw = pop.offsetWidth, ph = pop.offsetHeight;
-    var top = rect.bottom + 8;
-    if (top + ph > window.innerHeight - 8) top = Math.max(8, rect.top - ph - 8);
-    var left = rect.left;
-    if (left + pw > window.innerWidth - 8) left = Math.max(8, window.innerWidth - pw - 8);
-    pop.style.top = top + "px";
-    pop.style.left = left + "px";
-    window.addEventListener("scroll", closeInfoPop, {{once: true, capture: true}});
-    setTimeout(function() {{
-      document.addEventListener("click", _infoPopOutside);
-      document.addEventListener("keydown", _infoPopKey);
-    }}, 0);
-  }}
-  function infoDot() {{
-    var b = el("button", "info-dot", "?");
-    b.type = "button";
-    b.setAttribute("aria-label", "How to read these scores");
-    b.addEventListener("click", function(e) {{
-      e.stopPropagation();
-      if (_infoPop) closeInfoPop(); else openScoreLegend(b);
-    }});
-    return b;
-  }}
-
-  function reliabilityMeter(rec) {{
-    var wrap = el("span", "meter-wrap");
-    // Practice guidelines aren't graded on study conduct -- show an authoritative
-    // badge in place of the rigor bar (see the "?" popover for why).
-    if ((rec.evidence_class || "") === "clinical_guideline") {{
-      wrap.title = "Clinical practice guideline: an authoritative synthesized recommendation, "
-        + "not a primary study. Rigor is not graded on study conduct. Click the ? for details.";
-      wrap.appendChild(el("span", "meter-cap", "Rigor"));
-      wrap.appendChild(infoDot());
-      wrap.appendChild(el("span", "guide-badge", "n/a \\u00b7 authoritative guideline"));
-      return wrap;
-    }}
-    wrap.title = "Rigor: how well the study was run for its own type (e.g. a good mouse study and a "
-      + "weak trial can both score ~70). Click the ? for details.";
-    // Name the bar so a reader knows what it measures (matches the directness badge).
-    wrap.appendChild(el("span", "meter-cap", "Rigor"));
-    wrap.appendChild(infoDot());
-    var score = Math.max(0, Math.min(100, num(rec.reliability_score)));
-    var tier = tierClass(rec.reliability_tier);
-    var meter = el("div", "meter");
-    var fill = el("i", "fill-" + tier);
-    fill.style.width = score + "%";
-    meter.appendChild(fill);
-    wrap.appendChild(meter);
-    var lbl = el("span", "meter-lbl tier-" + tier, (rec.reliability_score || "?") + " " + (rec.reliability_tier || ""));
-    wrap.appendChild(lbl);
-    return wrap;
-  }}
-
-  function directnessBadge(rec) {{
-    var tier = tierClass(rec.directness_tier);
-    var b = el("span", "badge tier-" + tier,
-              "directness " + (rec.evidence_directness || "?") + (rec.directness_tier ? " (" + rec.directness_tier + ")" : ""));
-    return b;
-  }}
-
   // Evidence-hierarchy badge: the paper's place on the pyramid (the PRIMARY ordering).
   function evidenceLevelBadge(rec) {{
     var h = HIER_BY[rec.evidence_level_key || ""];
@@ -2658,8 +2510,9 @@ _TEMPLATE = """<!DOCTYPE html>
     b.appendChild(el("span", "evlevel-num", "L" + h.rank));
     b.appendChild(el("span", "evlevel-lbl", h.short));
     attachTip(b, "Evidence level " + h.rank + " of " + HIER_MAX + " \\u2014 " + h.label + ". "
-      + (h["def"] || "") + " The feed is ordered by evidence level first (top of the pyramid first), "
-      + "then by the rank score within a level.", tagTipsOn);
+      + (h["def"] || "") + " This is a study-design level assigned automatically by rules, not a "
+      + "rating of how well the study was done. The feed is ordered by evidence level first, then by an "
+      + "automated ordering score within a level.", tagTipsOn);
     return b;
   }}
 
@@ -2717,11 +2570,13 @@ _TEMPLATE = """<!DOCTYPE html>
     if (attrs) for (var k in attrs) e.setAttribute(k, attrs[k]);
     return e;
   }}
+  // LEGACY heuristics, shown only in the internal curator build. They are NOT validated
+  // measures of study quality, strength or confidence and are not comparable across study types.
   var METRIC_INFO = {{
-    rank: ["Rank", "Overall best-first score. Blends the three rings below with topical relevance, recency and journal venue."],
-    rigor: ["Rigor", "How well the study was conducted for its OWN evidence class (a trial on trial standards, a lab study on lab standards). Not comparable across classes. Practice guidelines are not graded (n/a)."],
-    direct: ["Directness", "How directly the finding applies to humans \\u2014 human RCT high, in-vitro low. The human-relevance axis."],
-    impact: ["Impact", "Citation-impact percentile (time-normalized, via iCite): how the paper's influence compares within its field. Blank when not yet indexed."]
+    rank: ["Ordering score (legacy)", "Automated within-level ordering value. A blend of a study-type constant, keyword signals, the molecule's role, recency, citations and venue. Not a quality score."],
+    rigor: ["Reported-features score (legacy)", "Study-type starting value plus keyword credits found in the title/abstract. Not a validated rigor measure; not comparable across study types; missing text scores 0."],
+    direct: ["Study-type value (legacy)", "A fixed value per study type (human trial high, in-vitro low). Ignores the molecule's role. Not a measure of how directly the evidence applies."],
+    impact: ["Citation percentile", "NIH iCite citation percentile within the paper's field. Blank when not yet indexed; recent papers are usually blank."]
   }};
   function pctVal(rec) {{
     var p = rec.icite_nih_percentile;
@@ -2757,32 +2612,30 @@ _TEMPLATE = """<!DOCTYPE html>
   function scoreRings(rec) {{
     var box = el("div", "score-box");
     var isGuide = (rec.evidence_class || "") === "clinical_guideline";
-    // Overarching Rank ring on the left, visually dominant.
+    // Legacy ordering value on the left, then the legacy sub-values it blends.
     box.appendChild(scoreRingItem("rank", num(rec.rank_score), {{big: true}}));
-    // The three contributing scores, smaller, stacked to the right with side labels,
-    // under a caption so it reads "Rank <- these three".
     var subs = el("div", "ring-subs");
-    subs.appendChild(el("div", "ring-subs-cap", "Contributes to rank"));
+    subs.appendChild(el("div", "ring-subs-cap", "Legacy inputs"));
     subs.appendChild(scoreRingItem("rigor", isGuide ? null : num(rec.reliability_score), {{row: true, center: isGuide ? "n/a" : null}}));
     subs.appendChild(scoreRingItem("direct", num(rec.evidence_directness), {{row: true}}));
     subs.appendChild(scoreRingItem("impact", pctVal(rec), {{row: true}}));
     box.appendChild(subs);
     return box;
   }}
-  // Modal "Scope Score": rings + a side panel explaining each metric, with the ring
-  // and its panel row cross-highlighting on hover (both carry data-metric=key).
+  // Internal-only legacy panel: rings + a side panel explaining each stored value, with the
+  // ring and its panel row cross-highlighting on hover (both carry data-metric=key).
   function scorePanel(rec) {{
     var wrap = el("div", "scope-score");
     wrap.appendChild(scoreRings(rec));
     var isGuide = (rec.evidence_class || "") === "clinical_guideline";
     var pv = pctVal(rec);
     var why = el("div", "scope-why");
-    why.appendChild(el("div", "scope-why-h", "What these mean"));
+    why.appendChild(el("div", "scope-why-h", "Legacy heuristic values \\u2014 internal, not validated"));
     var rows = [
-      ["rank", "Rank " + (rec.rank_score || "?") + (rec.rank_tier ? " (" + rec.rank_tier + ")" : ""), METRIC_INFO.rank[1]],
-      ["rigor", isGuide ? "Rigor n/a (guideline)" : "Rigor " + (rec.reliability_score || "?"), METRIC_INFO.rigor[1]],
-      ["direct", "Directness " + (rec.evidence_directness || "?"), METRIC_INFO.direct[1]],
-      ["impact", "Impact " + (pv == null ? "n/a" : Math.round(pv) + "th pct"), METRIC_INFO.impact[1]]
+      ["rank", "Ordering value " + (rec.rank_score || "?"), METRIC_INFO.rank[1]],
+      ["rigor", isGuide ? "Reported-features value n/a (guideline)" : "Reported-features value " + (rec.reliability_score || "?"), METRIC_INFO.rigor[1]],
+      ["direct", "Study-type value " + (rec.evidence_directness || "?"), METRIC_INFO.direct[1]],
+      ["impact", "Citation percentile " + (pv == null ? "n/a" : Math.round(pv) + "th"), METRIC_INFO.impact[1]]
     ];
     rows.forEach(function(rw) {{
       var row = el("div", "scope-row");
@@ -2870,14 +2723,6 @@ _TEMPLATE = """<!DOCTYPE html>
     return wrap;
   }}
 
-  function journalTierBadge(rec) {{
-    if (!rec.journal_tier) return null;
-    var b = el("span", "jtier", pretty(rec.journal_tier));
-    attachTip(b, pretty(rec.journal_tier) + " journal \\u2014 a rough tier for the publishing venue's "
-      + "standing (e.g. flagship / top-tier vs. lower-tier). Venue is a small input to the rank score.", tagTipsOn);
-    return b;
-  }}
-
   // Clicking an aspect tag adds that value to its domain's INCLUDE set (if the
   // domain has a filter group); otherwise it falls back to the search box.
   function applyTagFilter(field, value) {{
@@ -2913,21 +2758,22 @@ _TEMPLATE = """<!DOCTYPE html>
     if (r.molecule_name) meta.appendChild(el("span", "pill", r.molecule_name));
     if (r.pub_year) meta.appendChild(el("span", "pill", r.pub_year));
     if (r.evidence_class_label) meta.appendChild(pillTip(el("span", "pill", r.evidence_class_label),
-      "Evidence class \\u2014 the kind of study this is. It sets which rigor rubric applies and the directness value. See the Guide / Methods."));
+      "Evidence class \\u2014 the kind of study this appears to be, assigned automatically from the publication type and the title/abstract text. It can be wrong. See the Guide / Methods."));
     // iCite preview pills (present once the corpus is iCite-enriched).
     if (r.icite_rcr !== undefined && String(r.icite_rcr).trim() !== "" && !isNaN(parseFloat(r.icite_rcr)))
       meta.appendChild(pillTip(el("span", "pill", "RCR " + parseFloat(r.icite_rcr).toFixed(1)),
         "Relative Citation Ratio (NIH iCite): how often this paper is cited versus others in its field. 1.0 = field average; higher = more cited."));
-    // (impact percentile now shown as the Impact score ring, not a duplicate pill)
+    var cpct = pctVal(r);
+    if (cpct != null)
+      meta.appendChild(pillTip(el("span", "pill", "Citation percentile " + Math.round(cpct)),
+        "NIH iCite citation percentile within the paper's field. It reflects how often the paper has been cited, "
+        + "not how well the study was done; recent papers are usually not yet indexed."));
     var iclp = String(r.icite_is_clinical || "").trim().toLowerCase();
     if (iclp === "yes" || iclp === "y" || iclp === "1" || iclp === "true")
       meta.appendChild(pillTip(el("span", "pill", "clinical"),
         "iCite classifies this as a clinical article (its own citation-based classifier, separate from our Human-data tab)."));
     if (r.journal) {{
-      var jp = el("span", "pill", r.journal);
-      var jt = journalTierBadge(r);
-      if (jt) jp.appendChild(jt);
-      meta.appendChild(jp);
+      meta.appendChild(el("span", "pill", r.journal));  // name only: no venue-quality tier is shown
     }}
     meta.appendChild(pillTip(el("span", "pill", "Cited by " + citationText(r)),
       "Total times this paper has been cited by other papers (via OpenAlex). Counts may lag behind current totals."));
@@ -2937,8 +2783,9 @@ _TEMPLATE = """<!DOCTYPE html>
         "How many CLINICAL articles cite this paper (via iCite) \\u2014 a signal it is informing clinical work."));
     }}
     card.appendChild(meta);
-    // Score rings (Rank total + Rigor / Directness / Impact) in a distinct box.
-    card.appendChild(scoreRings(r));
+    // The legacy 0-100 values are not shown on public cards (not validated quality measures);
+    // the internal curator build still shows them, labelled as legacy.
+    if (INTERNAL) card.appendChild(scoreRings(r));
 
     var au = authorsLine(r);
     if (au) card.appendChild(au);
@@ -3085,22 +2932,18 @@ _TEMPLATE = """<!DOCTYPE html>
     if (mau) m.appendChild(mau);
     m.appendChild(el("div", "summary", composeSummary(r)));
 
-    // Scope Score: the ring cluster + a side "what these mean" panel that
-    // cross-highlights the metric you hover (rings <-> panel rows).
+    // Legacy heuristic panel (internal build only; see scorePanel).
     var mrow2 = el("div", "meta");
     if (isRetracted(r)) mrow2.appendChild(el("span", "pill retracted", "\\u26a0 RETRACTED"));
     var mevb = evidenceLevelBadge(r);
     if (mevb) mrow2.appendChild(mevb);
     if (mrow2.childNodes.length) m.appendChild(mrow2);
-    m.appendChild(scorePanel(r));
+    if (INTERNAL) m.appendChild(scorePanel(r));
 
     var grid = el("div", "grid");
     kv(grid, "Molecule", r.molecule_name);
     if (r.journal) {{
-      var jcell = el("span", null, r.journal);
-      var jtb = journalTierBadge(r);
-      if (jtb) jcell.appendChild(jtb);
-      kvNode(grid, "Journal", jcell);
+      kv(grid, "Journal", r.journal);
     }}
     if (r.author_count && r.author_count !== "0") kv(grid, "Authors", r.author_count + " total");
     kv(grid, "Cited by", citationText(r));
@@ -3125,7 +2968,7 @@ _TEMPLATE = """<!DOCTYPE html>
       kvNode(grid, "Category evidence", provenance);
     }}
     kv(grid, "Website section", r.website_section);
-    kv(grid, "Publication", r.publication_status);
+    kv(grid, "Listing", r.publication_status === "featured" ? "Featured (automatic label, not an endorsement)" : "Listed");
     kv(grid, "Dose", r.refined_dose);
     kv(grid, "Route", r.refined_route);
     kv(grid, "Duration", r.refined_duration);
@@ -3139,7 +2982,7 @@ _TEMPLATE = """<!DOCTYPE html>
       kv(grid, "Dose/route note", "Multi-drug comparison \\u2014 dose could not be attributed to this molecule, so it is omitted.");
     else if (xscope === "molecule_local")
       kv(grid, "Dose/route note", "Comparison paper \\u2014 dose/route/duration restricted to sentences naming this molecule.");
-    kv(grid, "Formal risk of bias", "not assessed (automated rigor signals only)");
+    kv(grid, "Formal risk of bias", "not assessed (no quality or risk-of-bias appraisal is performed)");
     // NIH iCite metrics (fill in once the corpus is iCite-enriched; each row is
     // shown only when its value is present).
     if (r.icite_rcr !== undefined && String(r.icite_rcr).trim() !== "" && !isNaN(parseFloat(r.icite_rcr)))
@@ -3168,16 +3011,16 @@ _TEMPLATE = """<!DOCTYPE html>
     if (feedbackEnabled()) links.appendChild(reportButton(r));
     if (links.childNodes.length) m.appendChild(links);
 
-    var rc = parseComp(dval(r, "reliability_components"));
+    var rc = INTERNAL ? parseComp(dval(r, "reliability_components")) : null;
     if (rc) {{
-      m.appendChild(el("h4", null, "Automated rigor breakdown"));
+      m.appendChild(el("h4", null, "Legacy reported-features breakdown (internal, not validated)"));
       var comp = el("div", "comp");
       Object.keys(rc).forEach(function(k) {{ comp.appendChild(el("span", null, humanize(k) + ": " + rc[k])); }});
       m.appendChild(comp);
     }}
-    var kc = parseComp(dval(r, "rank_components"));
+    var kc = INTERNAL ? parseComp(dval(r, "rank_components")) : null;
     if (kc) {{
-      m.appendChild(el("h4", null, "Rank breakdown"));
+      m.appendChild(el("h4", null, "Legacy ordering-value breakdown (internal, not validated)"));
       var comp2 = el("div", "comp");
       Object.keys(kc).forEach(function(k) {{ comp2.appendChild(el("span", null, humanize(k) + ": " + kc[k])); }});
       m.appendChild(comp2);
@@ -3366,7 +3209,7 @@ _TEMPLATE = """<!DOCTYPE html>
   function levelRank(r) {{ var n = parseInt(r.evidence_level_rank, 10); return isNaN(n) ? 99 : n; }}
   function sortRecords(list, mode) {{
     // DEFAULT "rank" = evidence hierarchy FIRST (level 1 = top of the pyramid), then the
-    // blended rank score WITHIN a level. So a case report never outranks an RCT here.
+    // legacy ordering score WITHIN a level (an ordering aid, not a quality measure).
     if (mode === "rank" || !mode) {{
       return list.map(function(r, i) {{ return [r, i]; }}).sort(function(a, b) {{
         var dl = levelRank(a[0]) - levelRank(b[0]);
@@ -3375,10 +3218,11 @@ _TEMPLATE = """<!DOCTYPE html>
         return dr !== 0 ? dr : a[1] - b[1];
       }}).map(function(x) {{ return x[0]; }});
     }}
-    var key = {{rank_mixed: "rank_score", reliability: "reliability_score", directness: "evidence_directness",
-                citations: "citation_count", year: "pub_year",
+    var key = {{citations: "citation_count", year: "pub_year",
                 percentile: "icite_nih_percentile", apt: "icite_apt",
-                clinical_influence: "icite_clinical_influence"}}[mode] || "rank_score";
+                clinical_influence: "icite_clinical_influence"}}[mode];
+    // Unknown/removed sort modes (e.g. an old bookmark) fall back to the default order.
+    if (!key) return sortRecords(list, "rank");
     // iCite sorts treat a missing/blank value as -1 so unscored papers sink below
     // scored ones; the other sorts keep the existing num() (missing -> 0) behavior.
     var missNeg = (mode === "percentile" || mode === "apt" || mode === "clinical_influence");
@@ -3401,27 +3245,28 @@ _TEMPLATE = """<!DOCTYPE html>
   // currently-filtered records by an explicit, auditable comparator built from
   // existing record fields. Every comparator treats a missing field as sorting
   // last (numeric fields fall back to -1), and the original feed index is used
-  // as a stable tiebreak so ties keep their best-first rank_score order.
-  var MECHANISM_CLASSES = new Set(["in_vitro", "preclinical_invivo", "methods_tool"]);
+  // as a stable tiebreak so ties keep their feed order.
   function pnum(v) {{
     if (v == null || String(v).trim() === "") return -1;
     var n = parseFloat(v);
     return isNaN(n) ? -1 : n;
   }}
-  // The "Human-evidence first" preset front-loads human evidence: any human
-  // evidence_class OR a record whose directness_tier is already "high".
+  // The "Human-evidence first" preset front-loads records the classification places in a
+  // human evidence class.
   function isClinicalAnswer(r) {{
     return isHuman(r);
   }}
   function presetSort(list, preset) {{
-    function byRel(a, b) {{ return pnum(b.reliability_score) - pnum(a.reliability_score); }}
+    // Presets never order by the legacy 0-100 values: they use the design hierarchy
+    // (evidence level), then year.
+    function byLevel(a, b) {{ return levelRank(a) - levelRank(b); }}
     function byYear(a, b) {{ return pnum(b.pub_year) - pnum(a.pub_year); }}
     var cmp;
     if (preset === "clinical") {{
       cmp = function(a, b) {{
         var d = (isClinicalAnswer(b) ? 1 : 0) - (isClinicalAnswer(a) ? 1 : 0);
         if (d) return d;
-        d = byRel(a, b); if (d) return d;
+        d = byLevel(a, b); if (d) return d;
         return byYear(a, b);
       }};
     }} else if (preset === "synthesis") {{
@@ -3429,7 +3274,7 @@ _TEMPLATE = """<!DOCTYPE html>
         var d = ((b.evidence_class === "evidence_synthesis") ? 1 : 0)
               - ((a.evidence_class === "evidence_synthesis") ? 1 : 0);
         if (d) return d;
-        d = byRel(a, b); if (d) return d;
+        d = byLevel(a, b); if (d) return d;
         return byYear(a, b);
       }};
     }} else if (preset === "landmark") {{
@@ -3445,15 +3290,7 @@ _TEMPLATE = """<!DOCTYPE html>
       cmp = function(a, b) {{
         var d = byYear(a, b);
         if (d) return d;
-        return ((b.directness_tier === "high") ? 1 : 0) - ((a.directness_tier === "high") ? 1 : 0);
-      }};
-    }} else if (preset === "mechanism") {{
-      cmp = function(a, b) {{
-        var d = (MECHANISM_CLASSES.has(b.evidence_class || "") ? 1 : 0)
-              - (MECHANISM_CLASSES.has(a.evidence_class || "") ? 1 : 0);
-        if (d) return d;
-        d = byRel(a, b); if (d) return d;
-        return byYear(a, b);
+        return byLevel(a, b);
       }};
     }} else {{
       return list;  // "default" (or unknown) -> caller uses the Sort dropdown
@@ -4079,13 +3916,8 @@ _TEMPLATE = """<!DOCTYPE html>
         }}
       }}
       stat("records", m.total_records, "Total evidence records indexed for this bioactive.");
-      stat("spotlight", m.auto_published,
-        "Spotlight papers: records that passed the auto-publish bar (high directness with at least "
-        + "moderate rigor, or a strong evidence synthesis / practice guideline) \\u2014 this bioactive's "
-        + "strongest, most human-relevant evidence.");
       stat("human", m.human_evidence, "Records that are human / clinical evidence.");
       stat("preclinical", m.preclinical_evidence, "Records that are preclinical (animal or in-vitro).");
-      stat("max rigor", m.max_reliability, "Highest automated rigor score among this bioactive's records.");
       card.appendChild(stats);
       // Evidence-density badge: honest literature-VOLUME signal (not quality).
       // Sparse molecules publish all their records; the badge sets expectations.
@@ -4931,8 +4763,8 @@ _TEMPLATE = """<!DOCTYPE html>
 
   // One-line descriptor per browser view.
   var BROWSER_DESC = {{
-    evidence: "New here? Each card is one paper, scored on two independent axes \\u2014 how well it was conducted (rigor) and how directly it applies to humans (directness) \\u2014 and ranked best-first. Filter in the sidebar, sort above, and click any card for details.",
-    clinical: "Human data only \\u2014 clinical trials, observational studies, and evidence syntheses (no animal / in-vitro / methods)."
+    evidence: "New here? Each card is one paper. Its study type (evidence level) is assigned automatically by rules and can be wrong; the default order is evidence level first, which reflects study design, not how well a study was done. Filter in the sidebar, sort above, and click any card for details.",
+    clinical: "Records the automated classification places in human clinical-trial, observational or evidence-synthesis categories (it can misclassify; no animal / in-vitro / methods)."
   }};
 
   // The Evidence and Clinical tabs share the SAME browser (sidebar + list); only
@@ -4999,12 +4831,12 @@ _TEMPLATE = """<!DOCTYPE html>
   // page keeps its no-innerHTML posture. Formulas match the curation pipeline.
   function buildHomeNav() {{
     var nav = el("div", "home-nav");
-    [["evidence", "Evidence", "Browse & filter all indexed papers, best-first."],
+    [["evidence", "Evidence", "Browse & filter all indexed papers by study type."],
      ["clinical", "Human data", "Restrict to human / clinical evidence."],
      ["trials", "Trials registry", "Ongoing & completed trials from ClinicalTrials.gov."],
      ["preprints", "Preprints", "Not-yet-peer-reviewed bioRxiv / medRxiv."],
      ["molecules", "Bioactive overview", "Evidence grouped by molecule."],
-     ["methods", "Methods", "Exactly how every score is computed."]].forEach(function(it) {{
+     ["methods", "Methods", "How records are classified, ordered and labelled, and what that does not mean."]].forEach(function(it) {{
       var b = el("button", "home-navbtn");
       b.appendChild(el("span", "home-navbtn-t", it[1]));
       b.appendChild(el("span", "home-navbtn-d", it[2]));
@@ -5183,20 +5015,22 @@ _TEMPLATE = """<!DOCTYPE html>
         link: {{label: "Explore records", tab: "evidence"}} }});
     }}
     if (S.humanPct != null) {{
-      out.push({{ nav: "Model systems", eyebrow: "Translational directness",
-        headline: (S.humanPct >= 50 ? "Most indexed evidence is directly human" : "Human and preclinical evidence, side by side"),
-        keyNumber: S.humanPct + "%", keyLabel: "of classified records are human",
-        takeaway: S.humanPct + "% of records with a classified model system involve human participants ("
-          + fmtInt(S.human) + " of " + fmtInt(S.modelTotal) + ").",
+      out.push({{ nav: "Model systems", eyebrow: "Model systems",
+        headline: (S.humanPct >= 50 ? "Most indexed records are tagged as human" : "Human and preclinical records, side by side"),
+        keyNumber: S.humanPct + "%", keyLabel: "of records are tagged as human",
+        takeaway: S.humanPct + "% of records with a model-system tag are tagged human, by automated rules ("
+          + fmtInt(S.human) + " of " + fmtInt(S.modelTotal) + "). The tag is not a check that the study was in "
+          + "people: it can also appear on reviews and on cell-line papers that mention patients.",
         body: chartStacked(S.byModel.map(function(m, i) {{ return {{label: pretty(m.label), value: m.count, color: C.cat[i % C.cat.length]}}; }})) }});
     }}
     if (S.tierDenom) {{
       out.push({{ nav: "Evidence hierarchy", eyebrow: "Evidence structure",
-        headline: "Evidence spans multiple levels of the clinical hierarchy",
-        keyNumber: S.tierTopPct + "%", keyLabel: "is higher-tier clinical evidence",
-        takeaway: S.tierTopPct + "% of indexed records are higher-tier clinical evidence \\u2014 systematic reviews, "
+        headline: "Records span multiple levels of the evidence hierarchy",
+        keyNumber: S.tierTopPct + "%", keyLabel: "are classified in the top study-design tiers",
+        takeaway: S.tierTopPct + "% of indexed records are automatically classified as systematic reviews, "
           + "meta-analyses, guidelines or RCTs (" + fmtInt(S.tier.top) + " of " + fmtInt(S.tierDenom)
-          + "). The hierarchy reflects evidence type, not the methodological quality of any single paper.",
+          + "). The classification is rule-based and can be wrong, for example when a review or cohort study "
+          + "is labelled a trial. The hierarchy reflects study design, not the quality of any single paper.",
         body: chartRankedBars([
           {{label: "Higher-tier clinical", value: S.tier.top, color: C.accent}},
           {{label: "Other human studies", value: S.tier.mid, color: C.cat[2]}},
@@ -5333,7 +5167,6 @@ _TEMPLATE = """<!DOCTYPE html>
     renderBlocks(root, COPY.home, {{
       "charts": function(r) {{ renderCharts(r); }},
       "nav": function(r) {{ r.appendChild(buildHomeNav()); }},
-      "rings": function(r) {{ r.appendChild(scoreRings({{rank_score: "88", reliability_score: "82", evidence_directness: "95", icite_nih_percentile: "76", evidence_class: ""}})); }},
       "methods-link": function(r) {{
         var mb = el("button", "home-navbtn inline");
         mb.textContent = "Open Methods \\u2192";
@@ -5353,8 +5186,9 @@ _TEMPLATE = """<!DOCTYPE html>
     if (HIER.length) {{
       root.appendChild(el("h3", "guide-cat-h", "Evidence hierarchy (the pyramid)"));
       root.appendChild(el("p", "guide-intro", "Study designs are not equal. RetaBase orders the feed by "
-        + "this pyramid FIRST (top = strongest), then by quality within a level \\u2014 so a case report never "
-        + "outranks an RCT. Each card shows its level as an \\u201cL#\\u201d badge."));
+        + "this pyramid FIRST (top = higher study-design tier), then by an automated ordering score within a level "
+        + "(not a quality rating). Levels are assigned automatically and can be wrong. Each card shows its level "
+        + "as an \\u201cL#\\u201d badge."));
       var pyr = el("div", "ev-pyramid");
       HIER.forEach(function(h) {{
         var band = h.rank <= 3 ? "hi" : h.rank <= 8 ? "mid" : "lo";
@@ -5422,7 +5256,7 @@ _TEMPLATE = """<!DOCTYPE html>
       else {{ if (!cur) {{ cur = {{title: "Overview", blocks: []}}; sections.push(cur); }} cur.blocks.push(b); }}
     }});
     root.appendChild(el("h2", "methods-title", "Methods"));
-    root.appendChild(el("p", "methods-lede", "How every score is computed \\u2014 in plain language up top, with the "
+    root.appendChild(el("p", "methods-lede", "How records are classified and ordered \\u2014 in plain language up top, with the "
       + "full technical detail one click away. Jump to a section, or expand \\u201cShow the detail\\u201d for the numbers and sources."));
     var nav = el("div", "methods-nav");
     var panels = [];
