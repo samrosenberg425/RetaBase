@@ -72,6 +72,9 @@ def run():
     check("term: plain-word names also match their plural; codes and acronyms do not",
           c("Kisspeptin").search("Kisspeptins") and not c("TB4").search("TB4s") and not c("MT-II").search("MT-IIs"))
     check("term: slash/bracket variants ('ActRIIB/Fc', 'PTH [1-34]')", c("ActRIIB-Fc").search("ActRIIB/Fc") and c("PTH(1-34)").search("PTH [1-34]"))
+    check("term: adjacent digit runs need a separator ('22-2' is not '222'; '1-34' is not '134')",
+          not c("P-22-2").search("P222") and c("P-22-2").search("P22-2") and not c("PTH(1-34)").search("PTH134")
+          and c("PTH(1-34)").search("PTH 1-34"))
     check("term: Greek letters are tokens", c("Tα1").search("the Tα1 peptide"))
     check("acronym detection", idn.is_acronym("VIP") and idn.is_acronym("TB-4") and not idn.is_acronym("Melanotan")
           and not idn.is_acronym("MOTS-c") and not idn.is_acronym("Thymosin alpha 1"))

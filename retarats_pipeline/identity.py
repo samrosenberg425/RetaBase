@@ -113,7 +113,11 @@ def compile_term(term: str, case_sensitive: bool = False) -> "re.Pattern[str]":
     # always optional between pieces: space/underscore, hyphens and dashes, brackets, colon ('PTH [1-34]',
     # 'beta(4)', 'acetyl-L: -carnitine'); plus any other punctuation the term itself spells ('ActRIIB.Fc').
     joiner_chars = r"\s_\-\u2010-\u2015()\[\]{}:/" + "".join(re.escape(c) for c in sorted(seps) if c not in "-_()[]{}:")
-    body = f"[{joiner_chars}]*".join(re.escape(t) for t in toks)
+    # two adjacent digit runs need a real separator ('22-2' must not match '222'); anything else may be glued
+    parts = [re.escape(toks[0])]
+    for prev, tok in zip(toks, toks[1:]):
+        parts.append(f"[{joiner_chars}]{'+' if prev.isdigit() and tok.isdigit() else '*'}" + re.escape(tok))
+    body = "".join(parts)
     # a plain-word name also matches its plural ('Kisspeptins'); acronyms and codes do not
     plural = "s?" if (not case_sensitive and toks[-1].isalpha() and len(toks[-1]) >= 5 and not is_acronym(term)) else ""
     flags = 0 if case_sensitive else re.IGNORECASE
