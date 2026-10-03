@@ -1053,6 +1053,10 @@ def _molecule_index(rows: List[dict], pubchem_by_mol: Dict[str, str] | None = No
 
         name = next((r.get("molecule_name") for r in recs if r.get("molecule_name")), mol_id)
         statuses = Counter(r.get("publication_status") for r in recs)
+        # Counts shown on the site describe what is actually published: records held as
+        # excluded_noise (off-topic or manually excluded) are reported in ``held`` only, so
+        # a molecule card never advertises more records than its page lists.
+        recs = [r for r in recs if r.get("publication_status") != "excluded_noise"]
         sections = Counter(r.get("website_section") for r in recs if r.get("website_section"))
         conditions: Counter = Counter()
         for r in recs:

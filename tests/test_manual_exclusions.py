@@ -175,6 +175,10 @@ def run():
     rep = read("manual_exclusions_report.csv")
     check("audit report lists exactly the held record", [r["pmid"] for r in rep] == ["1"])
     check("build stats count the holds", res["stats"].get("manual_holds") == 1)
+    mi = {r["molecule_id"]: r for r in read("molecule_index.csv")}
+    check("molecule card counts only published records (not held ones)",
+          mi["mt"]["total_records"] == "1" and mi["mt"]["record_count"] == "1")
+    check("molecule card still reports the held count", mi["mt"]["held"] == "1")
 
     # ---- benchmark: held records count as absent, and are reported separately ----
     sys.path.insert(0, os.path.join(ROOT, "scripts"))
