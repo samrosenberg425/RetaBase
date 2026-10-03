@@ -66,6 +66,19 @@ class ClinicalTrialsClient:
         return self.http.get_json("clinicaltrials_search", key, CTG_BASE, params=params,
                                    ttl_sec=self.http.config.search_ttl_sec)
 
+    def studies_by_ids(self, nct_ids: Sequence[str]) -> Tuple[List[dict], str, str]:
+        """Full study records for up to ~100 NCT ids in ONE request (``filter.ids``). Returns
+        (studies, source, error). Ids CT.gov does not return (withdrawn / unknown) are simply absent."""
+        ids = [clean_text(i).upper() for i in nct_ids if clean_text(i)]
+        if not ids:
+            return [], "empty", ""
+        params = {"format": "json", "pageSize": max(len(ids), 1), "filter.ids": ",".join(ids)}
+        data, source = self.http.get_json("clinicaltrials_ids", search_cache_key(",".join(ids)), CTG_BASE, params=params,
+                                          ttl_sec=self.http.config.search_ttl_sec)
+        if not data or data.get("error"):
+            return [], source, str((data or {}).get("error", "no_data"))
+        return data.get("studies") or [], source, ""
+
     def search_all(self, query: str, page_size: int = 100, max_pages: int = 20) -> Dict[str, Any]:
         """Page through ``nextPageToken`` until exhausted or ``max_pages`` is hit.
 
@@ -119,6 +132,7 @@ class ClinicalTrialsClient:
         outcomes = protocol.get("outcomesModule") or {}
         eligibility = protocol.get("eligibilityModule") or {}
         sponsor = protocol.get("sponsorCollaboratorsModule") or {}
+        description = protocol.get("descriptionModule") or {}
         references_mod = protocol.get("referencesModule") or {}
 
         arms = arms_mod.get("armGroups") or []
@@ -150,6 +164,11 @@ class ClinicalTrialsClient:
             "interventions": semicolon_join(_intervention_label(i) for i in interventions),
             "intervention_other_names": semicolon_join(
                 n for i in interventions for n in _as_list(i.get("otherNames"))),
+            "outcome_measures": semicolon_join(
+                clean_text(o.get("measure", "")) for o in list(primary_outcomes) + list(secondary_outcomes)
+                if clean_text(o.get("measure", ""))),
+            "brief_summary": clean_text(description.get("briefSummary", "")),
+            "detailed_description": clean_text(description.get("detailedDescription", "")),
             "primary_outcomes": semicolon_join(_outcome_label(o) for o in primary_outcomes),
             "secondary_outcomes": semicolon_join(_outcome_label(o) for o in secondary_outcomes),
             "eligibility_summary": clean_text(eligibility.get("eligibilityCriteria", ""))[:3000],

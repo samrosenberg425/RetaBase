@@ -1,4 +1,4 @@
-source,enforce,notes
-pubmed,true,"Curated build holds records whose stored title/abstract/keywords/MeSH do not establish the molecule (excluded_noise, reversible)"
-ctgov,true,"Trials feed + molecule trial counts drop trials whose stored titles/conditions/interventions/arms do not establish the molecule"
-preprints,true,"Preprints feed drops preprints whose title/abstract does not establish the molecule"
+source,enforce,publish_roles,notes
+pubmed,true,,"Curated build holds records whose stored title/abstract/keywords/MeSH do not establish the molecule (excluded_noise, reversible). MeSH / substance headings count only when the WHOLE heading equals a name of the molecule."
+ctgov,true,exposure;subject;measured_outcome,"Trials feed + molecule trial counts. A trial is kept when the molecule is an intervention / other name / arm (exposure), is in the titles, conditions or keywords (subject), or is an outcome MEASURE (measured_outcome: genuine biomarker studies). A name only in outcome descriptions, the summary or eligibility text is a background mention and is held (add "background" to publish_roles to publish those too)."
+preprints,true,,"Preprints feed drops preprints whose title/abstract does not establish the molecule."

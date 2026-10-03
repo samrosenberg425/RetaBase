@@ -230,6 +230,17 @@ jobs:
           [ -n "$OUTCOME" ] && ARGS+=(--outcome "$OUTCOME")
           python3 scripts/record_source_run.py --state work/source_status.json --source europepmc_preprints --exit-code "$rc" "${ARGS[@]}" --retrieval-json "$RETRIEVAL_JSON"
 
+      # WS4.5: stored CT.gov rows written before the identity fields existed (official title, keywords, arms, other
+      # names, outcome/summary/eligibility text) are filled in from CT.gov (100 trials per request) so the identity
+      # gate judges them on their full record. Adds fields only; resumable and bounded (rows it cannot fill stay
+      # "legacy" and are never held on incomplete evidence). Advisory: a failure here never blocks the release.
+      - name: Backfill identity fields of stored CT.gov trials
+        env:
+          API_CONTACT_EMAIL: ${{ secrets.NCBI_EMAIL }}
+        run: |
+          timeout 1500 python3 scripts/run_trials_identity_backfill.py --db work/retarats_trials.sqlite --max-seconds 1200 \
+            || echo "::warning::identity-field backfill did not complete (legacy rows stay published; re-run later)"
+
       - name: "SIMULATION empty_trials — inject an empty trials table (promotion must be refused)"
         if: ${{ github.event.inputs.simulate == 'empty_trials' }}
         run: python3 scripts/corpus_state.py simulate --kind empty_trials --work work

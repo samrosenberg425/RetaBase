@@ -53,21 +53,47 @@ REGISTRY_KEEP_PATH = os.path.join("config", "registry_keep.csv")
 BENCHMARK_PATH = os.path.join("config", "retrieval_benchmark.csv")
 MANUAL_PMIDS_PATH = os.path.join("config", "manual_pmids.csv")
 GOLD_PATH = os.path.join("config", "gold_standard_pmids.csv")
+POLICY_PATH = os.path.join("config", "identity_policy.csv")
 
 SOURCES = ("pubmed", "ctgov", "preprints")
 DISCOVERY_SOURCES = ("ctgov", "preprints")  # PubMed discovery lives in SEARCH_RULES.csv, not here
 ROLES = ("canonical", "specific_alias", "contextual_alias", "exclusion")
 
-# Stored text a source can be judged on. Registry rows keep only some of the study record, so a trial
-# is judged on what we hold (titles, conditions, keywords, interventions, arm groups); a name that appears
-# only in eligibility or outcome text is not evidence the trial is ABOUT the molecule.
+# Stored text a source can be judged on, and the ROLE each zone plays in the association. Registry rows keep
+# only part of the study record, so a trial is judged on what we hold. Roles (provenance, and policy):
+#   exposure          intervention names, other names, arm groups   (the molecule is given / used)
+#   subject           titles, conditions, keywords                   (the study is about it)
+#   measured_outcome  outcome measure titles + outcome descriptions   (a biomarker / measured readout)
+#   background        brief summary / detailed description, eligibility (mentioned, not the subject)
+#   text_mention      preprint / PubMed abstract
+#   indexing          MeSH headings, substance names (exact heading only; never a sibling/derivative term)
 SOURCE_ZONES: Dict[str, Tuple[str, ...]] = {
     "pubmed": ("title", "abstract", "keywords", "mesh_terms", "chemicals"),
-    "ctgov": ("brief_title", "official_title", "conditions", "keywords", "interventions", "other_names", "arms"),
+    "ctgov": ("brief_title", "official_title", "conditions", "keywords", "interventions", "other_names", "arms",
+              "outcome_measures", "outcome_text", "summary_text", "eligibility_text"),
     "preprints": ("title", "abstract"),
 }
+ZONE_ROLE: Dict[str, Dict[str, str]] = {
+    "pubmed": {"title": "subject", "keywords": "subject", "abstract": "text_mention",
+               "mesh_terms": "indexing", "chemicals": "indexing"},
+    "ctgov": {"interventions": "exposure", "other_names": "exposure", "arms": "exposure",
+              "brief_title": "subject", "official_title": "subject", "conditions": "subject", "keywords": "subject",
+              "outcome_measures": "measured_outcome",
+              "outcome_text": "measured_outcome", "summary_text": "background", "eligibility_text": "background"},
+    "preprints": {"title": "subject", "abstract": "text_mention"},
+}
+ROLE_ORDER = ("exposure", "subject", "measured_outcome", "text_mention", "indexing", "background")
+# Roles that may ESTABLISH identity. config/identity_policy.csv (publish_roles) overrides per source.
+DEFAULT_ESTABLISHING: Dict[str, frozenset] = {
+    "ctgov": frozenset({"exposure", "subject", "measured_outcome"}),
+    # MeSH / substance headings never establish identity on their own: papers about derivatives and neighbours
+    # (zotarolimus / everolimus stents, isoquercitrin, taurolidine, acamprosate ...) carry the parent descriptor.
+    "pubmed": frozenset(ROLE_ORDER) - {"indexing"},
+    "preprints": frozenset(ROLE_ORDER),
+}
 # Zones that are indexing metadata, not prose: they can prove identity for canonical/specific names
-# only (a MeSH heading is not a context sentence).
+# only, and only when a whole heading equals the name (a MeSH heading is not a context sentence, and a
+# neighbouring concept -- taurocholic acid, spermine, everolimus -- is not the molecule).
 INDEXING_ZONES = {"mesh_terms", "chemicals"}
 # A source whose records normally carry an abstract is fail-open when the abstract is missing
 # AND the title does not name the molecule (nothing to judge from).
@@ -80,6 +106,10 @@ PASS, HOLD, EXCLUDE = "pass", "hold", "exclude"
 M_CANONICAL, M_SPECIFIC, M_CONTEXTUAL = "canonical_name", "specific_alias", "contextual_alias"
 M_KEEP, M_NONE, M_EXCLUSION, M_INSUFFICIENT, M_NO_RULES = (
     "manual_keep", "none", "exclusion_term", "insufficient_text", "no_identity_rules")
+M_BACKGROUND, M_LEGACY, M_INDEXING = "background_mention", "legacy_unverified", "indexing_only"
+# Provenance classes of the association (Verdict.role): the zone roles above plus
+R_AMBIGUOUS, R_UNRELATED, R_UNVERIFIED, R_KEEP, R_INSUFFICIENT = (
+    "ambiguous_acronym", "unrelated", "unverified", "manual_keep", "insufficient")
 
 _AMBIG_NOTE = re.compile(r"\(?\b(alone|broad|ambiguous|only)\b\)?", re.IGNORECASE)
 
@@ -180,6 +210,7 @@ class IdentityConfig:
     keep: Set[Tuple[str, str]] = field(default_factory=set)       # (molecule_id, KEY) -- KEY upper-cased
     version: str = ""
     warnings: List[str] = field(default_factory=list)
+    roles_ok: Dict[str, frozenset] = field(default_factory=lambda: dict(DEFAULT_ESTABLISHING))
 
     def discovery_terms(self, molecule_id: str, source: str) -> List[str]:
         mi = self.by_molecule.get(molecule_id)
@@ -258,6 +289,25 @@ def load_keep(registry_keep: str = REGISTRY_KEEP_PATH, benchmark: str = BENCHMAR
     return {k for k in out if k[0] and k[1]}
 
 
+def load_establishing_roles(warnings: Optional[List[str]] = None, path: str = None) -> Dict[str, frozenset]:
+    """Per source, the match ROLES that may establish identity (config/identity_policy.csv, column
+    publish_roles, ';'-separated). Absent file / blank cell = DEFAULT_ESTABLISHING."""
+    out = dict(DEFAULT_ESTABLISHING)
+    for r in _read_csv(path or POLICY_PATH):
+        src = (r.get("source") or "").strip().lower()
+        raw = (r.get("publish_roles") or "").strip()
+        if src not in SOURCES or not raw:
+            continue
+        roles = frozenset(x.strip() for x in raw.replace("|", ";").split(";") if x.strip())
+        bad = roles - set(ROLE_ORDER)
+        if bad or not roles:
+            if warnings is not None:
+                warnings.append(f"{POLICY_PATH}: {src}: unknown publish_roles {sorted(bad)}; default kept")
+            continue
+        out[src] = roles
+    return out
+
+
 def load_identity_config(molecules: Optional[Sequence[Mapping[str, str]]] = None,
                          overlay_path: str = IDENTITY_PATH, keep: Optional[Set[Tuple[str, str]]] = None,
                          molecules_path: str = MOLECULES_PATH) -> IdentityConfig:
@@ -268,6 +318,7 @@ def load_identity_config(molecules: Optional[Sequence[Mapping[str, str]]] = None
         from retarats_pipeline.enrichment.registry import load_active_molecules
         molecules = load_active_molecules(molecules_path)
     cfg = IdentityConfig(keep=set(keep) if keep is not None else load_keep())
+    cfg.roles_ok = load_establishing_roles(cfg.warnings)
     overlay_rows = _read_csv(overlay_path)
     by_mol_overlay: Dict[str, List[Tuple[int, dict]]] = {}
     for i, r in enumerate(overlay_rows, start=2):
@@ -349,7 +400,8 @@ def get_config(overlay_path: str = IDENTITY_PATH, molecules_path: str = MOLECULE
     """Cached ``load_identity_config`` for the default files; the cache key includes every input file's
     path/mtime/size, so editing config (or a test chdir-ing into a temp config dir) is picked up."""
     sig = []
-    for p in (overlay_path, molecules_path, REGISTRY_KEEP_PATH, BENCHMARK_PATH, MANUAL_PMIDS_PATH, GOLD_PATH):
+    for p in (overlay_path, molecules_path, REGISTRY_KEEP_PATH, BENCHMARK_PATH, MANUAL_PMIDS_PATH, GOLD_PATH,
+              POLICY_PATH):
         ap = os.path.abspath(p)
         try:
             st = os.stat(ap)
@@ -378,6 +430,8 @@ def rules_version(cfg: IdentityConfig, molecules: Sequence[Mapping[str, str]], o
                 h.update(b"\n")
     for k in sorted(cfg.keep):
         h.update(("keep|" + "|".join(k) + "\n").encode())
+    for src in sorted(cfg.roles_ok):
+        h.update(("roles|" + src + "|" + ",".join(sorted(cfg.roles_ok[src])) + "\n").encode())
     return "id" + ENGINE_VERSION + "-" + h.hexdigest()[:12]
 
 
@@ -392,10 +446,27 @@ class Verdict:
     matched_term: str = ""
     zone: str = ""
     reason: str = ""
+    role: str = ""      # exposure | subject | measured_outcome | background | text_mention | indexing | ambiguous_acronym | unrelated | ...
 
     @property
     def published(self) -> bool:
         return self.outcome == PASS
+
+
+def indexing_headings(text: str) -> List[str]:
+    """The headings of a MeSH / substance list as stored (``"; "``-joined elements like
+    ``'Sirolimus: pharmacology, therapeutic use'``): the part before the qualifier colon."""
+    return [e.split(":", 1)[0].strip() for e in str(text or "").split("; ") if e.strip()]
+
+
+def mesh_exact_hit(rule: Rule, text: str) -> str:
+    """The heading in ``text`` that EQUALS the rule's name (whole heading, same separator/plural tolerance as
+    ordinary matching), else "". A heading that merely CONTAINS the name ('Quercetin-3-glucoside', 'Metformin
+    adduct') or is a neighbouring concept (Taurocholic Acid, Spermine, Everolimus) is not a hit."""
+    for h in indexing_headings(text):
+        if rule.pattern.fullmatch(h):
+            return h
+    return ""
 
 
 def _first_zone_hit(rule: Rule, zones: Mapping[str, str], allowed: Iterable[str]) -> str:
@@ -403,7 +474,12 @@ def _first_zone_hit(rule: Rule, zones: Mapping[str, str], allowed: Iterable[str]
         if rule.zones and z not in rule.zones:
             continue
         txt = zones.get(z, "")
-        if txt and rule.pattern.search(txt):
+        if not txt:
+            continue
+        if z in INDEXING_ZONES:
+            if mesh_exact_hit(rule, txt):
+                return z
+        elif rule.pattern.search(txt):
             return z
     return ""
 
@@ -412,30 +488,53 @@ def evaluate(cfg: IdentityConfig, source: str, molecule_id: str, zones: Mapping[
              key: str = "") -> Verdict:
     """Judge ONE record against the molecule it is filed under. Pure and deterministic.
 
-    ``zones`` maps zone name -> stored text (see SOURCE_ZONES). Fail-open wherever the stored text
-    cannot support a judgement (no rules for the molecule, no text at all, no abstract and a title
-    that does not name the molecule)."""
+    ``zones`` maps zone name -> stored text (see SOURCE_ZONES). The verdict carries a ROLE (how the molecule
+    appears: exposure / subject / measured_outcome / background / text_mention / indexing, or ambiguous_acronym /
+    unrelated). Only roles listed for the source (identity_policy.csv; trials: exposure, subject,
+    measured_outcome) may establish identity, so a trial that names the molecule only in an outcome DESCRIPTION,
+    its summary or its eligibility text is held as a background mention while a trial MEASURING it is kept.
+    Fail-open wherever the stored text cannot support a judgement (no rules for the molecule, no text at all,
+    no abstract and a title that does not name the molecule, a legacy trial row not yet backfilled)."""
     if key and (molecule_id, str(key).strip().upper()) in cfg.keep:
-        return Verdict(PASS, M_KEEP, reason="manual keep (registry_keep / approved benchmark / manual_pmids / gold)")
+        return Verdict(PASS, M_KEEP, reason="manual keep (registry_keep / approved benchmark / manual_pmids / gold)",
+                       role=R_KEEP)
     mi = cfg.by_molecule.get(molecule_id)
     if mi is None:
-        return Verdict(PASS, M_NO_RULES, reason="no identity rules for this molecule (fail-open)")
+        return Verdict(PASS, M_NO_RULES, reason="no identity rules for this molecule (fail-open)", role=R_UNVERIFIED)
     names = SOURCE_ZONES.get(source, ())
+    roles = ZONE_ROLE.get(source, {})
+    ok_roles = cfg.roles_ok.get(source, DEFAULT_ESTABLISHING.get(source, frozenset(ROLE_ORDER)))
     z = {n: str(zones.get(n, "") or "") for n in names}
-    prose = [n for n in names if n not in INDEXING_ZONES]
+    legacy = bool(zones.get("_legacy"))
     if not any(v.strip() for v in z.values()):
-        return Verdict(PASS, M_INSUFFICIENT, reason="no stored text to judge (fail-open)")
+        return Verdict(PASS, M_INSUFFICIENT, reason="no stored text to judge (fail-open)", role=R_INSUFFICIENT)
+    prose = [n for n in names if n not in INDEXING_ZONES and roles.get(n) in ok_roles]
     joined_prose = "\n".join(z[n] for n in prose)
+    all_prose_zones = [n for n in names if n not in INDEXING_ZONES]
+    all_prose = "\n".join(z[n] for n in all_prose_zones)
 
-    # 1) canonical, then specific aliases -- identity on their own (indexing zones allowed)
-    best: Optional[Tuple[Rule, str]] = None
-    for rules in (mi.canonical, mi.specific):
-        for rule in rules:
-            if source not in rule.applies_to:
-                continue
-            zone = _first_zone_hit(rule, z, names)
-            if zone:
-                best = (rule, zone)
+    def _held(v: Verdict) -> Verdict:
+        if legacy and source == "ctgov" and v.outcome == HOLD:
+            return Verdict(PASS, M_LEGACY, v.matched_term, v.zone,
+                           "legacy trial row (identity fields not stored yet): not held until populated (fail-open); "
+                           "would be: " + (v.reason or v.match_type), role=R_UNVERIFIED)
+        return v
+
+    # 1) canonical, then specific aliases -- identity on their own; the strongest ROLE wins
+    best: Optional[Tuple[Rule, str, str]] = None
+    for role in ROLE_ORDER:
+        zs = [n for n in names if roles.get(n) == role]
+        if not zs:
+            continue
+        for rules in (mi.canonical, mi.specific):
+            for rule in rules:
+                if source not in rule.applies_to:
+                    continue
+                zone = _first_zone_hit(rule, z, zs)
+                if zone:
+                    best = (rule, zone, role)
+                    break
+            if best:
                 break
         if best:
             break
@@ -447,12 +546,16 @@ def evaluate(cfg: IdentityConfig, source: str, molecule_id: str, zones: Mapping[
             veto_hit = rule.term
             break
 
+    background: Optional[Tuple[Rule, str]] = None
     if best:
-        rule, zone = best
-        if rule.role == "specific_alias" and veto_hit:
-            return Verdict(EXCLUDE, M_EXCLUSION, rule.term, zone, f"alias '{rule.term}' next to exclusion term '{veto_hit}'")
-        mtype = M_CANONICAL if rule.role == "canonical" else M_SPECIFIC
-        return Verdict(PASS, mtype, rule.term, zone, "")
+        rule, zone, role = best
+        if role in ok_roles:
+            if rule.role == "specific_alias" and veto_hit:
+                return Verdict(EXCLUDE, M_EXCLUSION, rule.term, zone,
+                               f"alias '{rule.term}' next to exclusion term '{veto_hit}'", role=R_AMBIGUOUS)
+            mtype = M_CANONICAL if rule.role == "canonical" else M_SPECIFIC
+            return Verdict(PASS, mtype, rule.term, zone, "", role=role)
+        background = (rule, zone)
 
     # 2) contextual aliases: alias AND positive context, NOT a vetoing context
     ctx_unmet: List[str] = []
@@ -462,36 +565,71 @@ def evaluate(cfg: IdentityConfig, source: str, molecule_id: str, zones: Mapping[
         zone = _first_zone_hit(rule, z, prose)
         if not zone:
             continue
-        local_veto = next((v for v, p in zip(rule.veto_terms, rule.veto) if p.search(joined_prose)), "")
+        # the alias must sit in an establishing zone, but its CONTEXT / veto may come from anywhere in the stored
+        # prose (e.g. 'TB4' in an intervention + 'thymosin beta 4' in the summary)
+        local_veto = next((v for v, p in zip(rule.veto_terms, rule.veto) if p.search(all_prose)), "")
         if local_veto or veto_hit:
             return Verdict(EXCLUDE, M_EXCLUSION, rule.term, zone,
-                           f"contextual alias '{rule.term}' with exclusion term '{local_veto or veto_hit}'")
-        ctx_text = "\n".join(z[n] for n in prose if not rule.zones or n in rule.zones)
+                           f"contextual alias '{rule.term}' with exclusion term '{local_veto or veto_hit}'",
+                           role=R_AMBIGUOUS)
+        ctx_text = "\n".join(z[n] for n in all_prose_zones if not rule.zones or n in rule.zones)
         ctx_hit = next((c for c, p in zip(rule.context_terms, rule.context) if p.search(ctx_text)), "")
         if ctx_hit:
-            return Verdict(PASS, M_CONTEXTUAL, rule.term, zone, f"context '{ctx_hit}'")
+            return Verdict(PASS, M_CONTEXTUAL, rule.term, zone, f"context '{ctx_hit}'", role=roles.get(zone, "subject"))
         ctx_unmet.append(rule.term)
+    if background is not None:
+        rule, zone = background
+        if zone in INDEXING_ZONES:
+            return _held(Verdict(HOLD, M_INDEXING, rule.term, zone,
+                                 f"'{rule.term}' only as a {zone.replace('_', ' ')} heading (no mention in the title, "
+                                 f"abstract or keywords; indexing alone does not establish identity)", role="indexing"))
+        return _held(Verdict(HOLD, M_BACKGROUND, rule.term, zone,
+                             f"'{rule.term}' only in the {zone.replace('_', ' ')} (background mention, not the "
+                             f"intervention, subject or a measured outcome)", role="background"))
     if ctx_unmet:
-        return Verdict(HOLD, M_CONTEXTUAL, ctx_unmet[0], "", f"contextual alias '{ctx_unmet[0]}' without required context")
+        return _held(Verdict(HOLD, M_CONTEXTUAL, ctx_unmet[0], "",
+                             f"contextual alias '{ctx_unmet[0]}' without required context", role=R_AMBIGUOUS))
 
     # 3) nothing names the molecule
     abstract_zone = ABSTRACT_ZONE.get(source)
     if (abstract_zone and not z.get(abstract_zone, "").strip()
             and not any(z.get(n, "").strip() for n in SUPPORT_ZONES.get(source, ()))):
-        return Verdict(PASS, M_INSUFFICIENT, reason="no abstract or indexing text and the title does not name the molecule (fail-open)")
-    return Verdict(HOLD, M_NONE, reason="no identity term found in the stored text")
+        return Verdict(PASS, M_INSUFFICIENT, reason="no abstract or indexing text and the title does not name the molecule (fail-open)",
+                       role=R_INSUFFICIENT)
+    return _held(Verdict(HOLD, M_NONE, reason="no identity term found in the stored text", role=R_UNRELATED))
 
 
 # ---------------------------------------------------------------------------------------------
 # per-source zone extraction
 # ---------------------------------------------------------------------------------------------
 
+TRIAL_FIELDS_MARKER = "identity_fields_v"
+TRIAL_FIELDS_VERSION = "1"
+
+
 def zones_for_trial(row: Mapping[str, object]) -> Dict[str, str]:
-    return {k: str(row.get(k, "") or "") for k in SOURCE_ZONES["ctgov"]}
+    """A trial row stored before the identity fields existed (no ``identity_fields_v``) is flagged ``_legacy``:
+    it is judged on what it has but is never HELD on that incomplete evidence."""
+    z = {k: str(row.get(k, "") or "") for k in SOURCE_ZONES["ctgov"]}
+    if not row.get(TRIAL_FIELDS_MARKER):
+        z["_legacy"] = "1"
+    return z
+
+
+_INLINE_TAG = re.compile(r"</?(?:sub|sup|i|b|em|strong|italic|bold|underline|u|span|small)\b[^>]*>", re.IGNORECASE)
+_ANY_TAG = re.compile(r"<[^>]+>")
+
+
+def plain_text(value: object) -> str:
+    """Preprint titles/abstracts arrive as publisher markup ('VPAC<sub>1</sub>', '<h4>ABSTRACT</h4>', '&gt;'):
+    inline tags are removed without a gap (so 'VPAC<sub>1</sub>' reads 'VPAC1'), block tags become a space."""
+    import html
+    text = _INLINE_TAG.sub("", str(value or ""))
+    return html.unescape(_ANY_TAG.sub(" ", text))
 
 
 def zones_for_preprint(row: Mapping[str, object]) -> Dict[str, str]:
-    return {k: str(row.get(k, "") or "") for k in SOURCE_ZONES["preprints"]}
+    return {k: plain_text(row.get(k, "")) for k in SOURCE_ZONES["preprints"]}
 
 
 def _flat(v: object) -> str:
@@ -512,13 +650,10 @@ def zones_for_paper(evidence_row: Mapping[str, object], paper: Optional[Mapping[
 # policy + bulk application
 # ---------------------------------------------------------------------------------------------
 
-POLICY_PATH = os.path.join("config", "identity_policy.csv")
-
-
-def enforced(source: str, path: str = POLICY_PATH) -> bool:
+def enforced(source: str, path: str = None) -> bool:
     """Is the identity gate applied to this source's published feed? config/identity_policy.csv
     (source, enforce) can switch a source off without a code change; absent file/row = enforced."""
-    for r in _read_csv(path):
+    for r in _read_csv(path or POLICY_PATH):
         if (r.get("source") or "").strip().lower() == source:
             return _truthy(r.get("enforce", "true"))
     return True
@@ -583,12 +718,12 @@ def apply_identity_gate(source: str, rows: Iterable[Mapping[str, object]], repor
             os.makedirs(os.path.dirname(report_path) or ".", exist_ok=True)
             with open(report_path, "w", newline="", encoding="utf-8") as fh:
                 w = csv.writer(fh)
-                w.writerow(["source", "record_key", "molecule_id", "outcome", "match_type", "matched_term", "reason",
-                            "rules_version"])
+                w.writerow(["source", "record_key", "molecule_id", "outcome", "match_type", "role", "matched_term",
+                            "reason", "rules_version"])
                 for r, v in held:
                     _, key = _zones_and_key(source, r)
-                    w.writerow([source, key, r.get("molecule_id", ""), v.outcome, v.match_type, v.matched_term,
-                                v.reason, cfg.version])
+                    w.writerow([source, key, r.get("molecule_id", ""), v.outcome, v.match_type, v.role,
+                                v.matched_term, v.reason, cfg.version])
         except OSError:
             pass
     return kept
@@ -599,33 +734,36 @@ def apply_identity_gate(source: str, rows: Iterable[Mapping[str, object]], repor
 # ---------------------------------------------------------------------------------------------
 
 TABLE = "record_identity"
-TABLE_COLUMNS = ("source", "record_key", "molecule_id", "outcome", "match_type", "matched_term", "zone",
+TABLE_COLUMNS = ("source", "record_key", "molecule_id", "outcome", "match_type", "role", "matched_term", "zone",
                  "reason", "rules_version", "evaluated_utc")
 
 
 def write_verdicts(conn: sqlite3.Connection, rows: Iterable[Tuple[str, str, str, Verdict]], rules_version_: str,
                    now_iso: str, source: str) -> int:
     """Replace this source's provenance rows with a fresh full evaluation (idempotent, one transaction).
-    The stored records themselves are never touched."""
+    The stored records themselves are never touched. A table from an older schema is rebuilt."""
+    cols = [r[1] for r in conn.execute(f"pragma table_info({TABLE})")]
+    if cols and cols != list(TABLE_COLUMNS):
+        conn.execute(f"drop table {TABLE}")
     conn.execute(f"create table if not exists {TABLE} (source text, record_key text, molecule_id text, outcome text, "
-                 f"match_type text, matched_term text, zone text, reason text, rules_version text, "
+                 f"match_type text, role text, matched_term text, zone text, reason text, rules_version text, "
                  f"evaluated_utc text, primary key (source, record_key, molecule_id))")
     conn.execute(f"delete from {TABLE} where source = ?", (source,))
     n = 0
     for src, key, mid, v in rows:
-        conn.execute(f"insert or replace into {TABLE} values (?,?,?,?,?,?,?,?,?,?)",
-                     (src, key, mid, v.outcome, v.match_type, v.matched_term, v.zone, v.reason, rules_version_, now_iso))
+        conn.execute(f"insert or replace into {TABLE} values (?,?,?,?,?,?,?,?,?,?,?)",
+                     (src, key, mid, v.outcome, v.match_type, v.role, v.matched_term, v.zone, v.reason,
+                      rules_version_, now_iso))
         n += 1
     conn.commit()
     return n
 
 
 def load_verdicts(conn: sqlite3.Connection, source: str) -> Dict[Tuple[str, str], dict]:
+    cols = ("record_key", "molecule_id", "outcome", "match_type", "role", "matched_term", "zone", "reason",
+            "rules_version", "evaluated_utc")
     try:
-        cur = conn.execute(f"select record_key, molecule_id, outcome, match_type, matched_term, zone, reason, "
-                           f"rules_version, evaluated_utc from {TABLE} where source = ?", (source,))
+        cur = conn.execute(f"select {', '.join(cols)} from {TABLE} where source = ?", (source,))
     except sqlite3.OperationalError:
         return {}
-    cols = ("record_key", "molecule_id", "outcome", "match_type", "matched_term", "zone", "reason",
-            "rules_version", "evaluated_utc")
     return {(r[0], r[1]): dict(zip(cols, r)) for r in cur}

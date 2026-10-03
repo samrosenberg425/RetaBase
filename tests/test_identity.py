@@ -75,6 +75,9 @@ def run():
     check("term: adjacent digit runs need a separator ('22-2' is not '222'; '1-34' is not '134')",
           not c("P-22-2").search("P222") and c("P-22-2").search("P22-2") and not c("PTH(1-34)").search("PTH134")
           and c("PTH(1-34)").search("PTH 1-34"))
+    check("preprint markup is stripped before matching ('VPAC<sub>1</sub>' reads VPAC1, entities decoded)",
+          idn.plain_text("VPAC <sub>1</sub> and <i>TB</i><sub>4</sub> &gt; 1 <h4>ABSTRACT</h4>x").replace("  ", " ").startswith("VPAC 1 and TB4 > 1")
+          and idn.plain_text("VPAC<sub>1</sub>") == "VPAC1")
     check("term: Greek letters are tokens", c("Tα1").search("the Tα1 peptide"))
     check("acronym detection", idn.is_acronym("VIP") and idn.is_acronym("TB-4") and not idn.is_acronym("Melanotan")
           and not idn.is_acronym("MOTS-c") and not idn.is_acronym("Thymosin alpha 1"))
@@ -179,7 +182,7 @@ def run():
     check("intervention other names count", v.outcome == idn.PASS)
     # indexing zones prove identity for names, not for contextual aliases
     v = ev("pubmed", "tp", title="Bone formation", abstract="anabolic effect", mesh_terms="Teriparatide: therapeutic use")
-    check("a MeSH heading naming the molecule passes (indexing zone)", v.outcome == idn.PASS)
+    check("a MeSH heading naming the molecule is indexing only (held) unless the text names it too", v.outcome == idn.HOLD and v.match_type == "indexing_only")
     # fail-open
     check("fail-open: no text at all", ev("preprints", "tp").outcome == idn.PASS)
     check("fail-open: no abstract and a title that does not name it",
@@ -248,10 +251,13 @@ def run():
         os.makedirs("work")
         tdb = os.path.join("work", "retarats_trials.sqlite")
         conn = sqlite3.connect(tdb)
-        trials = [{"nct_id": "NCT00000001", "molecule_id": "tp", "brief_title": "PTH trial", "interventions": "DRUG | Teriparatide | sc"},
+        trials = [{"nct_id": "NCT00000001", "molecule_id": "tp", "brief_title": "PTH trial", "interventions": "DRUG | Teriparatide | sc",
+                   "identity_fields_v": "1"},
                   {"nct_id": "NCT00000002", "molecule_id": "tp", "brief_title": "Unrelated cohort", "interventions": "OTHER | diet",
-                   "stale_query": True},
-                  {"nct_id": "NCT00000003", "molecule_id": "tp", "brief_title": "Unrelated cohort 2", "interventions": "OTHER | diet"}]
+                   "stale_query": True, "identity_fields_v": "1"},
+                  {"nct_id": "NCT00000003", "molecule_id": "tp", "brief_title": "Unrelated cohort 2", "interventions": "OTHER | diet",
+                   "identity_fields_v": "1"},
+                  {"nct_id": "NCT00000004", "molecule_id": "tp", "brief_title": "Legacy cohort", "interventions": "OTHER | diet"}]
         save_payload_rows(conn, "trials", "nct_id", trials)
         before = {r[0]: r[1] for r in conn.execute("select nct_id, payload_json from trials")}
         conn.close()
@@ -262,11 +268,15 @@ def run():
         after = {r[0]: r[1] for r in conn.execute("select nct_id, payload_json from trials")}
         check("reeval NEVER touches the stored records (payloads byte-identical)", before == after)
         ver = idn.load_verdicts(conn, "ctgov")
-        check("reeval writes one provenance row per stored record (including stale ones)", len(ver) == 3)
+        check("reeval writes one provenance row per stored record (including stale ones)", len(ver) == 4)
         check("provenance answers WHY: outcome, match type, term, zone, rules_version",
               ver[("NCT00000001", "tp")]["outcome"] == "pass" and ver[("NCT00000001", "tp")]["match_type"] == "canonical_name"
               and ver[("NCT00000001", "tp")]["matched_term"] == "Teriparatide" and ver[("NCT00000001", "tp")]["zone"] == "interventions"
-              and ver[("NCT00000003", "tp")]["outcome"] == "hold" and ver[("NCT00000003", "tp")]["rules_version"].startswith("id1-"))
+              and ver[("NCT00000003", "tp")]["outcome"] == "hold" and ver[("NCT00000003", "tp")]["rules_version"].startswith("id1-")
+              and ver[("NCT00000003", "tp")]["role"] == "unrelated" and ver[("NCT00000001", "tp")]["role"] == "exposure")
+        check("a LEGACY trial row (no identity fields yet) is never held on incomplete evidence",
+              ver[("NCT00000004", "tp")]["outcome"] == "pass" and ver[("NCT00000004", "tp")]["match_type"] == "legacy_unverified"
+              and ver[("NCT00000004", "tp")]["role"] == "unverified")
         conn.close()
         n1 = summ["sources"]["ctgov"]["rows_written"]
         rr.run("work", ["ctgov"])
@@ -287,15 +297,146 @@ def run():
         import build_trials_json as bt  # noqa: E402
 
         pub = bt._load_trials(tdb, os.path.join(cdir, "held.csv"))
-        check("trials feed = non-stale AND identity-pass", [r["nct_id"] for r in pub] == ["NCT00000001"])
+        check("trials feed = non-stale AND identity-pass (legacy rows stay published until backfilled)",
+              [r["nct_id"] for r in pub] == ["NCT00000001", "NCT00000004"])
         with open(os.path.join(cdir, "held.csv"), newline="", encoding="utf-8") as fh:
             check("trials feed writes the held report", [r["record_key"] for r in csv.DictReader(fh)] == ["NCT00000003"])
         conn = sqlite3.connect(tdb)
-        check("feeds never delete: all three trials are still stored", conn.execute("select count(*) from trials").fetchone()[0] == 3)
+        check("feeds never delete: all four trials are still stored", conn.execute("select count(*) from trials").fetchone()[0] == 4)
         conn.close()
     finally:
         os.chdir(old_cwd)
 
+
+
+    # ------------------------------------------------------------------ roles: how the molecule appears in a trial
+    shipped = idn.load_identity_config()
+
+    def tv(**z):
+        z.setdefault("identity_fields_v", "1")
+        flds = {k: v for k, v in z.items() if k != "identity_fields_v"}
+        if z["identity_fields_v"]:
+            flds["identity_fields_v"] = "1"
+        return idn.evaluate(shipped, "ctgov", "gdf15", idn.zones_for_trial(flds), "")
+
+    v = tv(brief_title="Weight loss study", interventions="DRUG | GDF15 antibody | iv")
+    check("trial role: intervention -> exposure, published", v.outcome == idn.PASS and v.role == "exposure")
+    v = tv(brief_title="GDF15 in pregnancy", conditions="Hyperemesis")
+    check("trial role: in the title -> subject, published", v.outcome == idn.PASS and v.role == "subject")
+    v = tv(brief_title="Metabolic phenotyping", outcome_measures="Serum GDF15 level; body weight")
+    check("trial role: an outcome MEASURE (biomarker study) is kept as measured_outcome, not rejected",
+          v.outcome == idn.PASS and v.role == "measured_outcome" and v.zone == "outcome_measures")
+    v = tv(brief_title="Metabolic phenotyping", outcome_measures="Myokines", outcome_text="Myokines | time frame: 12 weeks | GDF15 and irisin levels")
+    check("trial role: named in an outcome DESCRIPTION is also a measured outcome (kept)", v.outcome == idn.PASS and v.role == "measured_outcome")
+    v = tv(brief_title="Cohort", summary_text="Markers such as GDF15 will be explored.")
+    check("trial role: only in the summary -> background mention", v.outcome == idn.HOLD and v.role == "background")
+    v = tv(brief_title="Cohort", eligibility_text="Exclusion: prior GDF15 therapy")
+    check("trial role: only in eligibility -> background mention", v.outcome == idn.HOLD and v.role == "background")
+    v = tv(brief_title="Cohort", interventions="DRUG | placebo")
+    check("trial role: nothing -> unrelated", v.outcome == idn.HOLD and v.role == "unrelated")
+    v = idn.evaluate(shipped, "ctgov", "vip", idn.zones_for_trial({"identity_fields_v": "1", "brief_title": "HD-VIP chemotherapy regimen",
+                                                                   "interventions": "DRUG | VIP regimen | etoposide"}), "")
+    check("trial role: an ambiguous acronym without its context -> ambiguous_acronym", v.outcome != idn.PASS and v.role == "ambiguous_acronym")
+    v = tv(brief_title="Cohort", interventions="OTHER | diet", identity_fields_v="")
+    check("legacy trial row (no identity_fields_v) that WOULD be held is published as legacy_unverified (fail-open)",
+          v.outcome == idn.PASS and v.match_type == "legacy_unverified")
+    check("an excluded-by-veto trial stays excluded even when legacy",
+          idn.evaluate(shipped, "ctgov", "vip", idn.zones_for_trial({"brief_title": "HD-VIP", "interventions": "DRUG | VIP regimen"}), "").outcome != idn.PASS)
+    # the establishing roles are policy, not code
+    pol_td = tempfile.mkdtemp(prefix="idn_pol_")
+    pol = os.path.join(pol_td, "pol.csv")
+    write_csv(pol, ["source", "enforce", "publish_roles", "notes"], [["ctgov", "true", "exposure;subject;measured_outcome;background", ""],
+                                                                       ["preprints", "true", "bogus", ""]])
+    w = []
+    roles = idn.load_establishing_roles(w, pol)
+    check("policy: publish_roles is configurable per source; an unknown role is rejected with a warning (default kept)",
+          roles["ctgov"] == frozenset({"exposure", "subject", "measured_outcome", "background"})
+          and roles["preprints"] == idn.DEFAULT_ESTABLISHING["preprints"] and w)
+    check("shipped policy: trials publish exposure, subject, measured_outcome only",
+          shipped.roles_ok["ctgov"] == frozenset({"exposure", "subject", "measured_outcome"}))
+
+    # ------------------------------------------------------------------ MeSH: exact heading only
+    def mv(mid, **z):
+        return idn.evaluate(shipped, "pubmed", mid, z, "")
+
+    v = mv("taurine", title="Acamprosate in alcohol dependence", abstract="relapse prevention", mesh_terms="Taurine: pharmacology; Humans")
+    check("MeSH: even an EXACT heading (Taurine) does not establish identity alone -> held as indexing_only (derivative papers carry it)",
+          v.outcome == idn.HOLD and v.match_type == "indexing_only" and v.role == "indexing" and "Taurine" in v.reason + v.matched_term)
+    check("MeSH: an exact heading supports a record that also names the molecule in its text",
+          mv("taurine", title="Taurine and bone", abstract="x", mesh_terms="Taurine: pharmacology").outcome == idn.PASS)
+    check("MeSH: a SIBLING heading (Taurocholic Acid) does not establish taurine",
+          mv("taurine", title="Bile", abstract="x", mesh_terms="Taurocholic Acid: metabolism", chemicals="Taurocholic Acid").outcome != idn.PASS)
+    check("MeSH: spermine does not establish spermidine; everolimus does not establish rapamycin",
+          mv("spermidine", title="DNA", abstract="x", mesh_terms="Spermine: pharmacology", chemicals="Spermine").outcome != idn.PASS
+          and mv("rapamycin", title="Stent", abstract="x", mesh_terms="Everolimus: administration & dosage", chemicals="Everolimus").outcome != idn.PASS)
+    check("MeSH: a heading that merely CONTAINS the name (a derivative) does not count",
+          mv("quercetin", title="Flavonoids", abstract="x", mesh_terms="Quercetin-3-glucoside: analogs", chemicals="quercetin 3-O-glucoside").outcome != idn.PASS)
+    check("MeSH: a substance-list entry that equals the name is indexing only too", mv("quercetin", title="Flavonoids", abstract="x", chemicals="Quercetin").outcome == idn.HOLD)
+    check("MeSH: a contextual alias can never be established through indexing text",
+          mv("ldn", title="Pharmacology", abstract="x", mesh_terms="LDN: pharmacology").outcome != idn.PASS)
+
+    # ------------------------------------------------------------------ CT.gov identity-field backfill (one-time, bounded)
+    import run_trials_identity_backfill as bf  # noqa: E402
+
+    bdb = os.path.join(td, "bf.sqlite")
+    conn = sqlite3.connect(bdb)
+    legacy = {"nct_id": "NCT00000101", "molecule_id": "tirzepatide", "brief_title": "Weight study", "interventions": "OTHER | diet",
+              "conditions": "Obesity", "first_seen_utc": "2026-01-01T00:00:00Z", "enriched_at_utc": "2026-01-02T00:00:00Z",
+              "overall_status": "COMPLETED"}
+    done = {"nct_id": "NCT00000102", "molecule_id": "tirzepatide", "brief_title": "Done", "identity_fields_v": "1", "arms": "keep me"}
+    stale = {"nct_id": "NCT00000103", "molecule_id": "tirzepatide", "brief_title": "Stale", "stale_query": True}
+    missing = {"nct_id": "NCT00000104", "molecule_id": "tirzepatide", "brief_title": "Not returned by CT.gov"}
+    save_payload_rows(conn, "trials", "nct_id", [legacy, done, stale, missing])
+    conn.close()
+
+    class FakeClient:
+        calls = 0
+        fail = False
+
+        def studies_by_ids(self, ids):
+            FakeClient.calls += 1
+            if FakeClient.fail:
+                return [], "http_error", "boom"
+            return [{"protocolSection": {
+                "identificationModule": {"nctId": "NCT00000101", "briefTitle": "Weight study", "officialTitle": "A Study of Tirzepatide"},
+                "conditionsModule": {"conditions": ["Obesity"], "keywords": ["incretin"]},
+                "armsInterventionsModule": {"armGroups": [{"label": "Arm A", "type": "EXPERIMENTAL", "description": "Weekly dosing"}],
+                                            "interventions": [{"type": "DRUG", "name": "LY3298176", "otherNames": ["Mounjaro"]}]},
+                "outcomesModule": {"primaryOutcomes": [{"measure": "Change in GDF15", "timeFrame": "12 weeks", "description": "level"}]},
+                "descriptionModule": {"briefSummary": "A summary.", "detailedDescription": "Details."},
+                "eligibilityModule": {"eligibilityCriteria": "Adults"}}}], "api", ""
+
+    FakeClient.fail = True
+    r0 = bf.run(bdb, client=FakeClient())
+    conn = sqlite3.connect(bdb)
+    rows0 = {d["nct_id"]: d for d in (json.loads(p) for (p,) in conn.execute("select payload_json from trials"))}
+    conn.close()
+    check("backfill: a failed batch leaves every row exactly as it was (still legacy, nothing lost)",
+          r0["filled"] == 0 and r0["failed_batches"] >= 1 and "identity_fields_v" not in rows0["NCT00000101"])
+    FakeClient.fail = False
+    r1 = bf.run(bdb, client=FakeClient())
+    conn = sqlite3.connect(bdb)
+    rows1 = {d["nct_id"]: d for d in (json.loads(p) for (p,) in conn.execute("select payload_json from trials"))}
+    conn.close()
+    new = rows1["NCT00000101"]
+    check("backfill: selects only non-stale rows without the marker", r0["pending"] == 2 and r1["filled"] == 1 and r1["not_returned"] == 1)
+    check("backfill: ADDS the identity fields (official title, keywords, arms, other names, outcome measures, summary, eligibility)",
+          new["official_title"] == "A Study of Tirzepatide" and "incretin" in new["keywords"] and "Arm A" in new["arms"]
+          and "Mounjaro" in new["other_names"] and "GDF15" in new["outcome_measures"] and "A summary" in new["summary_text"]
+          and "Adults" in new["eligibility_text"] and new["identity_fields_v"] == "1")
+    check("backfill: every pre-existing field is left exactly as stored (no source metadata rewritten)",
+          all(new[k] == legacy[k] for k in legacy))
+    check("backfill: completed / stale rows are untouched; a row CT.gov does not return stays legacy",
+          rows1["NCT00000102"] == done and rows1["NCT00000103"] == stale and "identity_fields_v" not in rows1["NCT00000104"])
+    calls = FakeClient.calls
+    r2 = bf.run(bdb, client=FakeClient())
+    check("backfill: idempotent (re-running only retries the row CT.gov did not return)", r2["pending"] == 1 and r2["filled"] == 0
+          and FakeClient.calls == calls + 1)
+    check("backfill: --max-rows bounds one run", bf.run(bdb, max_rows=0, dry_run=True)["pending"] == 1)
+    check("a still-legacy trial is published, never held on incomplete evidence",
+          idn.evaluate(shipped, "ctgov", "tirzepatide", idn.zones_for_trial(rows1["NCT00000104"]), "").match_type == "legacy_unverified")
+    check("after the backfill the same trial is judged on its full record (exposure via LY3298176)",
+          idn.evaluate(shipped, "ctgov", "tirzepatide", idn.zones_for_trial(new), "").role == "exposure")
 
     # ------------------------------------------------------------------ PubMed: the curated build holds in place
     spec = importlib.util.spec_from_file_location("build_curated_database", os.path.join(ROOT, "scripts", "build_curated_database.py"))
@@ -392,8 +533,8 @@ def run():
           sv("pubmed", "sermorelin", title="GHRH neurons", abstract="growth hormone releasing hormone (GHRH) secretion").outcome != idn.PASS)
     check("shipped: everolimus is not rapamycin", sv("ctgov", "rapamycin", brief_title="Everolimus in breast cancer",
                                                        interventions="DRUG | Everolimus | 10 mg").outcome != idn.PASS)
-    check("shipped: NADH in an enzymology title is not exogenous NADH; NADH supplementation is",
-          sv("pubmed", "nadh", title="NADH oxidation by complex I", abstract="supplement").outcome != idn.PASS
+    check("shipped: NADH keeps the pre-WS4.5 standard (name in the text) -- the title+use-context restriction is NOT applied (unresolved scope)",
+          sv("pubmed", "nadh", title="NADH oxidation by complex I", abstract="x").outcome == idn.PASS
           and sv("pubmed", "nadh", title="Oral NADH supplementation in chronic fatigue", abstract="").outcome == idn.PASS)
     check("shipped: foreign / brand metformin spellings identify metformin",
           sv("ctgov", "metformin", brief_title="Metformina en diabetes").outcome == idn.PASS

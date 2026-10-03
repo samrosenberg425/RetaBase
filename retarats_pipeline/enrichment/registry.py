@@ -93,6 +93,14 @@ def normalize_trial(
         "keywords": clean_text(parsed.get("keywords", "")),
         "arms": clean_text(parsed.get("arms", "")),
         "other_names": clean_text(parsed.get("intervention_other_names", "")),
+        # ... and the study's outcome MEASURE titles, outcome text, summary/description and eligibility, capped
+        # (identity roles: measured_outcome / background). ``identity_fields_v`` marks a row that carries them.
+        "outcome_measures": clean_text(parsed.get("outcome_measures", ""))[:2500],
+        "outcome_text": clean_text(" ; ".join(x for x in (parsed.get("primary_outcomes", ""),
+                                                          parsed.get("secondary_outcomes", "")) if x))[:3500],
+        "summary_text": clean_text(f"{parsed.get('brief_summary', '')} {parsed.get('detailed_description', '')}")[:3000],
+        "eligibility_text": clean_text(parsed.get("eligibility_summary", ""))[:2000],
+        "identity_fields_v": "1",
         "overall_status": status,
         "phases": clean_text(parsed.get("phases", "")),
         "study_type": clean_text(parsed.get("study_type", "")),

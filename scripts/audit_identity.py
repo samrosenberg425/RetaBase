@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import csv
 import os
+import re
 import sqlite3
 import sys
 from collections import Counter, defaultdict
@@ -397,6 +398,121 @@ def ambiguous(work: str, out_dir: str, public_records: str, n: int = 3) -> None:
     print(f"wrote {out_dir}/AMBIGUOUS_TERMS.md ({len(lines)} lines)")
 
 
+def _mesh_kind(label: str, cache: dict) -> str:
+    """NLM MeSH: is ``label`` a DESCRIPTOR heading, a descriptor ENTRY term, or a supplementary concept / unknown?
+    (live read-only lookup against id.nlm.nih.gov, cached in ``cache``)."""
+    import json as _json
+    import urllib.parse
+    import urllib.request
+    if label in cache:
+        return cache[label]
+    kind = "not found in MeSH"
+    for what, name in (("descriptor", "descriptor"), ("term", "entry term / supplementary concept")):
+        try:
+            url = (f"https://id.nlm.nih.gov/mesh/lookup/{what}?label={urllib.parse.quote(label)}&match=exact&limit=3")
+            with urllib.request.urlopen(url, timeout=30) as r:
+                data = _json.load(r)
+            if data:
+                kind = name
+                break
+        except Exception:  # noqa: BLE001
+            kind = "lookup failed"
+    cache[label] = kind
+    return kind
+
+
+def mesh(work: str, out_dir: str, public_records: str, per_group: int = 3, lookup: bool = True) -> None:
+    """Which published PubMed records are identified ONLY through MeSH / substance headings, and by what?
+
+    old rule  = a name occurring anywhere inside a heading element (what the first WS4.5 version accepted)
+    new rule  = the WHOLE heading equals a name of the molecule (exact descriptor / entry term / substance name)
+    Writes mesh_rescue_audit.csv and mesh_sibling_contamination.csv and prints a per-molecule summary."""
+    import json as _json
+    import random
+    mols = {m["molecule_id"]: m for m in load_active_molecules()}
+    cfg = idn.load_identity_config(list(mols.values()))
+    data = load_sources(work, public_records)
+    groups: Dict[tuple, List[tuple]] = defaultdict(list)
+    sibling: Dict[tuple, int] = defaultdict(int)
+    only_text = Counter()
+    for r in data["pubmed"]:
+        if r["published"] is False:
+            continue
+        mid = r["molecule_id"]
+        mi = cfg.by_molecule.get(mid)
+        if not mi:
+            continue
+        rules = mi.canonical + mi.specific
+        z = r["zones"]
+        text_hit = any(rule.pattern.search(z.get(zn, "")) for rule in rules for zn in ("title", "abstract", "keywords") if z.get(zn))
+        if text_hit:
+            only_text[mid] += 1
+            continue
+        found = None
+        for zn in ("mesh_terms", "chemicals"):
+            for el in [e for e in z.get(zn, "").split("; ") if e.strip()]:
+                head = el.split(":", 1)[0].strip()
+                for rule in rules:
+                    if rule.pattern.fullmatch(head):
+                        found = (zn, head, rule.term, "exact heading equals a name of the molecule")
+                        break
+                    if rule.pattern.search(el):
+                        found = found or (zn, head, rule.term, "heading CONTAINS the name (derivative / neighbour)")
+                if found and found[3].startswith("exact"):
+                    break
+            if found and found[3].startswith("exact"):
+                break
+        if found:
+            groups[(mid, found[0], found[1], found[3])].append((r["key"], z.get("title", "")[:110]))
+        else:
+            # held: record the heading(s) that look like siblings (share the first 5 letters with a name)
+            for zn in ("mesh_terms", "chemicals"):
+                for el in [e for e in z.get(zn, "").split("; ") if e.strip()]:
+                    head = el.split(":", 1)[0].strip()
+                    for rule in rules:
+                        stem = re.sub(r"[^a-z]", "", rule.term.lower())[:5]
+                        if len(stem) >= 5 and stem in re.sub(r"[^a-z]", "", head.lower()):
+                            sibling[(mid, head)] += 1
+    cache_path = os.path.join(out_dir, "mesh_lookup_cache.json")
+    cache = _json.load(open(cache_path)) if os.path.exists(cache_path) else {}
+    rnd = random.Random(5)
+    out = []
+    per_mol: Dict[str, Counter] = defaultdict(Counter)
+    for (mid, zn, head, cls), items in sorted(groups.items(), key=lambda kv: -len(kv[1])):
+        kind = ""
+        if cls.startswith("exact"):
+            kind = _mesh_kind(head, cache) if lookup and zn == "mesh_terms" else ("substance name" if zn == "chemicals" else "")
+        per_mol[mid]["exact" if cls.startswith("exact") else "contained"] += len(items)
+        out.append({"molecule_id": mid, "zone": zn, "heading": head, "class": "exact" if cls.startswith("exact") else "contained_derivative_or_neighbour",
+                    "mesh_kind": kind, "records_only_via_this_heading": len(items),
+                    "sample_titles": " || ".join(t for _, t in rnd.sample(items, min(per_group, len(items))))})
+    if lookup:
+        os.makedirs(out_dir, exist_ok=True)
+        _json.dump(cache, open(cache_path, "w"), indent=1)
+    os.makedirs(out_dir, exist_ok=True)
+    with open(os.path.join(out_dir, "mesh_rescue_audit.csv"), "w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(out[0]))
+        w.writeheader()
+        w.writerows(out)
+    sib = sorted(sibling.items(), key=lambda kv: -kv[1])
+    with open(os.path.join(out_dir, "mesh_sibling_contamination.csv"), "w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(["molecule_id", "sibling_heading_on_held_records", "records"])
+        for (mid, head), n in sib:
+            w.writerow([mid, head, n])
+    tot = Counter()
+    for mid, c in per_mol.items():
+        tot.update(c)
+    print(f"PubMed records identified ONLY through MeSH/substance headings (no name in title/abstract/keywords): "
+          f"exact={tot['exact']}  contained(derivative/neighbour; old rule only)={tot['contained']}")
+    print("per molecule (exact / contained):")
+    for mid, c in sorted(per_mol.items(), key=lambda kv: -(kv[1]['exact'] + kv[1]['contained']))[:20]:
+        print(f"  {mid:20} exact={c['exact']:5} contained={c['contained']:5}")
+    print("largest groups:")
+    for row in out[:20]:
+        print(f"  {row['molecule_id']:18} {row['zone']:10} {row['heading'][:38]:38} {row['class'][:10]:10} {row['mesh_kind'][:20]:20} n={row['records_only_via_this_heading']}")
+
+
 def contexts(work: str, public_records: str, molecule: str, term: str, source: str, n: int, seed: int,
              case_sensitive: bool, only_alone: bool) -> None:
     """Print random keyword-in-context snippets for a term, so its meaning can be judged by eye."""
@@ -428,7 +544,7 @@ def contexts(work: str, public_records: str, molecule: str, term: str, source: s
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", choices=("baseline", "terms", "contexts", "compare", "regress", "benchmark", "samples", "ambiguous"))
+    ap.add_argument("command", choices=("baseline", "terms", "contexts", "compare", "regress", "benchmark", "samples", "ambiguous", "mesh"))
     ap.add_argument("--molecule", default="")
     ap.add_argument("--term", default="")
     ap.add_argument("--source", default="preprints", choices=idn.SOURCES)
@@ -444,7 +560,7 @@ def main() -> None:
         contexts(args.work, args.public_records, args.molecule, args.term, args.source, args.n, args.seed,
                  args.case_sensitive, args.alone)
         return
-    {"baseline": baseline, "terms": terms, "compare": compare, "regress": regress, "benchmark": benchmark, "samples": samples, "ambiguous": ambiguous}[args.command](args.work, args.out_dir, args.public_records)
+    {"baseline": baseline, "terms": terms, "compare": compare, "regress": regress, "benchmark": benchmark, "samples": samples, "ambiguous": ambiguous, "mesh": mesh}[args.command](args.work, args.out_dir, args.public_records)
 
 
 if __name__ == "__main__":

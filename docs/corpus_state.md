@@ -119,6 +119,17 @@ and a molecule with no overlay row behaves like the old name guard):
 one of the first display + 3 synonyms and not a contextual alias). The overlay can never change PubMed retrieval:
 PubMed discovery stays in `config/SEARCH_RULES.csv`.
 
+**Match roles (provenance, and policy).** Every verdict records HOW the molecule appears (`role` in `record_identity`):
+`exposure` (CT.gov interventions / other names / arms), `subject` (titles, conditions, keywords), `measured_outcome`
+(outcome measure titles and outcome descriptions: a genuine biomarker study is kept), `background` (brief summary /
+detailed description / eligibility: mentioned, not the subject), `text_mention` (abstracts), `indexing` (MeSH /
+substance headings), `ambiguous_acronym` (an ambiguous alias without its context, or next to an unrelated meaning) and
+`unrelated` (no name anywhere). `config/identity_policy.csv` (`publish_roles`) lists the roles that may establish
+identity: trials = exposure + subject + measured_outcome (add `background` to publish those too); PubMed/preprints = all
+but `indexing`. **MeSH / substance headings never establish identity alone**, even an exact descriptor: papers about
+derivatives and neighbours (zotarolimus/everolimus stents, isoquercitrin, taurolidine, acamprosate) carry the parent
+descriptor. They are held as `indexing_only` with the heading recorded.
+
 **Outcomes**: `pass` / `hold` (no identity evidence, or an ambiguous alias without its context) / `exclude`
 (positive evidence of another meaning). Fail-open wherever the stored text cannot support a judgement.
 
@@ -126,6 +137,12 @@ PubMed discovery stays in `config/SEARCH_RULES.csv`.
 `build_preprints_json.py`, the trial-count in the curated build) and the PubMed curated build (hold-in-place,
 `excluded_noise`, `publish_rule_id = identity:hold|exclude`, listed in `identity_report_pubmed.csv`). Nothing is
 deleted and no stored payload is rewritten. `config/identity_policy.csv` can switch a source off without code.
+
+**CT.gov identity fields** (`scripts/run_trials_identity_backfill.py`, a step in `update.yml`): rows stored before WS4.5
+lack official title, keywords, arms, other names and outcome/summary/eligibility text. The backfill adds those fields from
+CT.gov (100 trials per request, resumable, bounded), never changes an existing field, and marks the row
+`identity_fields_v`. Until a row has them it is "legacy": it is judged but never HELD on the incomplete evidence
+(`legacy_unverified`, fail-open). Daily fetches write the fields for every row they return.
 
 **Stored-row re-evaluation** (`scripts/run_identity_reeval.py`, run by `build_release.py` before every build): judges
 EVERY stored record, offline, regardless of whether the latest retrieval was complete, and (re)writes the provenance
