@@ -543,6 +543,14 @@ def run():
     check("shipped: foreign / brand metformin spellings identify metformin",
           sv("ctgov", "metformin", brief_title="Metformina en diabetes").outcome == idn.PASS
           and sv("preprints", "metformin", title="メトホルミン", abstract="x").outcome == idn.PASS)
+    # regression: genuine held glutathione record found in the pre-production sanity sample (title names only the brand)
+    v = idn.evaluate(shipped, "pubmed", "glutathione", {"title": "[Effects of an eyedrop solution, Tathion, on cataract].", "abstract": "",
+                                                        "mesh_terms": "Aged; Cataract: drug therapy; Glutathione: therapeutic use; Ophthalmic Solutions",
+                                                        "chemicals": "Ophthalmic Solutions; Glutathione"}, "5691888")
+    check("shipped: Tathion (brand of reduced glutathione, PMID 5691888) identifies glutathione",
+          v.outcome == idn.PASS and v.match_type == "specific_alias" and v.matched_term == "Tathion")
+    check("shipped: MeSH 'Glutathione' alone (no name in the text) still does not identify glutathione",
+          idn.evaluate(shipped, "pubmed", "glutathione", {"title": "Eyedrops on cataract", "abstract": "", "mesh_terms": "Glutathione: therapeutic use"}, "").outcome == idn.HOLD)
     check("shipped: ALCAR spellings", sv("preprints", "alcar", title="L-acetylcarnitine in neuropathy", abstract="x").outcome == idn.PASS)
 
     print(f"\n{PASS} passed, {FAIL} failed")

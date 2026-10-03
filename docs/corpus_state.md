@@ -158,3 +158,18 @@ stale-marking.
 Review tooling (local-only output, never committed): `scripts/audit_identity.py` (baseline / compare / terms /
 contexts / regress / benchmark) and `scripts/build_identity_review.py` (proposed benchmark rows + review queue; it
 never approves anything).
+
+### Known residual issues (WS4.5), deliberately not fixed yet
+
+Found in the pre-production sanity sample; none is introduced by the identity layer (the old name guard behaved the same) and
+none blocks the controlled shrink. Each needs its own decision.
+
+* `p22_2`: every stored hit is noise (chromosome bands such as p22.2, bacterial strain "P22-2", protein names). The molecule may
+  not be findable by name; consider retiring or renaming it.
+* `sermorelin`, alias "GRF 1-29": also matches GHRH antagonist analogues and non-human GRF (about half of a 10-row published sample).
+* `spermidine`, `glutathione`: enzyme names (spermidine/spermine N1-acetyltransferase, spermidine synthase, glutathione peroxidase /
+  S-transferase / reductase) and neighbouring compounds leak into published rows; candidates for exclusion terms.
+* `metformin`, `indexing_only` holds: about 15-25% of the abstract-less metformin rows held only on a MeSH heading look genuinely about
+  metformin (brand/old-name gaps such as Glumetza). Not rescued: MeSH alone never establishes identity.
+* CT.gov `background` tier (~870 trials, ~18% genuine): held. A narrow rule (endogenous-biomarker molecules + a measurement
+  sentence in the summary, ~33 trials, ~85% precision) is a possible later rescue.
