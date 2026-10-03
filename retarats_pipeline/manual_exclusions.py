@@ -79,10 +79,11 @@ def _terms(value: str) -> Tuple[str, ...]:
 
 
 def _term_regex(term: str) -> "re.Pattern[str]":
-    """Case-insensitive whole-token match; hyphen/space/underscore are interchangeable so
-    'MT-II' also finds 'MT II', and 'metallothionein' does not match inside longer words."""
+    """Case-insensitive whole-token match; hyphen/space/underscore are interchangeable AND optional
+    so 'MT-II' also finds 'MT II' and 'MTII' (and 'LL-37' finds 'LL37'), while 'metallothionein'
+    does not match inside longer words."""
     parts = [re.escape(p) for p in re.split(r"[\s_\-]+", term.strip()) if p]
-    return re.compile(r"(?<![A-Za-z0-9])" + r"[\s_\-]+".join(parts) + r"(?![A-Za-z0-9])", re.IGNORECASE)
+    return re.compile(r"(?<![A-Za-z0-9])" + r"[\s_\-]*".join(parts) + r"(?![A-Za-z0-9])", re.IGNORECASE)
 
 
 def _any_term(terms: Iterable[str], text: str) -> bool:

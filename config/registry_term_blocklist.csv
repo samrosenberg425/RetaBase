@@ -1,0 +1,6 @@
+molecule_id,term,reason
+nicotinamide_riboside,NR,"Bare 'NR' abbreviation: 2,016 CT.gov hits (12% name the molecule) and 8,188 EuropePMC hits (2%); audit 2026-10-02"
+gdf15,MIC-1,"Ambiguous (microbial / unrelated 'MIC-1'): 14% of EuropePMC preprint hits name GDF15; audit 2026-10-02"
+thymosin_alpha_1,TA-1,"Ambiguous abbreviation: 6% of EuropePMC preprint hits name thymosin alpha 1; audit 2026-10-02"
+thymopentin,TP5,"Ambiguous abbreviation: ~24% of EuropePMC preprint hits name thymopentin; audit 2026-10-02"
+mgf_igf1ec,Mechano growth factor,"CT.gov returns 490 trials, 0% name MGF / IGF-1Ec (matches generic 'growth factor'); audit 2026-10-02"

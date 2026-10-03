@@ -343,7 +343,8 @@ def build(db_path: str, out_dir: str, limit: int = 0, release_id: str = "") -> d
         ["molecule_id", "molecule_name", "total_records", "record_count", "human_count",
          "density_tier", "auto_published", "listed",
          "review_candidates", "held", "human_evidence", "preclinical_evidence",
-         "reviews", "max_reliability", "top_conditions", "sections_present", "pubchem_cid"]
+         "reviews", "max_reliability", "top_conditions", "sections_present", "pubchem_cid",
+         "related_molecules"]
         + REGULATORY_FIELDS + TRIAL_STAGE_FIELDS,
     )
 
@@ -925,6 +926,7 @@ def _load_pubchem_cids(path: str = PUBCHEM_CIDS_PATH) -> Dict[str, str]:
 # later augmented by an openFDA/DailyMed/RxNorm/ChEMBL enrichment script. Fully
 # optional: a missing file simply yields blank regulatory fields on every molecule.
 REGULATORY_PATH = os.path.join("config", "regulatory.csv")
+MOLECULE_RELATIONS_PATH = os.path.join("config", "molecule_relations.csv")
 REGULATORY_FIELDS = [
     "regulatory_status",          # approved | investigational | supplement | research-only | withdrawn
     "fda_approved_indications",   # semicolon list; "" if none
@@ -988,6 +990,8 @@ def _load_trial_stages(path: str = TRIALS_DB_PATH) -> Dict[str, Dict[str, str]]:
             t = json.loads(payload)
         except (TypeError, json.JSONDecodeError):
             continue
+        if t.get("stale_query"):
+            continue  # no longer returned by its molecule's search; held out of the feeds
         mol = str(t.get("molecule_id", "") or "").strip()
         if not mol:
             continue
@@ -1012,6 +1016,23 @@ def _load_trial_stages(path: str = TRIALS_DB_PATH) -> Dict[str, Dict[str, str]]:
             "ongoing_trial_count": str(d["ongoing"]),
             "trial_stages_by_use": stages,
         }
+    return out
+
+
+def _load_molecule_relations(path: str = MOLECULE_RELATIONS_PATH) -> Dict[str, List[dict]]:
+    """molecule_id -> [{related_molecule_id, relation}] from config/molecule_relations.csv.
+
+    Display-only cross-links between separate molecules (e.g. a synthetic fragment and its
+    parent peptide). Missing file / blank rows -> {}. Never merges or re-tags any record."""
+    out: Dict[str, List[dict]] = {}
+    if not os.path.exists(path):
+        return out
+    with open(path, newline="", encoding="utf-8") as fh:
+        for r in csv.DictReader(fh):
+            a = (r.get("molecule_id") or "").strip()
+            b = (r.get("related_molecule_id") or "").strip()
+            if a and b and a != b:
+                out.setdefault(a, []).append({"related_molecule_id": b, "relation": (r.get("relation") or "").strip()})
     return out
 
 
@@ -1100,6 +1121,15 @@ def _molecule_index(rows: List[dict], pubchem_by_mol: Dict[str, str] | None = No
         for _k in TRIAL_STAGE_FIELDS:
             entry[_k] = tr.get(_k, "")
         out.append(entry)
+    # Display-only "related molecules" links (config/molecule_relations.csv). Only links to
+    # molecules that exist in the index, so a link always has somewhere to go.
+    names = {e["molecule_id"]: e["molecule_name"] for e in out}
+    relations = _load_molecule_relations()
+    for e in out:
+        links = [{"molecule_id": r["related_molecule_id"], "molecule_name": names[r["related_molecule_id"]],
+                  "relation": r["relation"]}
+                 for r in relations.get(e["molecule_id"], []) if r["related_molecule_id"] in names]
+        e["related_molecules"] = json.dumps(links, ensure_ascii=False) if links else ""
     out.sort(key=lambda r: r["auto_published"], reverse=True)
     return out
 

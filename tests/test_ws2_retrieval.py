@@ -294,7 +294,7 @@ def run():
     def _ctgov_study(nct, status):
         return {
             "protocolSection": {
-                "identificationModule": {"nctId": nct, "briefTitle": f"Trial {nct}"},
+                "identificationModule": {"nctId": nct, "briefTitle": f"Retatrutide trial {nct}"},
                 "statusModule": {"overallStatus": status},
             }
         }

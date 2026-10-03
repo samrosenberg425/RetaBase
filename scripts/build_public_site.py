@@ -129,6 +129,9 @@ MOLECULE_FIELDS = [
     "access_pathways", "reg_source", "reg_source_url", "reg_retrieved_utc",
     # Development stage per indication, derived from the local CT.gov trials mirror.
     "max_trial_phase", "trial_count", "ongoing_trial_count", "trial_stages_by_use",
+    # Display-only links to related (but separate) molecules, JSON list from
+    # config/molecule_relations.csv. "" when none.
+    "related_molecules",
 ]
 
 # Candidate ("experimental") molecules proposed for future fetching. These carry
@@ -1504,6 +1507,9 @@ _TEMPLATE = """<!DOCTYPE html>
   .mol-card:hover {{ border-color: var(--accent); }}
   .mol-card h3 {{ margin: 0 0 8px; font-size: 15px; }}
   .mol-stats {{ display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; color: var(--muted); }}
+  .mol-related {{ margin-top: 8px; font-size: 12px; color: var(--muted); }}
+  .mol-related-link {{ color: var(--accent); text-decoration: none; }}
+  .mol-related-link:hover {{ text-decoration: underline; }}
   .mol-density {{ margin-top: 8px; display: inline-block; font-size: 11px; padding: 2px 8px;
     border-radius: 999px; border: 1px solid var(--border); color: var(--muted); cursor: help; }}
   .mol-density.tier-sparse {{ border-color: var(--tier-limited); color: var(--tier-limited); }}
@@ -4112,6 +4118,29 @@ _TEMPLATE = """<!DOCTYPE html>
       }}
       var rpanel = regulatoryPanel(m);
       if (rpanel) card.appendChild(rpanel);
+      // Related (but separate) molecules: each name opens that molecule's evidence list.
+      var related = [];
+      try {{ related = m.related_molecules ? JSON.parse(m.related_molecules) : []; }} catch (err) {{ related = []; }}
+      if (related.length) {{
+        var rrow = el("div", "mol-related", "Related: ");
+        related.forEach(function(rm, ri) {{
+          if (ri) rrow.appendChild(document.createTextNode(", "));
+          var rl = el("a", "mol-related-link", rm.molecule_name || rm.molecule_id);
+          rl.href = "#";
+          if (rm.relation) rl.title = rm.relation;
+          rl.addEventListener("click", function(e) {{
+            e.preventDefault(); e.stopPropagation();
+            showTab("evidence");
+            resetFilters();
+            if (SELECT["molecule_name"] && rm.molecule_name) {{
+              SELECT["molecule_name"].inc = [rm.molecule_name];
+              applyFilters();
+            }}
+          }});
+          rrow.appendChild(rl);
+        }});
+        card.appendChild(rrow);
+      }}
       card.addEventListener("click", function() {{
         var name = m.molecule_name || "";
         showTab("evidence");

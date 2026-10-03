@@ -325,6 +325,8 @@ def load_trial_index(trials_db: str) -> Dict[str, dict]:
             t = json.loads(payload)
         except (TypeError, json.JSONDecodeError):
             continue
+        if t.get("stale_query"):
+            continue
         facts = {
             "nct_id": t.get("nct_id", ""),
             "enrollment_count": t.get("enrollment_count", ""),

@@ -165,13 +165,15 @@ def build_corpus_index(pubmed_db: str = DEFAULT_PUBMED_DB, trials_db: str = DEFA
     if os.path.exists(trials_db):
         conn = sqlite3.connect(trials_db)
         try:
-            index["nct_id"] = _index_by_molecule_id(load_payload_table(conn, "trials"), "nct_id", upper=True)
+            index["nct_id"] = _index_by_molecule_id(
+                [r for r in load_payload_table(conn, "trials") if not r.get("stale_query")], "nct_id", upper=True)
         finally:
             conn.close()
     if os.path.exists(preprints_db):
         conn = sqlite3.connect(preprints_db)
         try:
-            index["doi"] = _index_by_molecule_id(load_payload_table(conn, "preprints"), "id")
+            index["doi"] = _index_by_molecule_id(
+                [r for r in load_payload_table(conn, "preprints") if not r.get("stale_query")], "id")
         finally:
             conn.close()
     return index

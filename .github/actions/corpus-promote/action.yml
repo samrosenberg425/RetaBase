@@ -9,6 +9,9 @@ inputs:
   release-id:
     description: "release_id allocated for this run (already stamped into exports/site)"
     required: true
+  allow-shrink:
+    description: "Manual, deliberate: skip the count-collapse gates for this run (see corpus_state.py --allow-shrink)."
+    default: "false"
 
 runs:
   using: composite
@@ -18,9 +21,12 @@ runs:
       env:
         GH_TOKEN: ${{ github.token }}
         RELEASE_ID: ${{ inputs.release-id }}
+        ALLOW_SHRINK: ${{ inputs.allow-shrink }}
       run: |
+        extra=""
+        if [ "$ALLOW_SHRINK" = "true" ]; then extra="--allow-shrink"; fi
         python3 scripts/corpus_state.py promote --work work --site-dir exports/site \
-          --release-id "$RELEASE_ID" --cache-dir data
+          --release-id "$RELEASE_ID" --cache-dir data $extra
 
     - name: Save acceleration cache (only after promotion)
       uses: actions/cache/save@v4

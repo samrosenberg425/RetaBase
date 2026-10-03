@@ -18,6 +18,7 @@ from typing import Dict, List
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from retarats_pipeline.enrichment.common import load_payload_table, utc_now_iso
+from retarats_pipeline.enrichment.registry_stale import drop_stale
 
 DEFAULT_DB = "data/retarats_trials.sqlite"
 DEFAULT_OUT = "exports/curated/trials_data.json"
@@ -36,7 +37,7 @@ def _load_trials(db_path: str) -> List[dict]:
         return []
     conn = sqlite3.connect(db_path)
     try:
-        return load_payload_table(conn, TABLE)
+        return drop_stale(load_payload_table(conn, TABLE))
     finally:
         conn.close()
 

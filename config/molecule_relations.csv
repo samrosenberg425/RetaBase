@@ -1,0 +1,3 @@
+molecule_id,related_molecule_id,relation
+tb_500,thymosin_beta_4,"TB-500 is a synthetic fragment of thymosin beta-4"
+thymosin_beta_4,tb_500,"TB-500 is a synthetic fragment of thymosin beta-4"

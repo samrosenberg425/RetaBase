@@ -12,6 +12,7 @@ call these normalizers on the parsed payloads.
 from __future__ import annotations
 
 import csv
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
@@ -289,16 +290,94 @@ def molecule_query_terms(molecule: Mapping[str, Any], max_synonyms: int = 3) -> 
     return terms
 
 
-def trials_query(molecule: Mapping[str, Any]) -> str:
-    """CT.gov v2 free-text query.term: OR of the molecule's key terms."""
+REGISTRY_TERM_BLOCKLIST_PATH = os.path.join("config", "registry_term_blocklist.csv")
+
+
+def _blocked_registry_terms(molecule_id: str, path: str = REGISTRY_TERM_BLOCKLIST_PATH) -> set:
+    """Lower-cased terms a curator has barred from the registry/preprint queries of this
+    molecule (config/registry_term_blocklist.csv: molecule_id, term, reason). These are
+    ambiguous abbreviations that the registries match on unrelated records (e.g. bare "NR")."""
+    if not os.path.exists(path):
+        return set()
+    with open(path, newline="", encoding="utf-8") as fh:
+        return {(r.get("term") or "").strip().lower() for r in csv.DictReader(fh)
+                if (r.get("molecule_id") or "").strip() == molecule_id and (r.get("term") or "").strip()}
+
+
+def registry_terms(molecule: Mapping[str, Any]) -> List[str]:
+    """Query terms for the CT.gov and EuropePMC (preprint) searches: the molecule's key terms
+    minus any blocklisted ambiguous ones. The display name can never be blocked, so a molecule
+    is never left with no query."""
     terms = molecule_query_terms(molecule)
-    quoted = [f'"{t}"' if " " in t else t for t in terms]
-    return " OR ".join(quoted)
+    blocked = _blocked_registry_terms(str(molecule.get("molecule_id", "") or ""))
+    display = clean_text(molecule.get("display_name", "")).lower()
+    kept = [t for t in terms if t.lower() == display or t.lower() not in blocked]
+    return kept or terms[:1]
+
+
+REGISTRY_KEEP_PATH = os.path.join("config", "registry_keep.csv")
+REGISTRY_EXPECTED_EMPTY_PATH = os.path.join("config", "registry_expected_empty.csv")
+
+
+def load_registry_keep(path: str = REGISTRY_KEEP_PATH) -> set:
+    """{(molecule_id, id)} a human has reviewed and said to KEEP even though its record does not name
+    the molecule (e.g. a trial that only uses a brand name missing from our synonyms). The id is an
+    NCT id (upper-cased) or a preprint id. Overrides the precision guard."""
+    if not os.path.exists(path):
+        return set()
+    with open(path, newline="", encoding="utf-8") as fh:
+        return {((r.get("molecule_id") or "").strip(), (r.get("id") or "").strip().upper())
+                for r in csv.DictReader(fh) if (r.get("molecule_id") or "").strip() and (r.get("id") or "").strip()}
+
+
+def load_registry_expected_empty(path: str = REGISTRY_EXPECTED_EMPTY_PATH) -> set:
+    """molecule_ids a human has confirmed have NO real registry/preprint records, so an empty search
+    result is legitimate and stored rows for them can be reconciled (otherwise an empty result for a
+    molecule with many stored rows is treated as an API anomaly and skipped)."""
+    if not os.path.exists(path):
+        return set()
+    with open(path, newline="", encoding="utf-8") as fh:
+        return {(r.get("molecule_id") or "").strip() for r in csv.DictReader(fh) if (r.get("molecule_id") or "").strip()}
+
+
+def molecule_all_names(molecule: Mapping[str, Any], min_len: int = 3) -> List[str]:
+    """Every name we know for the molecule (display name + ALL synonyms, not just the few that go
+    into the query). Names shorter than ``min_len`` are ignored: 2-letter codes are too ambiguous
+    to count as proof a record is about the molecule."""
+    names = [clean_text(molecule.get("display_name", ""))] + [clean_text(x) for x in
+                                                              str(molecule.get("synonyms_csv", "") or "").split(",")]
+    out, seen = [], set()
+    for n in names:
+        if len(n) >= min_len and n.lower() not in seen:
+            seen.add(n.lower())
+            out.append(n)
+    return out
+
+
+def names_molecule(text: str, names: List[str]) -> bool:
+    """Does ``text`` contain any of ``names`` as a whole token (case-, hyphen- and space-insensitive)?
+
+    This is the registry precision guard: CT.gov and EuropePMC match on tokenisation, server-side
+    synonym expansion and full text, so a hit is only kept when the record itself names the
+    molecule. Fail-open: with no usable names the guard cannot judge, so everything passes."""
+    if not names:
+        return True
+    from retarats_pipeline.manual_exclusions import _term_regex
+    return any(_term_regex(n).search(text) for n in names)
+
+
+def _quote_term(term: str) -> str:
+    """Always a quoted phrase. A bare token such as MT-II is split by the registries into
+    "MT" + "II" and matches every "Phase II" trial (1,336 junk hits for 1 real one)."""
+    return '"' + term.replace('"', "") + '"'
+
+
+def trials_query(molecule: Mapping[str, Any]) -> str:
+    """CT.gov v2 free-text query.term: OR of the molecule's key terms, each quoted."""
+    return " OR ".join(_quote_term(t) for t in registry_terms(molecule))
 
 
 def preprints_query(molecule: Mapping[str, Any]) -> str:
-    """EuropePMC query: (terms...) AND SRC:PPR (preprint source filter)."""
-    terms = molecule_query_terms(molecule)
-    quoted = [f'"{t}"' if " " in t else t for t in terms]
-    inner = " OR ".join(quoted)
+    """EuropePMC query: ("term" OR ...) AND SRC:PPR (preprint source filter), terms quoted."""
+    inner = " OR ".join(_quote_term(t) for t in registry_terms(molecule))
     return f"({inner}) AND SRC:PPR"

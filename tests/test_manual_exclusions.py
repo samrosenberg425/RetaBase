@@ -180,6 +180,18 @@ def run():
           mi["mt"]["total_records"] == "1" and mi["mt"]["record_count"] == "1")
     check("molecule card still reports the held count", mi["mt"]["held"] == "1")
 
+    # ---- related molecules: display-only links, only to molecules that exist ----
+    rel_path = os.path.join(td, "rel.csv")
+    write_csv(rel_path, ["molecule_id", "related_molecule_id", "relation"],
+              [["mt", "other_mol", "x"], ["mt", "mt", "self"], ["mt", "", "blank"]])
+    rels = bcd._load_molecule_relations(rel_path)
+    check("relations loader ignores self-links and blank rows", rels == {"mt": [{"related_molecule_id": "other_mol", "relation": "x"}]})
+    check("missing relations file is a no-op", bcd._load_molecule_relations(os.path.join(td, "none.csv")) == {})
+    shipped_rel = bcd._load_molecule_relations(os.path.join(ROOT, "config", "molecule_relations.csv"))
+    check("shipped relations link TB-500 and thymosin beta-4 both ways",
+          shipped_rel.get("tb_500", [{}])[0].get("related_molecule_id") == "thymosin_beta_4"
+          and shipped_rel.get("thymosin_beta_4", [{}])[0].get("related_molecule_id") == "tb_500")
+
     # ---- benchmark: held records count as absent, and are reported separately ----
     sys.path.insert(0, os.path.join(ROOT, "scripts"))
     import benchmark_retrieval as br  # noqa: E402

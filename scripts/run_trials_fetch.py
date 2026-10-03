@@ -43,8 +43,13 @@ from retarats_pipeline.enrichment.common import (
     save_payload_rows,
     utc_now_iso,
 )
+from retarats_pipeline.enrichment.registry_stale import mark_stale_rows
 from retarats_pipeline.enrichment.registry import (
     load_active_molecules,
+    load_registry_expected_empty,
+    load_registry_keep,
+    molecule_all_names,
+    names_molecule,
     normalize_trial,
     trials_query,
 )
@@ -95,6 +100,11 @@ def run(
     seen_this_run: set = set()
     molecules_failed: List[str] = []
     molecules_partial: List[str] = []
+    complete_molecules: set = set()
+    returned_by_mol: Dict[str, int] = {}
+    stale_summary: dict = {"marked": 0, "by_molecule": {}, "skipped_anomalies": []}
+    filtered_by_mol: Dict[str, List[str]] = {}
+    keep = load_registry_keep()
     total_pages = 0
     total_rows_retrieved = 0
     total_reported_sum = 0
@@ -120,15 +130,25 @@ def run(
                 continue
             if page_result["partial"]:
                 molecules_partial.append(mol_id)
+            else:
+                complete_molecules.add(mol_id)
+            returned_by_mol[mol_id] = len(page_result["items"])
 
             batch: List[dict] = []
             new_count = 0
             updated_count = 0
             now = utc_now_iso()
+            names = molecule_all_names(m)
             for study in page_result["items"]:
                 parsed = ClinicalTrialsClient.parse_study(study)
                 nct = str(parsed.get("nct_id", "")).upper()
                 if not nct or nct in seen_this_run:
+                    continue
+                # Precision guard: CT.gov matches on tokens and server-side synonym expansion
+                # ("MT-II" -> every Phase II trial). Keep a trial only if its own record names
+                # the molecule; the rest are never stored (and are marked stale if stored before).
+                if (mol_id, nct) not in keep and not names_molecule(json.dumps(study), names):
+                    filtered_by_mol.setdefault(mol_id, []).append(nct)
                     continue
                 seen_this_run.add(nct)
                 existing = known.get(nct)
@@ -149,8 +169,28 @@ def run(
             flag = " [partial]" if page_result["partial"] else ""
             print(f"  {mol_id}: +{new_count} new, {updated_count} updated "
                   f"({page_result['pages']} page(s), {page_result['source']}){flag}")
+        # Rows stored by an OLDER/different query that this run's complete retrieval no
+        # longer returns are marked stale (held out of the feeds, not deleted).
+        stale_summary = mark_stale_rows(conn, TABLE, "nct_id", seen_this_run, complete_molecules,
+                                        returned_by_mol, utc_now_iso(), key_norm=lambda k: str(k).upper(),
+                                        expected_empty=load_registry_expected_empty())
     finally:
         conn.close()
+    if filtered_by_mol:
+        topf = sorted(filtered_by_mol.items(), key=lambda kv: -len(kv[1]))[:8]
+        print(f"Skipped {sum(len(v) for v in filtered_by_mol.values())} CT.gov hit(s) whose record does not name the "
+              f"molecule: {', '.join(f'{m}={len(n)}' for m, n in topf)}")
+        # Full audit trail (log only): exactly which records were skipped, per molecule, so a wrongly
+        # skipped one can be added to config/registry_keep.csv.
+        for m, ids in sorted(filtered_by_mol.items()):
+            print(f"  skipped[{m}] ({len(ids)}): {' '.join(ids[:40])}{' ...' if len(ids) > 40 else ''}")
+    if stale_summary["marked"]:
+        top = sorted(stale_summary["by_molecule"].items(), key=lambda kv: -kv[1])[:8]
+        print(f"Marked {stale_summary['marked']} stored trial(s) stale (no longer returned by their molecule's "
+              f"query): {', '.join(f'{m}={n}' for m, n in top)}")
+    if stale_summary["skipped_anomalies"]:
+        print(f"  NOT reconciled (empty result for a molecule with many stored trials; treated as an API "
+              f"anomaly): {', '.join(stale_summary['skipped_anomalies'])}")
 
     ok = len(molecules) == 0 or len(molecules_failed) < len(molecules)
     outcome = (

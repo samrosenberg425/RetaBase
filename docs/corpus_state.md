@@ -66,3 +66,33 @@ job red, `last-good.json` and live Pages unchanged).
 
 `python3 tests/test_corpus_state.py` (restore/promote/prune/validation failure simulations, fake `gh` store) and
 `python3 tests/test_workflow_state_policy.py` (every writer uses the single path).
+
+## Registry / preprint hygiene (trials + preprints) and deliberate shrinks
+
+CT.gov and EuropePMC match on tokenisation, server-side synonym expansion and (EuropePMC) full text,
+so a hit is not proof a record is about the molecule. Three layers keep the published trial and
+preprint feeds on-topic:
+
+1. **Search terms** (`registry.registry_terms`): every term is a quoted phrase; ambiguous ones are
+   listed in `config/registry_term_blocklist.csv` (the display name can never be blocked).
+2. **Precision guard** at ingest (`run_trials_fetch.py`, `run_preprints_fetch.py`): a hit is stored only
+   if its own record names the molecule (any known name; whole token, hyphen/space/case-insensitive).
+   Trials are checked against the full study record, preprints against title + abstract (no abstract =
+   kept). `config/registry_keep.csv` is a reviewed always-keep list (e.g. a trial that only uses a brand
+   name missing from our synonyms). Every skipped id is printed in the run log (`skipped[molecule]`).
+3. **Stale marking** (`enrichment/registry_stale.py`): stored rows that a molecule's COMPLETED search
+   no longer returns get `stale_query` and are dropped from `trials_data.json` / `preprints_data.json`,
+   molecule counts and the benchmark. Nothing is deleted, and a row the search returns again is
+   un-marked automatically. A partial or failed retrieval never marks anything. An empty result for a
+   molecule with >= 20 stored rows is treated as an API anomaly and skipped unless the molecule is on
+   `config/registry_expected_empty.csv` (human-confirmed to have no real records).
+
+Tool: `scripts/audit_registry_queries.py` measures, per molecule and per term, how many live hits
+really name the molecule (read-only).
+
+**Deliberate shrink.** The promotion gate refuses a published-feed shrink of more than 10% vs last-good.
+A reviewed cleanup that is meant to remove records needs the manual dispatch input for that run only:
+
+    gh workflow run update.yml --ref main -f allow_shrink=true
+
+Leave it off for normal runs.

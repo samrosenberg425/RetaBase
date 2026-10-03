@@ -40,6 +40,13 @@ on:
         type: choice
         options: [none, cache_miss, empty_trials, mixed_release]
         default: none
+      allow_shrink:
+        description: >-
+          DELIBERATE one-time shrink: skip the "published feed shrank more than 10%" promotion gates
+          for THIS run only. Use after a reviewed cleanup that is meant to remove records (e.g.
+          corrected registry search terms dropping junk trials). Leave off for normal runs.
+        type: boolean
+        default: false
       refresh_trials:
         description: >-
           Re-fetch and OVERWRITE already-stored trials. Needed once after adding a new stored field
@@ -248,6 +255,7 @@ jobs:
         uses: ./.github/actions/corpus-promote
         with:
           release-id: ${{ env.RELEASE_ID }}
+          allow-shrink: ${{ github.event.inputs.allow_shrink || 'false' }}
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
