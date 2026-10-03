@@ -148,6 +148,8 @@ class ClinicalTrialsClient:
             "keywords": semicolon_join(cond.get("keywords") or []),
             "arms": semicolon_join(_arm_label(a) for a in arms),
             "interventions": semicolon_join(_intervention_label(i) for i in interventions),
+            "intervention_other_names": semicolon_join(
+                n for i in interventions for n in _as_list(i.get("otherNames"))),
             "primary_outcomes": semicolon_join(_outcome_label(o) for o in primary_outcomes),
             "secondary_outcomes": semicolon_join(_outcome_label(o) for o in secondary_outcomes),
             "eligibility_summary": clean_text(eligibility.get("eligibilityCriteria", ""))[:3000],

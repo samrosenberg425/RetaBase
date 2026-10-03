@@ -4,6 +4,7 @@
     build_release.py --work work --out exports --release-id ID
 
 Runs, in order, against ``<work>`` (never against last-good):
+  run_identity_reeval     (offline provenance of molecule identity for every stored record; advisory)
   build_curated_database  -> <out>/curated   (site JSON stamped with the release_id)
   build_public_site       -> <out>/site      (--mode fetch)
   validate_curated        (baseline = last-good stats carried in the stage dir)
@@ -59,6 +60,14 @@ def main() -> int:
     rid = args.release_id
     db = lambda n: os.path.join(work, n)  # noqa: E731
 
+    # Offline identity re-evaluation of every STORED record (provenance table `record_identity` in each DB).
+    # Independent of retrieval completeness; never deletes anything. Advisory: the builds below apply the same
+    # deterministic gate in memory, so a failure here must not block a release.
+    try:
+        _run("scripts/run_identity_reeval.py", "--work", work)
+    except SystemExit as exc:
+        print(f"build_release: WARNING identity provenance refresh failed ({exc}); the builds still apply the gate", flush=True)
+
     _run("scripts/build_curated_database.py", "--db", db("retarats_pubmed.sqlite"),
          "--out-dir", curated, "--release-id", rid)
     _run("scripts/build_public_site.py", "--curated-dir", curated, "--out-dir", site, "--mode", "fetch")
@@ -72,9 +81,11 @@ def main() -> int:
     for shard in glob.glob(os.path.join(curated, "site_records_*.json")):
         shutil.copyfile(shard, os.path.join(site, os.path.basename(shard)))
     _run("scripts/build_trials_json.py", "--db", db("retarats_trials.sqlite"),
-         "--out", os.path.join(site, "trials_data.json"), "--release-id", rid)
+         "--out", os.path.join(site, "trials_data.json"), "--release-id", rid,
+         "--identity-report", os.path.join(curated, "identity_held_trials.csv"))
     _run("scripts/build_preprints_json.py", "--db", db("retarats_preprints.sqlite"),
-         "--out", os.path.join(site, "preprints_data.json"), "--release-id", rid)
+         "--out", os.path.join(site, "preprints_data.json"), "--release-id", rid,
+         "--identity-report", os.path.join(curated, "identity_held_preprints.csv"))
 
     with open(os.path.join(curated, "site_data.json"), encoding="utf-8") as fh:
         fp = (json.load(fh).get("corpus_stats") or {}).get("corpus_fingerprint", "")

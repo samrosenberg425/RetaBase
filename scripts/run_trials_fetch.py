@@ -43,13 +43,11 @@ from retarats_pipeline.enrichment.common import (
     save_payload_rows,
     utc_now_iso,
 )
+from retarats_pipeline import identity
 from retarats_pipeline.enrichment.registry_stale import mark_stale_rows
 from retarats_pipeline.enrichment.registry import (
     load_active_molecules,
     load_registry_expected_empty,
-    load_registry_keep,
-    molecule_all_names,
-    names_molecule,
     normalize_trial,
     trials_query,
 )
@@ -104,7 +102,7 @@ def run(
     returned_by_mol: Dict[str, int] = {}
     stale_summary: dict = {"marked": 0, "by_molecule": {}, "skipped_anomalies": []}
     filtered_by_mol: Dict[str, List[str]] = {}
-    keep = load_registry_keep()
+    id_cfg = identity.get_config(molecules_path=molecules_csv)
     total_pages = 0
     total_rows_retrieved = 0
     total_reported_sum = 0
@@ -138,21 +136,23 @@ def run(
             new_count = 0
             updated_count = 0
             now = utc_now_iso()
-            names = molecule_all_names(m)
             for study in page_result["items"]:
                 parsed = ClinicalTrialsClient.parse_study(study)
                 nct = str(parsed.get("nct_id", "")).upper()
                 if not nct or nct in seen_this_run:
                     continue
-                # Precision guard: CT.gov matches on tokens and server-side synonym expansion
-                # ("MT-II" -> every Phase II trial). Keep a trial only if its own record names
-                # the molecule; the rest are never stored (and are marked stale if stored before).
-                if (mol_id, nct) not in keep and not names_molecule(json.dumps(study), names):
+                # Identity guard: CT.gov matches on tokens and server-side synonym expansion
+                # ("MT-II" -> every Phase II trial). Keep a trial only if its own stored text (titles,
+                # conditions, keywords, interventions, arms) establishes the molecule under the identity rules
+                # (retarats_pipeline/identity.py); the rest are never stored (and are marked stale if
+                # stored before). Stored rows are re-judged offline by scripts/run_identity_reeval.py.
+                row = normalize_trial(parsed, molecule_id=mol_id, molecule_name=mol_name)
+                verdict = identity.evaluate(id_cfg, "ctgov", mol_id, identity.zones_for_trial(row), nct)
+                if not verdict.published:
                     filtered_by_mol.setdefault(mol_id, []).append(nct)
                     continue
                 seen_this_run.add(nct)
                 existing = known.get(nct)
-                row = normalize_trial(parsed, molecule_id=mol_id, molecule_name=mol_name)
                 row["first_seen_utc"] = (existing or {}).get("first_seen_utc") or now
                 row["last_seen_utc"] = now
                 row["fetched_at_utc"] = now

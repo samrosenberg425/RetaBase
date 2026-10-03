@@ -75,10 +75,11 @@ preprint feeds on-topic:
 
 1. **Search terms** (`registry.registry_terms`): every term is a quoted phrase; ambiguous ones are
    listed in `config/registry_term_blocklist.csv` (the display name can never be blocked).
-2. **Precision guard** at ingest (`run_trials_fetch.py`, `run_preprints_fetch.py`): a hit is stored only
-   if its own record names the molecule (any known name; whole token, hyphen/space/case-insensitive).
-   Trials are checked against the full study record, preprints against title + abstract (no abstract =
-   kept). `config/registry_keep.csv` is a reviewed always-keep list (e.g. a trial that only uses a brand
+2. **Identity guard** at ingest (`run_trials_fetch.py`, `run_preprints_fetch.py`): a hit is stored only
+   if its own stored text establishes the molecule under the identity rules (see "Molecule identity"
+   below). Trials are judged on titles, conditions, keywords, interventions (incl. other names) and arm
+   groups; preprints on title + abstract (no abstract and no name in the title = kept).
+   `config/registry_keep.csv` is a reviewed always-keep list (e.g. a trial that only uses a brand
    name missing from our synonyms). Every skipped id is printed in the run log (`skipped[molecule]`).
 3. **Stale marking** (`enrichment/registry_stale.py`): stored rows that a molecule's COMPLETED search
    no longer returns get `stale_query` and are dropped from `trials_data.json` / `preprints_data.json`,
@@ -96,3 +97,47 @@ A reviewed cleanup that is meant to remove records needs the manual dispatch inp
     gh workflow run update.yml --ref main -f allow_shrink=true
 
 Leave it off for normal runs.
+
+## Molecule identity (WS4.5): SOURCE RECORD -> MOLECULE
+
+Retrieval completeness is not identity. A search (PubMed `[tiab]`, CT.gov, EuropePMC) returns what its engine
+matches; whether a stored record is really ABOUT the molecule it is filed under is decided separately, offline,
+from the stored text, by `retarats_pipeline/identity.py`.
+
+**Term roles** (`config/MOLECULE_IDENTITY.csv` is an overlay on `config/MOLECULES.csv`; molecule ids are unchanged
+and a molecule with no overlay row behaves like the old name guard):
+
+| role | meaning |
+|---|---|
+| `canonical` | display name (implicit) |
+| `specific_alias` | specific enough to identify the molecule alone (thymalfasin, Zadaxin, PTH(1-34), Geref ...) |
+| `contextual_alias` | ambiguous token (VIP, LDN, TB4, MT-II ...): counts only with `context_any` text present and no `exclude_any` text; all-caps acronyms are case-sensitive |
+| `exclusion` | a known unrelated meaning; vetoes every non-canonical match of that molecule |
+| manual keep | `registry_keep.csv`, approved benchmark includes, `manual_pmids.csv`, gold PMIDs: override every automated outcome |
+
+**Discovery is a separate column** (`discovery` = `ctgov;preprints`): a term is searched only if listed there (or it is
+one of the first display + 3 synonyms and not a contextual alias). The overlay can never change PubMed retrieval:
+PubMed discovery stays in `config/SEARCH_RULES.csv`.
+
+**Outcomes**: `pass` / `hold` (no identity evidence, or an ambiguous alias without its context) / `exclude`
+(positive evidence of another meaning). Fail-open wherever the stored text cannot support a judgement.
+
+**Applied in three places, one function**: the ingest guard, the feed builders (`build_trials_json.py`,
+`build_preprints_json.py`, the trial-count in the curated build) and the PubMed curated build (hold-in-place,
+`excluded_noise`, `publish_rule_id = identity:hold|exclude`, listed in `identity_report_pubmed.csv`). Nothing is
+deleted and no stored payload is rewritten. `config/identity_policy.csv` can switch a source off without code.
+
+**Stored-row re-evaluation** (`scripts/run_identity_reeval.py`, run by `build_release.py` before every build): judges
+EVERY stored record, offline, regardless of whether the latest retrieval was complete, and (re)writes the provenance
+table `record_identity` (molecule, outcome, match type, matched term, zone, reason, rules version, timestamp) in each
+SQLite DB. It answers "why is this record associated with this molecule?". Changing an alias or rule changes
+`rules_version` and is picked up by simply running again.
+
+**Search-cache key**: search responses are cached under a key that is now a hash of the exact query + paging
+(`common.search_cache_key`). Before, the file name collapsed punctuation, so a corrected (quoted) query was answered
+from the cached results of the old unquoted one for 6 hours -- which made retrieval look "partial" and blocked
+stale-marking.
+
+Review tooling (local-only output, never committed): `scripts/audit_identity.py` (baseline / compare / terms /
+contexts / regress / benchmark) and `scripts/build_identity_review.py` (proposed benchmark rows + review queue; it
+never approves anything).

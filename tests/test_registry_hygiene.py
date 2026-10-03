@@ -221,19 +221,24 @@ def run():
         junk = {"protocolSection": {"identificationModule": {"nctId": "NCT00000010", "briefTitle": "Deafness gene screening cohort"},
                                     "statusModule": {"overallStatus": "RECRUITING"}}}
         buried = {"protocolSection": {"identificationModule": {"nctId": "NCT00000011", "briefTitle": "Obesity study"},
-                                      "descriptionModule": {"detailedDescription": "Participants receive retatrutide weekly."},
+                                      "descriptionModule": {"detailedDescription": "Serum retatrutide-unrelated biomarker levels are measured."},
                                       "statusModule": {"overallStatus": "RECRUITING"}}}
-        orig = patched(page([junk, buried, study("NCT00000012")]))
+        # the name only in an INTERVENTION (not in any title) is still the molecule's trial
+        arm_only = {"protocolSection": {"identificationModule": {"nctId": "NCT00000013", "briefTitle": "Obesity study 2"},
+                                        "armsInterventionsModule": {"interventions": [{"type": "DRUG", "name": "Retatrutide 5 mg"}]},
+                                        "statusModule": {"overallStatus": "RECRUITING"}}}
+        orig = patched(page([junk, buried, arm_only, study("NCT00000012")]))
         try:
             run_trials_fetch.run(db_path=gdb, molecules_csv=mol_csv)
         finally:
             ClinicalTrialsClient.search_all = orig
         g = read_table(gdb, "trials")
         check("guard: a hit that does not name the molecule is not stored", "NCT00000010" in g and is_stale(g["NCT00000010"]))
-        check("guard: a record naming the molecule only in its description is kept", "NCT00000011" in g and not is_stale(g["NCT00000011"]))
+        check("guard: a record naming the molecule only in its description/outcomes is NOT stored (not about the molecule)", "NCT00000011" not in g)
+        check("guard: a record naming the molecule in an intervention is kept", "NCT00000013" in g and not is_stale(g["NCT00000013"]))
         check("guard: a record naming it in the title is kept", "NCT00000012" in g and not is_stale(g["NCT00000012"]))
         check("guard: the junk is hidden from the published feed",
-              {r["nct_id"] for r in build_trials_json._load_trials(gdb)} == {"NCT00000011", "NCT00000012"})
+              {r["nct_id"] for r in build_trials_json._load_trials(gdb)} == {"NCT00000012", "NCT00000013"})
 
         # ---- run_preprints_fetch end to end ----
         import run_preprints_fetch  # noqa: E402

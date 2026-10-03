@@ -46,6 +46,8 @@ from retarats_pipeline.curation.publication_status import (
 )
 from retarats_pipeline.curation.ranking import RANK_FIELDS, compute_rank
 from retarats_pipeline.curation.reliability import RELIABILITY_FIELDS as _RELIABILITY_FIELDS, assess_reliability
+from retarats_pipeline import identity as identity_mod
+from retarats_pipeline.identity import apply_identity_gate as identity_gate
 from retarats_pipeline.manual_exclusions import hold_decision_fields, load_exclusions, plan_holds
 from retarats_pipeline.curation.ontology import FIELDS as ONTOLOGY_FIELDS, ANNOTATION_FIELDS, VERSION as ONTOLOGY_VERSION, CONFIG as ONTOLOGY_CONFIG, annotate
 
@@ -139,6 +141,27 @@ def build(db_path: str, out_dir: str, limit: int = 0, release_id: str = "") -> d
         print(f"  manual_exclusions: {m}", file=sys.stderr)
     hold_report: List[dict] = []
 
+    # Identity gate (config/MOLECULE_IDENTITY.csv; retarats_pipeline/identity.py): a PubMed record is
+    # published for a molecule only if its stored title/abstract/keywords/MeSH establish that molecule.
+    # Hold-in-place like manual_exclusions: the record stays in the corpus, is only marked excluded_noise,
+    # and the reason is written to identity_report_pubmed.csv. Fail-open: any error keeps every record.
+    id_holds: Dict[int, "identity_mod.Verdict"] = {}
+    if identity_mod.enforced("pubmed"):
+        try:
+            id_cfg = identity_mod.get_config()
+            for i, ev in enumerate(evidence[:limit] if limit else evidence):
+                if i in holds:
+                    continue
+                paper = paper_by_pmid.get(str(ev.get("pmid", "") or ""), {})
+                v = identity_mod.evaluate(id_cfg, "pubmed", str(ev.get("molecule_id", "") or ""),
+                                          identity_mod.zones_for_paper(ev, paper), str(ev.get("pmid", "") or ""))
+                if not v.published:
+                    id_holds[i] = v
+        except Exception as exc:  # noqa: BLE001 -- never let the identity layer break the build
+            print(f"  identity gate skipped (fail-open): {type(exc).__name__}: {exc}", file=sys.stderr)
+            id_holds = {}
+    identity_report: List[dict] = []
+
     curated_rows: List[dict] = []
     facets_long_rows: List[dict] = []
     annotation_rows: List[dict] = []
@@ -230,6 +253,13 @@ def build(db_path: str, out_dir: str, limit: int = 0, release_id: str = "") -> d
                                 "pmid": pmid, "title": row.get("title", ""),
                                 "rule": holds[i].label, "reason": holds[i].reason})
 
+        elif i in id_holds:
+            v = id_holds[i]
+            row.update(identity_mod.hold_decision_fields(v))
+            identity_report.append({"evidence_id": row.get("evidence_id", ""), "molecule_id": row.get("molecule_id", ""),
+                                    "pmid": pmid, "title": row.get("title", ""), "outcome": v.outcome,
+                                    "match_type": v.match_type, "matched_term": v.matched_term, "reason": v.reason})
+
         # 5) appraisal + LLM-ready scaffold
         row.update(appraise_evidence(row).to_dict())
 
@@ -287,6 +317,9 @@ def build(db_path: str, out_dir: str, limit: int = 0, release_id: str = "") -> d
     _write_csv(os.path.join(out_dir, "manual_exclusions_report.csv"), hold_report,
                ["evidence_id", "molecule_id", "pmid", "title", "rule", "reason"])
     stats["manual_holds"] = len(hold_report)
+    _write_csv(os.path.join(out_dir, "identity_report_pubmed.csv"), identity_report,
+               ["evidence_id", "molecule_id", "pmid", "title", "outcome", "match_type", "matched_term", "reason"])
+    stats["identity_holds"] = len(identity_report)
 
     # --- public_records.csv (broad browsable feed = everything on-topic) ---
     public = [r for r in curated_rows if r.get("publication_status") in {"featured", "listed"}]
@@ -985,6 +1018,7 @@ def _load_trial_stages(path: str = TRIALS_DB_PATH) -> Dict[str, Dict[str, str]]:
     except sqlite3.OperationalError:
         return {}
     per: Dict[str, dict] = {}
+    live = []
     for (payload,) in cur:
         try:
             t = json.loads(payload)
@@ -992,6 +1026,10 @@ def _load_trial_stages(path: str = TRIALS_DB_PATH) -> Dict[str, Dict[str, str]]:
             continue
         if t.get("stale_query"):
             continue  # no longer returned by its molecule's search; held out of the feeds
+        live.append(t)
+    # Same gate as the published trials feed: a trial whose stored text does not establish the molecule
+    # (identity hold/exclude) must not feed the molecule's trial count / phase either.
+    for t in identity_gate("ctgov", live):
         mol = str(t.get("molecule_id", "") or "").strip()
         if not mol:
             continue
@@ -1306,6 +1344,7 @@ def main() -> None:
     print(f"  review_queue     : {result['queue']}")
     print(f"  molecule_index   : {result['molecules']}")
     print(f"  manual holds      : {stats.get('manual_holds', 0)} (see manual_exclusions_report.csv)")
+    print(f"  identity holds    : {stats.get('identity_holds', 0)} (see identity_report_pubmed.csv)")
     print(f"  auto_publish_eligible: {stats['auto_publish']}")
     print(f"  missing required fields: {stats['missing_required']}")
     print(f"  model_primary != model_type (disambiguation impact): {stats['model_disambiguation_changed']}")

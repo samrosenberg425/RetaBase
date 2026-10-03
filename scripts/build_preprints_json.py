@@ -18,6 +18,7 @@ from typing import Dict, List
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from retarats_pipeline.enrichment.common import load_payload_table, utc_now_iso
+from retarats_pipeline import identity
 from retarats_pipeline.enrichment.registry_stale import drop_stale
 from retarats_pipeline.curation.facets import derive_facets, load_facet_defs
 
@@ -53,14 +54,17 @@ def _facets_for(row: Dict) -> Dict[str, str]:
         return {}
 
 
-def _load_preprints(db_path: str) -> List[dict]:
+def _load_preprints(db_path: str, report_path: str = "") -> List[dict]:
+    """Published preprints: stored rows minus stale-query rows minus rows whose identity verdict is
+    hold/exclude (the molecule is not established by the title/abstract). Nothing is deleted."""
     if not os.path.exists(db_path):
         return []
     conn = sqlite3.connect(db_path)
     try:
-        return drop_stale(load_payload_table(conn, TABLE))
+        rows = drop_stale(load_payload_table(conn, TABLE))
     finally:
         conn.close()
+    return identity.apply_identity_gate("preprints", rows, report_path)
 
 
 def _compact(row: Dict) -> Dict:
@@ -72,8 +76,9 @@ def _compact(row: Dict) -> Dict:
     return out
 
 
-def build(db_path: str = DEFAULT_DB, out_path: str = DEFAULT_OUT, release_id: str = "") -> dict:
-    preprints = _load_preprints(db_path)
+def build(db_path: str = DEFAULT_DB, out_path: str = DEFAULT_OUT, release_id: str = "",
+          identity_report: str = "") -> dict:
+    preprints = _load_preprints(db_path, identity_report)
     compact = [_compact(p) for p in preprints]
     # date descending; blank dates sink to the bottom.
     compact.sort(key=lambda r: str(r.get("date", "")), reverse=True)
@@ -96,8 +101,10 @@ def main() -> None:
     ap.add_argument("--out", default=DEFAULT_OUT)
     ap.add_argument("--release-id", default=os.environ.get("RELEASE_ID", ""),
                     help="Stamp this release_id into the feed (default: $RELEASE_ID; blank = unstamped).")
+    ap.add_argument("--identity-report", default="",
+                    help="Write the CSV of preprints held by the identity gate (and why) here (keep it OUT of the site dir).")
     args = ap.parse_args()
-    result = build(args.db, args.out, release_id=args.release_id)
+    result = build(args.db, args.out, release_id=args.release_id, identity_report=args.identity_report)
     print(f"Wrote {result['count']} preprints -> {result['out']}")
 
 

@@ -42,13 +42,11 @@ from retarats_pipeline.enrichment.common import (
     save_payload_rows,
     utc_now_iso,
 )
+from retarats_pipeline import identity
 from retarats_pipeline.enrichment.registry_stale import mark_stale_rows
 from retarats_pipeline.enrichment.registry import (
     load_active_molecules,
     load_registry_expected_empty,
-    load_registry_keep,
-    molecule_all_names,
-    names_molecule,
     normalize_preprint,
     preprints_query,
 )
@@ -103,7 +101,7 @@ def run(
     returned_by_mol: Dict[str, int] = {}
     stale_summary: dict = {"marked": 0, "by_molecule": {}, "skipped_anomalies": []}
     filtered_by_mol: Dict[str, List[str]] = {}
-    keep = load_registry_keep()
+    id_cfg = identity.get_config(molecules_path=molecules_csv)
     total_pages = 0
     total_rows_retrieved = 0
     total_reported_sum = 0
@@ -140,18 +138,18 @@ def run(
             new_count = 0
             updated_count = 0
             now = utc_now_iso()
-            names = molecule_all_names(m)
             for result in page_result["items"]:
                 row = normalize_preprint(result, molecule_id=mol_id, molecule_name=mol_name)
                 pid = row.get("id", "")
                 if not pid or pid in seen_this_run:
                     continue
-                # Precision guard: EuropePMC also searches full text, so a preprint can match on a
-                # passing mention. Keep it only if its title/abstract names the molecule. A
-                # preprint with no abstract cannot be judged, so it is kept (fail-open).
-                abstract = str(row.get("abstract", "") or result.get("abstractText", "") or "")
-                if ((mol_id, str(pid).upper()) not in keep and abstract.strip()
-                        and not names_molecule(f"{row.get('title', '')} {abstract}", names)):
+                # Identity guard: EuropePMC also searches full text, so a preprint can match on a
+                # passing mention. Keep it only if its title/abstract establishes the molecule under the
+                # identity rules (retarats_pipeline/identity.py). A preprint with no abstract whose title
+                # does not name the molecule cannot be judged, so it is kept (fail-open). Stored rows
+                # are re-judged offline by scripts/run_identity_reeval.py.
+                verdict = identity.evaluate(id_cfg, "preprints", mol_id, identity.zones_for_preprint(row), str(pid))
+                if not verdict.published:
                     filtered_by_mol.setdefault(mol_id, []).append(str(pid))
                     continue
                 seen_this_run.add(pid)

@@ -1,0 +1,4 @@
+source,enforce,notes
+pubmed,true,"Curated build holds records whose stored title/abstract/keywords/MeSH do not establish the molecule (excluded_noise, reversible)"
+ctgov,true,"Trials feed + molecule trial counts drop trials whose stored titles/conditions/interventions/arms do not establish the molecule"
+preprints,true,"Preprints feed drops preprints whose title/abstract does not establish the molecule"

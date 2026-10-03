@@ -88,6 +88,11 @@ def normalize_trial(
         "molecule_id": clean_text(molecule_id),
         "molecule_name": clean_text(molecule_name),
         "brief_title": clean_text(parsed.get("brief_title", "")),
+        # Stored for molecule-identity judging only (not published): official title, keywords, arm groups.
+        "official_title": clean_text(parsed.get("official_title", "")),
+        "keywords": clean_text(parsed.get("keywords", "")),
+        "arms": clean_text(parsed.get("arms", "")),
+        "other_names": clean_text(parsed.get("intervention_other_names", "")),
         "overall_status": status,
         "phases": clean_text(parsed.get("phases", "")),
         "study_type": clean_text(parsed.get("study_type", "")),
@@ -262,29 +267,32 @@ def load_active_molecules(path: str | Path = "config/MOLECULES.csv") -> List[Dic
     return out
 
 
-def molecule_query_terms(molecule: Mapping[str, Any], max_synonyms: int = 3) -> List[str]:
+def molecule_query_terms(molecule: Mapping[str, Any], max_synonyms: int = 3,
+                         skip: Optional[set] = None) -> List[str]:
     """Build the search terms for a molecule: display_name + a few key synonyms.
 
     Keeps it conservative (display name plus up to ``max_synonyms`` synonyms) to
     avoid noisy/ambiguous short codes; exclusions are not applied here since the
-    per-source query strings quote the exact terms.
-    """
+    per-source query strings quote the exact terms. ``skip`` (lower-cased terms) are passed over
+    when picking synonyms, so the slots go to the next usable name instead."""
     terms: List[str] = []
     seen = set()
+    skip = skip or set()
 
-    def _add(term: str) -> None:
+    def _add(term: str, honour_skip: bool = True) -> None:
         t = clean_text(term)
         if not t:
             return
         key = t.lower()
-        if key not in seen:
-            seen.add(key)
-            terms.append(t)
+        if key in seen or (honour_skip and key in skip):
+            return
+        seen.add(key)
+        terms.append(t)
 
-    _add(molecule.get("display_name", ""))
+    _add(molecule.get("display_name", ""), honour_skip=False)
     syn_raw = molecule.get("synonyms_csv", "") or ""
     for syn in syn_raw.split(","):
-        if len([t for t in terms]) >= max_synonyms + 1:
+        if len(terms) >= max_synonyms + 1:
             break
         _add(syn)
     return terms
@@ -304,14 +312,33 @@ def _blocked_registry_terms(molecule_id: str, path: str = REGISTRY_TERM_BLOCKLIS
                 if (r.get("molecule_id") or "").strip() == molecule_id and (r.get("term") or "").strip()}
 
 
-def registry_terms(molecule: Mapping[str, Any]) -> List[str]:
+def registry_terms(molecule: Mapping[str, Any], source: Optional[str] = None) -> List[str]:
     """Query terms for the CT.gov and EuropePMC (preprint) searches: the molecule's key terms
     minus any blocklisted ambiguous ones. The display name can never be blocked, so a molecule
-    is never left with no query."""
-    terms = molecule_query_terms(molecule)
-    blocked = _blocked_registry_terms(str(molecule.get("molecule_id", "") or ""))
+    is never left with no query.
+
+    With ``source`` ("ctgov" / "preprints") the identity overlay (config/MOLECULE_IDENTITY.csv) also
+    applies: contextual aliases (VIP, LDN, TB4 ...) are not searched -- they cannot establish identity
+    alone and retrieve mostly unrelated records -- and terms the overlay lists as discovery terms
+    for that source are added. Without ``source`` (or without an overlay) behaviour is unchanged."""
+    mid = str(molecule.get("molecule_id", "") or "")
     display = clean_text(molecule.get("display_name", "")).lower()
+    skip: set = set()
+    extra: List[str] = []
+    if source:
+        from retarats_pipeline import identity
+        try:
+            mi = identity.get_config().by_molecule.get(mid)
+        except Exception:  # noqa: BLE001 -- a broken overlay must never break retrieval
+            mi = None
+        if mi is not None:
+            skip = {r.term.lower() for r in mi.contextual if source not in r.discovery}
+            extra = identity.get_config().discovery_terms(mid, source)
+    terms = molecule_query_terms(molecule, skip=skip)
+    blocked = _blocked_registry_terms(mid)
     kept = [t for t in terms if t.lower() == display or t.lower() not in blocked]
+    have = {t.lower() for t in kept}
+    kept += [t for t in extra if t.lower() not in have and t.lower() not in blocked]
     return kept or terms[:1]
 
 
@@ -374,10 +401,10 @@ def _quote_term(term: str) -> str:
 
 def trials_query(molecule: Mapping[str, Any]) -> str:
     """CT.gov v2 free-text query.term: OR of the molecule's key terms, each quoted."""
-    return " OR ".join(_quote_term(t) for t in registry_terms(molecule))
+    return " OR ".join(_quote_term(t) for t in registry_terms(molecule, "ctgov"))
 
 
 def preprints_query(molecule: Mapping[str, Any]) -> str:
     """EuropePMC query: ("term" OR ...) AND SRC:PPR (preprint source filter), terms quoted."""
-    inner = " OR ".join(_quote_term(t) for t in registry_terms(molecule))
+    inner = " OR ".join(_quote_term(t) for t in registry_terms(molecule, "preprints"))
     return f"({inner}) AND SRC:PPR"

@@ -18,6 +18,7 @@ from typing import Dict, List
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from retarats_pipeline.enrichment.common import load_payload_table, utc_now_iso
+from retarats_pipeline import identity
 from retarats_pipeline.enrichment.registry_stale import drop_stale
 
 DEFAULT_DB = "data/retarats_trials.sqlite"
@@ -32,14 +33,17 @@ COMPACT_FIELDS = [
 ]
 
 
-def _load_trials(db_path: str) -> List[dict]:
+def _load_trials(db_path: str, report_path: str = "") -> List[dict]:
+    """Published trials: stored rows minus stale-query rows minus rows whose identity verdict is
+    hold/exclude (the molecule is not established by the record's stored text). Nothing is deleted."""
     if not os.path.exists(db_path):
         return []
     conn = sqlite3.connect(db_path)
     try:
-        return drop_stale(load_payload_table(conn, TABLE))
+        rows = drop_stale(load_payload_table(conn, TABLE))
     finally:
         conn.close()
+    return identity.apply_identity_gate("ctgov", rows, report_path)
 
 
 def _compact(row: Dict) -> Dict:
@@ -56,8 +60,9 @@ def _neg_date(date: str):
     return tuple(-ord(c) for c in str(date or ""))
 
 
-def build(db_path: str = DEFAULT_DB, out_path: str = DEFAULT_OUT, release_id: str = "") -> dict:
-    trials = _load_trials(db_path)
+def build(db_path: str = DEFAULT_DB, out_path: str = DEFAULT_OUT, release_id: str = "",
+          identity_report: str = "") -> dict:
+    trials = _load_trials(db_path, identity_report)
     compact = [_compact(t) for t in trials]
     compact.sort(key=_sort_key)
     ongoing_count = sum(1 for t in compact if t.get("ongoing"))
@@ -81,8 +86,10 @@ def main() -> None:
     ap.add_argument("--out", default=DEFAULT_OUT)
     ap.add_argument("--release-id", default=os.environ.get("RELEASE_ID", ""),
                     help="Stamp this release_id into the feed (default: $RELEASE_ID; blank = unstamped).")
+    ap.add_argument("--identity-report", default="",
+                    help="Write the CSV of trials held by the identity gate (and why) here (keep it OUT of the site dir).")
     args = ap.parse_args()
-    result = build(args.db, args.out, release_id=args.release_id)
+    result = build(args.db, args.out, release_id=args.release_id, identity_report=args.identity_report)
     print(f"Wrote {result['count']} trials ({result['ongoing_count']} ongoing) -> {result['out']}")
 
 

@@ -165,15 +165,21 @@ def build_corpus_index(pubmed_db: str = DEFAULT_PUBMED_DB, trials_db: str = DEFA
     if os.path.exists(trials_db):
         conn = sqlite3.connect(trials_db)
         try:
+            from retarats_pipeline import identity
             index["nct_id"] = _index_by_molecule_id(
-                [r for r in load_payload_table(conn, "trials") if not r.get("stale_query")], "nct_id", upper=True)
+                identity.apply_identity_gate(
+                    "ctgov", [r for r in load_payload_table(conn, "trials") if not r.get("stale_query")]),
+                "nct_id", upper=True)
         finally:
             conn.close()
     if os.path.exists(preprints_db):
         conn = sqlite3.connect(preprints_db)
         try:
+            from retarats_pipeline import identity
             index["doi"] = _index_by_molecule_id(
-                [r for r in load_payload_table(conn, "preprints") if not r.get("stale_query")], "id")
+                identity.apply_identity_gate(
+                    "preprints", [r for r in load_payload_table(conn, "preprints") if not r.get("stale_query")]),
+                "id")
         finally:
             conn.close()
     return index
@@ -209,6 +215,27 @@ def manually_held_keys(pubmed_db: str = DEFAULT_PUBMED_DB,
                           "keywords": ev.get("keywords") or paper.get("keywords", "")})
     holds, _ = plan_holds(excl, plan_rows)
     return {(str(plan_rows[i]["molecule_id"]), str(plan_rows[i]["pmid"]).lower()) for i in holds}
+
+
+def identity_held_keys(pubmed_db: str = DEFAULT_PUBMED_DB) -> Set[Tuple[str, str]]:
+    """(molecule_id, pmid) pairs the identity gate holds off the public site (config/MOLECULE_IDENTITY.csv):
+    still in the corpus, not published for that molecule, so they count as absent here (reported separately).
+    Trials and preprints are already filtered in ``build_corpus_index``."""
+    import sqlite3
+
+    from retarats_pipeline import identity
+
+    if not os.path.exists(pubmed_db) or not identity.enforced("pubmed"):
+        return set()
+    import run_identity_reeval as rr
+
+    conn = sqlite3.connect(pubmed_db)
+    try:
+        cfg = identity.get_config()
+        return {(mid, str(rec.get("pmid", "")).lower())
+                for _, _, mid, v, rec in rr.evaluate_source("pubmed", conn, cfg) if not v.published}
+    finally:
+        conn.close()
 
 
 @dataclass
@@ -468,14 +495,14 @@ def _ctgov_search_all_by_field(client, query: str, field_param: str, page_size: 
 def _cmd_offline(args: argparse.Namespace) -> int:
     rows = load_benchmark_rows(args.benchmark)
     index = build_corpus_index(args.pubmed_db, args.trials_db, args.preprints_db)
-    held = manually_held_keys(args.pubmed_db, args.manual_exclusions)
+    held = manually_held_keys(args.pubmed_db, args.manual_exclusions) | identity_held_keys(args.pubmed_db)
     in_corpus_but_held = [r for r in approved_only(rows) if r.id_type == "pmid" and r.key in held and r.key in index["pmid"]]
     index["pmid"] = index["pmid"] - held
     report = check_offline(rows, index)
     print(report.render())
     if held:
-        print(f"\nManual holds: {len(held)} (molecule, pmid) pair(s) are in the corpus but held off the site by "
-              f"{args.manual_exclusions}; treated as absent above.")
+        print(f"\nHolds: {len(held)} (molecule, pmid) pair(s) are in the corpus but held off the site by "
+              f"{args.manual_exclusions} or the identity gate (config/MOLECULE_IDENTITY.csv); treated as absent above.")
         for r in in_corpus_but_held:
             print(f"  approved row {r.molecule_id}/{r.id} ({r.expected}) is currently held -- "
                   + ("OK (expected exclude)" if r.expected == "exclude" else "WARNING: an approved INCLUDE is held"))
