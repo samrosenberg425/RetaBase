@@ -34,3 +34,13 @@ config/regulatory_suggested.csv
 work/
 .restore-*/
 .promote-*/
+# Docs, notes, readmes, checklists and agent/AI-assistant artifacts stay local
+# (kept on disk, never published). Site copy in config/site_copy/ still ships.
+/docs/
+*.md
+!config/site_copy/*.md
+.claude/
+CLAUDE.md
+AGENTS.md
+*.log
+/exports.zip
